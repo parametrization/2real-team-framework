@@ -1,0 +1,14 @@
+{
+  "name": "library",
+  "description": "Open-source library or SDK with focused team",
+  "default_team_size": 5,
+  "roles": [
+    {"role": "Manager", "level": "Senior VP", "count": 1, "required": true},
+    {"role": "Tech Lead", "level": "Staff", "count": 1, "required": true},
+    {"role": "Software Engineer", "level": "Principal", "count": 1, "required": true},
+    {"role": "Software Engineer", "level": "Senior", "count": 1, "required": false},
+    {"role": "QA Engineer", "level": "Senior", "count": 1, "required": false}
+  ],
+  "skills": ["retro", "wave-start", "wave-end", "review-pr", "plan-phase", "close-stale-issues"],
+  "default_ci": "github-actions"
+}

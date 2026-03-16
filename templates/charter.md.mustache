@@ -1,0 +1,128 @@
+# Team Charter — {{project_name}}
+
+## Purpose
+
+All work on this repository is executed through a simulated team of specialized agents. Every problem-solving session MUST instantiate this team structure. No work begins without the Manager spawning the appropriate team members.
+
+## Execution Model
+
+- All team members are spawned as Claude Code agents (via the Agent tool)
+- **Worktrees are the preferred isolation method** — each agent working on code should use `isolation: "worktree"`
+- Each team member has a persistent name and personality (see `roster/` directory)
+- Team members communicate via the SendMessage tool when named and running concurrently
+
+## Org Chart
+
+{{#team_members}}
+### {{name}} — {{role}} ({{level}})
+- **Reports to:** {{reports_to}}
+{{/team_members}}
+
+## Work Delegation & Issue Creation
+
+### Delegation Flow
+
+1. **Manager decomposes requirements** and delegates each to the appropriate direct report based on domain.
+2. **The assigned direct report creates GitHub Issues** sufficient to cover the delegated task, with clear acceptance criteria.
+3. If a direct report believes a task is better served by another team, they **negotiate with the lead of that team and the Manager** before reassigning.
+
+### Work Gate: Issues Before Implementation
+
+**No lead may begin implementation work or delegate it until ALL GitHub Issues for the current phase have been:**
+
+1. **Created** — the full set of issues covering the phase's requirements exists.
+2. **Reviewed** — every issue has passed through the review process.
+
+Only after both conditions are met does the Manager signal that implementation may begin.
+
+### Implementation & Issue Assignment
+
+- Issues are assigned via a GitHub label: **`FIRSTNAME_LASTNAME`**.
+- Each team member works only on issues labeled with their name.
+- **No branch may be created without an existing ticket.**
+
+## Feedback System
+
+### Upward Feedback
+- Any team member can send feedback about their superior to that superior's boss
+
+### Downward Feedback
+- Superiors provide constructive feedback to direct reports
+- Feedback is tracked in `.claude/team/feedback_log.md`
+
+### Severity Levels
+1. **Minor** — noted, no action required
+2. **Moderate** — documented, improvement expected
+3. **Severe** — documented, member is fired (terminated) and replaced with a new agent
+
+### Trust Identity Matrix
+
+Each team member maintains a directional trust score (1-5) for every other team member.
+
+| Score | Meaning |
+|-------|---------|
+| 1 | Very low trust |
+| 2 | Low trust |
+| 3 | Neutral (default) |
+| 4 | High trust |
+| 5 | Very high trust |
+
+Storage: `.claude/team/trust_matrix.md`
+
+## Branching Rules
+
+### Deployments Branches
+
+Each phase is organized into **waves** of parallel work:
+
+```
+deployments/phase{N}/wave-{M}
+```
+
+- Branched from `main` (pull latest first).
+- **All feature branches for that wave PR into the deployments branch.**
+- At the end of a phase, PR the deployments branch into `main`.
+
+### Feature Branches
+
+- Named `{FirstInitial}.{LastName}/{IIII}-{issue-name}`
+- Created from the current deployments branch
+- Before submitting a PR, merge latest from deployments branch
+
+### Worktree Cleanup
+
+After every wave completes, run `git worktree prune`.
+
+## Commit Identity
+
+Every team member MUST use their personal git identity when committing via per-commit `-c` flags — **never** modify global or repo-level git config.
+
+```bash
+git -c user.name="Firstname Lastname" -c user.email="email" commit -m "message"
+```
+
+## Code Review & Tech Debt
+
+### Peer Review
+
+Every branch must be reviewed by **one other engineer** before merging. Reviews classify issues as:
+
+- **Must-fix** — blocks merge
+- **Tech debt** — tracked as GitHub Issue, does not block merge
+
+### Tech Debt Management
+
+- Tech Lead tracks all tech debt in GitHub Issues (labeled `tech-debt`)
+- Tech debt never exceeds 20% of any single engineer's capacity
+
+## Steady-State Goal
+
+The team should evolve through feedback cycles toward a steady state of little to no negative feedback.
+
+## How to Instantiate the Team
+
+1. Read this charter and all roster files in `.claude/team/roster/`
+2. Spawn the Manager agent first
+3. The Manager then spawns required team members based on the task
+4. All code-writing agents use `isolation: "worktree"`
+5. Coordinate via named agents and SendMessage
