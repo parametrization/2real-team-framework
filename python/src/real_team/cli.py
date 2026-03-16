@@ -18,13 +18,17 @@ console = Console()
 
 @app.command()
 def init(
-    preset: str = typer.Option(None, help="Project preset (fullstack-monorepo, data-pipeline, library)"),
+    preset: str = typer.Option(
+        None, help="Project preset (fullstack-monorepo, data-pipeline, library)"
+    ),
     team_size: int = typer.Option(None, help="Override default team size"),
     config: str = typer.Option(None, help="Path to config YAML file"),
     project_name: str = typer.Option(None, help="Project name"),
     target: str = typer.Option(".", help="Target directory"),
     interactive: bool = typer.Option(True, help="Interactive mode"),
-    git_email_prefix: str = typer.Option("", help="Email prefix (e.g., 'myorg' → myorg+First.Last@gmail.com)"),
+    git_email_prefix: str = typer.Option(
+        "", help="Email prefix (e.g., 'myorg' -> myorg+First.Last@gmail.com)"
+    ),
 ) -> None:
     """Bootstrap a new project with the team framework."""
     target_path = Path(target).resolve()
@@ -43,7 +47,10 @@ def init(
         available = list_presets()
         console.print("\n[bold]Available presets:[/bold]")
         for p in available:
-            console.print(f"  [cyan]{p.name}[/cyan] — {p.description} (default size: {p.default_team_size})")
+            console.print(
+                f"  [cyan]{p.name}[/cyan] — {p.description}"
+                f" (default size: {p.default_team_size})"
+            )
         preset = typer.prompt("\nChoose a preset", type=str)
 
     if not preset:
@@ -129,7 +136,8 @@ def add_member(
     card_path = roster_dir / f"{role_prefix}_{safe_name}.md"
     card_path.write_text(card)
 
-    console.print(f"[green]Added:[/green] {name} ({role}, {level}) → {card_path.relative_to(target_path)}")
+    rel = card_path.relative_to(target_path)
+    console.print(f"[green]Added:[/green] {name} ({role}, {level}) -> {rel}")
 
 
 @app.command()
@@ -259,7 +267,10 @@ def validate(
     errors: list[str] = []
 
     if not team_dir.exists():
-        console.print("[red]Error:[/red] No .claude/team/ directory found. Run `2real-team init` first.")
+        console.print(
+            "[red]Error:[/red] No .claude/team/ directory found."
+            " Run `2real-team init` first."
+        )
         raise typer.Exit(1)
 
     # Check charter exists

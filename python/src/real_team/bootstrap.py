@@ -8,7 +8,6 @@ from pathlib import Path
 from rich.console import Console
 
 from .models import PresetConfig, TeamConfig, TeamMember
-from .presets import get_preset
 from .templates import render_skill, render_template
 
 console = Console()
@@ -137,12 +136,17 @@ def _assign_reports_to(members: list[TeamMember]) -> None:
                 member.reports_to = manager.name
         elif member.role in ("DevOps Engineer", "Security Engineer"):
             devops_arch = leads.get("DevOps Architect")
-            member.reports_to = devops_arch.name if devops_arch else (manager.name if manager else "")
+            fallback = manager.name if manager else ""
+            member.reports_to = devops_arch.name if devops_arch else fallback
         elif member.role in ("Data Engineer", "Data Scientist"):
             data_lead = leads.get("Data Engineer")
             if not data_lead:
-                data_lead = next((m for m in members if "Data" in m.role and m.level == "Staff"), None)
-            member.reports_to = data_lead.name if data_lead else (manager.name if manager else "")
+                data_lead = next(
+                    (m for m in members if "Data" in m.role and m.level == "Staff"),
+                    None,
+                )
+            fallback = manager.name if manager else ""
+            member.reports_to = data_lead.name if data_lead else fallback
         else:
             tech_lead = leads.get("Tech Lead")
             member.reports_to = tech_lead.name if tech_lead else (manager.name if manager else "")

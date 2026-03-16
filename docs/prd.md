@@ -102,11 +102,11 @@ Mustache (logic-less templates) — works natively in both Python (chevron) and 
 - [x] 3 presets
 - [x] 6 skill templates
 - [x] CI/CD workflows
-- [ ] Full `init` implementation with interactive mode
-- [ ] Full `add-member` / `remove-member` / `update-member` / `randomize-member`
-- [ ] Full `validate` + `status`
-- [ ] Template rendering tests (both languages)
-- [ ] End-to-end bootstrap test
+- [x] Full `init` implementation with interactive mode
+- [x] Full `add-member` / `remove-member` / `update-member` / `randomize-member`
+- [x] Full `validate` + `status`
+- [x] Template rendering tests (both languages)
+- [x] End-to-end bootstrap test
 
 ### Phase 2: Polish + Publish
 - [ ] Config file mode (YAML input)
