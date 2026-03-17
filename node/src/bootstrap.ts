@@ -5,11 +5,26 @@
 import { readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderTemplate, renderSkill } from "./templates.js";
+import Mustache from "mustache";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PRESETS_DIR = resolve(__dirname, "../../presets");
+
+/**
+ * Resolve a shared data directory.  Checks the package-local copy first
+ * (npm install), then the repo-root relative path (development).
+ */
+function resolveDataDir(name: string): string {
+  // When installed as an npm package: dist/ -> ../{name}
+  const pkg = resolve(__dirname, "..", name);
+  if (existsSync(pkg)) return pkg;
+  // Development: src/ or dist/ -> ../../{name} (repo root)
+  return resolve(__dirname, "../..", name);
+}
+
+const TEMPLATES_DIR = resolveDataDir("templates");
+const PRESETS_DIR = resolveDataDir("presets");
+const SKILLS_DIR = resolveDataDir("skills");
 
 interface BootstrapOptions {
   preset?: string;
@@ -36,8 +51,9 @@ interface Preset {
   default_ci: string;
 }
 
-export interface TeamMember {
+interface TeamMember {
   name: string;
+  agent_name: string;
   role: string;
   level: string;
   email: string;
@@ -45,9 +61,13 @@ export interface TeamMember {
   personality: string;
 }
 
+function toAgentName(name: string): string {
+  return name.toLowerCase().replace(/ /g, "-");
+}
+
 // Name pools — match Python pools exactly
 export const FIRST_NAMES = [
-  "Aisha", "Amara", "Andrei", "Bj\u00f6rk", "Carolina", "Chen", "Dmitri",
+  "Aisha", "Amara", "Andrei", "Björk", "Carolina", "Chen", "Dmitri",
   "Elena", "Fatima", "Hiro", "Ibrahim", "Jada", "Kai", "Kwame", "Lena",
   "Mei-Lin", "Nadia", "Omar", "Priya", "Ravi", "Renaud", "Sakura",
   "Sunita", "Tariq", "Tomasz", "Yara", "Zara", "Alejandro", "Beatriz",
@@ -58,9 +78,9 @@ export const FIRST_NAMES = [
 
 export const LAST_NAMES = [
   "Asante", "Al-Rashidi", "Bianchi", "Chang", "Diallo", "Eriksson",
-  "Fern\u00e1ndez", "Garc\u00eda", "Hadid", "Inoue", "Jensen", "Krishnamurthy",
-  "L\u00f3pez", "M\u00e9ndez-R\u00edos", "Nakamura", "Okonkwo", "Petrova", "Qureshi",
-  "Rossi", "Singh", "Tanaka", "Ueda", "Volkov", "W\u00f3jcik", "Xu",
+  "Fernández", "García", "Hadid", "Inoue", "Jensen", "Krishnamurthy",
+  "López", "Méndez-Ríos", "Nakamura", "Okonkwo", "Petrova", "Qureshi",
+  "Rossi", "Singh", "Tanaka", "Ueda", "Volkov", "Wójcik", "Xu",
   "Yamamoto", "Zhang", "Abubakar", "Bjornsson", "Costa", "Devi",
   "El-Amin", "Fischer", "Gupta", "Hassan", "Ito", "Johansson", "Kim",
   "Li", "Morales", "Nair", "Osei", "Park", "Rahman", "Sato",
@@ -100,39 +120,7 @@ export function makeEmail(first: string, last: string, prefix: string = ""): str
   return `${clean(first)}.${clean(last)}@gmail.com`;
 }
 
-export function extractField(content: string, field: string): string | null {
-  for (const line of content.split("\n")) {
-    if (line.includes(`**${field}:**`)) {
-      return line.split(`**${field}:**`)[1]?.trim() ?? null;
-    }
-  }
-  return null;
-}
-
-export function replaceField(content: string, field: string, value: string): string {
-  const lines = content.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(`**${field}:**`)) {
-      const prefix = lines[i].split(`**${field}:**`)[0];
-      lines[i] = `${prefix}**${field}:** ${value}`;
-      break;
-    }
-  }
-  return lines.join("\n");
-}
-
-export function safeName(name: string): string {
-  return name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-}
-
-export function findRosterCards(rosterDir: string, name: string): string[] {
-  if (!existsSync(rosterDir)) return [];
-  const safe = safeName(name);
-  return readdirSync(rosterDir)
-    .filter((f) => f.endsWith(".md") && f.includes(safe) && !f.startsWith("_departed_"));
-}
-
-export function loadPreset(name: string): Preset {
+function loadPreset(name: string): Preset {
   const path = join(PRESETS_DIR, `${name}.json`);
   if (!existsSync(path)) {
     throw new Error(`Unknown preset: ${name}`);
@@ -145,6 +133,22 @@ export function listPresets(): Preset[] {
   return readdirSync(PRESETS_DIR)
     .filter((f) => f.endsWith(".json"))
     .map((f) => JSON.parse(readFileSync(join(PRESETS_DIR, f), "utf-8")) as Preset);
+}
+
+function renderTemplate(name: string, context: Record<string, unknown>): string {
+  const path = join(TEMPLATES_DIR, name);
+  if (!existsSync(path)) {
+    throw new Error(`Template not found: ${path}`);
+  }
+  const template = readFileSync(path, "utf-8");
+  return Mustache.render(template, context);
+}
+
+function renderSkill(name: string, context: Record<string, unknown>): string {
+  const path = join(SKILLS_DIR, name);
+  if (!existsSync(path)) return "";
+  const template = readFileSync(path, "utf-8");
+  return Mustache.render(template, context);
 }
 
 export async function bootstrap(opts: BootstrapOptions): Promise<void> {
@@ -170,39 +174,8 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   }
 
   const preset = loadPreset(presetName!);
-
-  let projectName = opts.projectName;
-  if (!projectName && opts.interactive) {
-    const inquirer = await import("inquirer");
-    const { name } = await inquirer.default.prompt([
-      {
-        type: "input",
-        name: "name",
-        message: "Project name:",
-        default: target.split("/").pop() ?? "my-project",
-      },
-    ]);
-    projectName = name;
-  } else if (!projectName) {
-    projectName = target.split("/").pop() ?? "my-project";
-  }
-
-  let teamSize = opts.teamSize;
-  if (!teamSize && opts.interactive) {
-    const inquirer = await import("inquirer");
-    const { size } = await inquirer.default.prompt([
-      {
-        type: "number",
-        name: "size",
-        message: "Team size:",
-        default: preset.default_team_size,
-      },
-    ]);
-    teamSize = size;
-  }
-  if (!teamSize) {
-    teamSize = preset.default_team_size;
-  }
+  const projectName = opts.projectName ?? target.split("/").pop() ?? "my-project";
+  const teamSize = opts.teamSize ?? preset.default_team_size;
 
   // Generate team
   const used = new Set<string>();
@@ -212,9 +185,11 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
     if (!role.required) continue;
     for (let i = 0; i < role.count && members.length < teamSize; i++) {
       const [first, last] = generateName(used);
-      used.add(`${first} ${last}`);
+      const fullName = `${first} ${last}`;
+      used.add(fullName);
       members.push({
-        name: `${first} ${last}`,
+        name: fullName,
+        agent_name: toAgentName(fullName),
         role: role.role,
         level: role.level,
         email: makeEmail(first, last),
@@ -228,9 +203,11 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
     if (role.required) continue;
     for (let i = 0; i < role.count && members.length < teamSize; i++) {
       const [first, last] = generateName(used);
-      used.add(`${first} ${last}`);
+      const fullName = `${first} ${last}`;
+      used.add(fullName);
       members.push({
-        name: `${first} ${last}`,
+        name: fullName,
+        agent_name: toAgentName(fullName),
         role: role.role,
         level: role.level,
         email: makeEmail(first, last),
@@ -259,11 +236,11 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   // Roster cards
   for (const m of members) {
     const card = renderTemplate("roster-card.md.mustache", m as unknown as Record<string, unknown>);
-    const safe = safeName(m.name);
+    const safeName = m.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
     const rolePrefix = m.role.toLowerCase().replace(/ /g, "_");
-    const cardPath = join(rosterDir, `${rolePrefix}_${safe}.md`);
+    const cardPath = join(rosterDir, `${rolePrefix}_${safeName}.md`);
     writeFileSync(cardPath, card);
-    created.push(`.claude/team/roster/${rolePrefix}_${safe}.md`);
+    created.push(`.claude/team/roster/${rolePrefix}_${safeName}.md`);
   }
 
   // Trust matrix
@@ -283,14 +260,10 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
 
   // Skills
   for (const skill of preset.skills) {
-    try {
-      const rendered = renderSkill(`${skill}.md.mustache`, context);
-      if (rendered) {
-        writeFileSync(join(skillsDir, `${skill}.md`), rendered);
-        created.push(`.claude/skills/${skill}.md`);
-      }
-    } catch {
-      // Skip missing skill templates
+    const rendered = renderSkill(`${skill}.md.mustache`, context);
+    if (rendered) {
+      writeFileSync(join(skillsDir, `${skill}.md`), rendered);
+      created.push(`.claude/skills/${skill}.md`);
     }
   }
 
@@ -301,12 +274,18 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   console.log(`\nTeam framework bootstrapped for '${projectName}'!`);
 }
 
-export function addMember(opts: {
+// ---------------------------------------------------------------------------
+// Subcommand interfaces & implementations
+// ---------------------------------------------------------------------------
+
+interface AddMemberOptions {
   name?: string;
   role: string;
   level: string;
   target: string;
-}): void {
+}
+
+export function addMember(opts: AddMemberOptions): void {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
@@ -316,25 +295,21 @@ export function addMember(opts: {
   }
 
   let name = opts.name;
-  let first: string, last: string;
-
   if (!name) {
-    const used = new Set(
-      readdirSync(rosterDir)
-        .filter((f) => f.endsWith(".md"))
-        .map((f) => f.replace(/_/g, " ").replace(".md", ""))
-    );
-    [first, last] = generateName(used);
+    const used = new Set<string>();
+    for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
+      used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
+    }
+    const [first, last] = generateName(used);
     name = `${first} ${last}`;
-  } else {
-    const parts = name.split(" ", 2);
-    first = parts[0];
-    last = parts[1] ?? "";
   }
 
-  const email = makeEmail(first!, last!);
+  const parts = name.split(" ");
+  const first = parts[0];
+  const last = parts.slice(1).join(" ");
+  const email = makeEmail(first, last);
 
-  const context = {
+  const context: Record<string, unknown> = {
     name,
     role: opts.role,
     level: opts.level,
@@ -343,15 +318,22 @@ export function addMember(opts: {
   };
 
   const card = renderTemplate("roster-card.md.mustache", context);
-  const safe = safeName(name);
+  const safeName = name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
   const rolePrefix = opts.role.toLowerCase().replace(/ /g, "_");
-  const cardPath = join(rosterDir, `${rolePrefix}_${safe}.md`);
+  const cardPath = join(rosterDir, `${rolePrefix}_${safeName}.md`);
   writeFileSync(cardPath, card);
 
   console.log(`Added: ${name} (${opts.role}, ${opts.level}) -> ${cardPath}`);
 }
 
-export function removeMember(opts: { name: string; target: string }): void {
+interface MemberOptions {
+  name: string;
+  target: string;
+  role?: string;
+  level?: string;
+}
+
+export function removeMember(opts: MemberOptions): void {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
@@ -360,46 +342,69 @@ export function removeMember(opts: { name: string; target: string }): void {
     process.exit(1);
   }
 
-  const matches = findRosterCards(rosterDir, opts.name);
+  const safeName = opts.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+  const files = readdirSync(rosterDir).filter(
+    (f) => f.includes(safeName) && !f.startsWith("_departed_"),
+  );
 
-  if (matches.length === 0) {
+  if (files.length === 0) {
     console.error(`Error: No active roster card found for '${opts.name}'`);
     process.exit(1);
   }
 
-  for (const match of matches) {
-    const oldPath = join(rosterDir, match);
-    const newPath = join(rosterDir, `_departed_${match}`);
+  for (const f of files) {
+    const oldPath = join(rosterDir, f);
+    const newPath = join(rosterDir, `_departed_${f}`);
     renameSync(oldPath, newPath);
-    console.log(`Archived: ${match} -> _departed_${match}`);
+    console.log(`Archived: ${f} -> _departed_${f}`);
   }
 }
 
-export function updateMember(opts: {
-  name: string;
-  role?: string;
-  level?: string;
-  target: string;
-}): void {
+export function extractField(content: string, field: string): string | null {
+  for (const line of content.split("\n")) {
+    if (line.includes(`**${field}:**`)) {
+      return line.split(`**${field}:**`)[1]?.trim() ?? null;
+    }
+  }
+  return null;
+}
+
+export function replaceField(content: string, field: string, value: string): string {
+  return content
+    .split("\n")
+    .map((line) => {
+      if (line.includes(`**${field}:**`)) {
+        const prefix = line.split(`**${field}:**`)[0];
+        return `${prefix}**${field}:** ${value}`;
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+export function safeName(name: string): string {
+  return name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+}
+
+export function updateMember(opts: MemberOptions): void {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
-  const matches = findRosterCards(rosterDir, opts.name);
+  const safeName = opts.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+  const files = readdirSync(rosterDir).filter(
+    (f) => f.includes(safeName) && !f.startsWith("_departed_"),
+  );
 
-  if (matches.length === 0) {
+  if (files.length === 0) {
     console.error(`Error: No active roster card found for '${opts.name}'`);
     process.exit(1);
   }
 
-  const cardPath = join(rosterDir, matches[0]);
+  const cardPath = join(rosterDir, files[0]);
   let content = readFileSync(cardPath, "utf-8");
 
-  if (opts.role) {
-    content = replaceField(content, "Role", opts.role);
-  }
-  if (opts.level) {
-    content = replaceField(content, "Level", opts.level);
-  }
+  if (opts.role) content = replaceField(content, "Role", opts.role);
+  if (opts.level) content = replaceField(content, "Level", opts.level);
 
   writeFileSync(cardPath, content);
   console.log(`Updated: ${opts.name}`);
@@ -409,36 +414,35 @@ export function randomizeMember(opts: { name: string; target: string }): void {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
-  const matches = findRosterCards(rosterDir, opts.name);
+  const safeName = opts.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+  const files = readdirSync(rosterDir).filter(
+    (f) => f.includes(safeName) && !f.startsWith("_departed_"),
+  );
 
-  if (matches.length === 0) {
+  if (files.length === 0) {
     console.error(`Error: No active roster card found for '${opts.name}'`);
     process.exit(1);
   }
 
-  const oldFile = matches[0];
-  const oldPath = join(rosterDir, oldFile);
+  const oldPath = join(rosterDir, files[0]);
   const content = readFileSync(oldPath, "utf-8");
 
-  // Extract role and level from existing card
   const role = extractField(content, "Role") ?? "Software Engineer";
   const level = extractField(content, "Level") ?? "Senior";
 
   // Archive old
-  const archivedPath = join(rosterDir, `_departed_${oldFile}`);
-  renameSync(oldPath, archivedPath);
+  renameSync(oldPath, join(rosterDir, `_departed_${files[0]}`));
 
   // Generate new identity
-  const used = new Set(
-    readdirSync(rosterDir)
-      .filter((f) => f.endsWith(".md") && !f.startsWith("_departed_"))
-      .map((f) => f.replace(/_/g, " ").replace(".md", ""))
-  );
+  const used = new Set<string>();
+  for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
+    used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
+  }
   const [first, last] = generateName(used);
   const newName = `${first} ${last}`;
   const email = makeEmail(first, last);
 
-  const context = {
+  const context: Record<string, unknown> = {
     name: newName,
     role,
     level,
@@ -447,13 +451,13 @@ export function randomizeMember(opts: { name: string; target: string }): void {
   };
 
   const card = renderTemplate("roster-card.md.mustache", context);
-  const newSafe = safeName(newName);
+  const newSafe = newName.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
   const rolePrefix = role.toLowerCase().replace(/ /g, "_");
   const newPath = join(rosterDir, `${rolePrefix}_${newSafe}.md`);
   writeFileSync(newPath, card);
 
-  console.log(`Archived: ${oldFile} -> _departed_${oldFile}`);
-  console.log(`Created: ${newName} (${role}, ${level}) -> ${rolePrefix}_${newSafe}.md`);
+  console.log(`Archived: ${opts.name} -> _departed_${files[0]}`);
+  console.log(`Created: ${newName} (${role}, ${level}) -> ${newPath}`);
 }
 
 export function validateTeam(opts: { target: string }): void {
@@ -467,18 +471,17 @@ export function validateTeam(opts: { target: string }): void {
     process.exit(1);
   }
 
-  // Check charter
   if (!existsSync(join(teamDir, "charter.md"))) {
     errors.push("Missing charter.md");
   }
 
-  // Check roster
   const rosterDir = join(teamDir, "roster");
   if (!existsSync(rosterDir)) {
     errors.push("Missing roster/ directory");
   } else {
-    const active = readdirSync(rosterDir)
-      .filter((f) => f.endsWith(".md") && !f.startsWith("_departed_"));
+    const active = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
     if (active.length === 0) {
       errors.push("No active roster cards found");
     } else {
@@ -486,17 +489,14 @@ export function validateTeam(opts: { target: string }): void {
     }
   }
 
-  // Check trust matrix
   if (!existsSync(join(teamDir, "trust_matrix.md"))) {
     errors.push("Missing trust_matrix.md");
   }
 
-  // Check feedback log
   if (!existsSync(join(teamDir, "feedback_log.md"))) {
     errors.push("Missing feedback_log.md");
   }
 
-  // Check skills
   if (existsSync(skillsDir)) {
     const skills = readdirSync(skillsDir).filter((f) => f.endsWith(".md"));
     console.log(`Found ${skills.length} skills`);
@@ -524,37 +524,29 @@ export function showStatus(opts: { target: string }): void {
     process.exit(1);
   }
 
-  const files = readdirSync(rosterDir).filter((f) => f.endsWith(".md")).sort();
+  console.log("\nTeam Roster");
+  console.log("─".repeat(60));
+  console.log(
+    `${"Name".padEnd(25)} ${"Role".padEnd(20)} ${"Level".padEnd(12)} Status`,
+  );
+  console.log("─".repeat(60));
 
-  // Calculate column widths
-  const rows: { name: string; role: string; level: string; status: string }[] = [];
-  for (const file of files) {
-    const content = readFileSync(join(rosterDir, file), "utf-8");
-    const name = extractField(content, "Name") ?? file.replace(".md", "");
+  const files = readdirSync(rosterDir)
+    .filter((f) => f.endsWith(".md"))
+    .sort();
+
+  for (const f of files) {
+    const content = readFileSync(join(rosterDir, f), "utf-8");
+    const name = extractField(content, "Name") ?? f.replace(".md", "");
     const role = extractField(content, "Role") ?? "?";
     const level = extractField(content, "Level") ?? "?";
-    const isDeparted = file.startsWith("_departed_");
-    rows.push({ name, role, level, status: isDeparted ? "Archived" : "Active" });
-  }
-
-  // Print table
-  const nameW = Math.max(4, ...rows.map((r) => r.name.length));
-  const roleW = Math.max(4, ...rows.map((r) => r.role.length));
-  const levelW = Math.max(5, ...rows.map((r) => r.level.length));
-  const statusW = Math.max(6, ...rows.map((r) => r.status.length));
-
-  console.log("\nTeam Roster");
-  console.log(
-    `${"Name".padEnd(nameW)}  ${"Role".padEnd(roleW)}  ${"Level".padEnd(levelW)}  ${"Status".padEnd(statusW)}`
-  );
-  console.log(`${"-".repeat(nameW)}  ${"-".repeat(roleW)}  ${"-".repeat(levelW)}  ${"-".repeat(statusW)}`);
-  for (const r of rows) {
+    const isDeparted = f.startsWith("_departed_");
+    const status = isDeparted ? "Archived" : "Active";
     console.log(
-      `${r.name.padEnd(nameW)}  ${r.role.padEnd(roleW)}  ${r.level.padEnd(levelW)}  ${r.status.padEnd(statusW)}`
+      `${name.padEnd(25)} ${role.padEnd(20)} ${level.padEnd(12)} ${status}`,
     );
   }
 
-  // Count skills
   const skillsDir = join(target, ".claude", "skills");
   if (existsSync(skillsDir)) {
     const skillCount = readdirSync(skillsDir).filter((f) => f.endsWith(".md")).length;

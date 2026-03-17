@@ -22,7 +22,7 @@ const program = new Command();
 program
   .name("2real-team")
   .description("AI agent team framework for Claude Code projects")
-  .version("0.1.0");
+  .version("0.2.0");
 
 program
   .command("init")

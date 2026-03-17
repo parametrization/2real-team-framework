@@ -1,14 +1,46 @@
 {
   "name": "2real-team-framework",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drop-in AI agent team framework for Claude Code projects",
   "license": "Apache-2.0",
   "type": "module",
+  "author": {
+    "name": "2real Team",
+    "email": "2real-team@users.noreply.github.com",
+    "url": "https://github.com/parametrization/2real-team-framework"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parametrization/2real-team-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/parametrization/2real-team-framework/issues"
+  },
+  "homepage": "https://github.com/parametrization/2real-team-framework#readme",
+  "keywords": [
+    "claude",
+    "ai",
+    "agent",
+    "team",
+    "framework",
+    "claude-code",
+    "llm"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "2real-team": "./dist/index.js"
   },
+  "files": [
+    "dist/",
+    "templates/",
+    "presets/",
+    "skills/"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');const c=fs.readFileSync('dist/index.js','utf-8');if(!c.startsWith('#!')){fs.writeFileSync('dist/index.js','#!/usr/bin/env node\\n'+c)}\"",
+    "prepack": "npm run build && node scripts/copy-shared.js",
     "test": "vitest",
     "lint": "eslint src/"
   },
@@ -16,11 +48,13 @@
     "commander": "^12.0.0",
     "mustache": "^4.2.0",
     "inquirer": "^9.0.0",
-    "chalk": "^5.0.0"
+    "chalk": "^5.0.0",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "@types/mustache": "^4.2.0",
     "@types/inquirer": "^9.0.0",
     "@types/node": "^22.0.0"

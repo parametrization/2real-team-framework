@@ -9,8 +9,15 @@ import Mustache from "mustache";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const TEMPLATES_DIR = resolve(__dirname, "../../templates");
-const SKILLS_DIR = resolve(__dirname, "../../skills");
+
+function resolveDir(name: string): string {
+  const pkg = resolve(__dirname, "..", name);
+  if (existsSync(pkg)) return pkg;
+  return resolve(__dirname, "../..", name);
+}
+
+const TEMPLATES_DIR = resolveDir("templates");
+const SKILLS_DIR = resolveDir("skills");
 
 export function renderTemplate(
   templateName: string,
