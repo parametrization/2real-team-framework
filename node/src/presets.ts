@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PRESETS_DIR = resolve(__dirname, "../../presets");
+
+function resolvePresetsDir(): string {
+  const pkg = resolve(__dirname, "..", "presets");
+  if (existsSync(pkg)) return pkg;
+  return resolve(__dirname, "../..", "presets");
+}
+
+const PRESETS_DIR = resolvePresetsDir();
 
 export interface RoleSpec {
   role: string;
