@@ -41,7 +41,7 @@ class TestBuildPrompt:
     def test_no_seed_note_without_seed(self, library_preset: PresetConfig):
         roles = [{"role": "Engineer", "level": "Senior"}]
         prompt = _build_prompt(library_preset, roles, 3)
-        assert "seed" not in prompt.lower() or "seed" in prompt.lower()  # just runs
+        assert "seed" not in prompt.lower()
 
 
 class TestParseResponse:
