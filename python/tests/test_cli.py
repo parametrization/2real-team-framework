@@ -104,7 +104,7 @@ class TestNameGeneration:
 
     def test_generate_name_exhaustion(self):
         """Should raise when no unique name can be generated."""
-        used = {f"{f} {l}" for f in FIRST_NAMES for l in LAST_NAMES}
+        used = {f"{fn} {ln}" for fn in FIRST_NAMES for ln in LAST_NAMES}
         with pytest.raises(RuntimeError, match="Could not generate"):
             generate_name(used)
 

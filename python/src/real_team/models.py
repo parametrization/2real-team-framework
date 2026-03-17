@@ -89,7 +89,7 @@ class YamlConfig(BaseModel):
         return v
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "YamlConfig":
+    def from_yaml(cls, path: str | Path) -> YamlConfig:
         """Load and validate a YAML config file.
 
         Raises ``ValueError`` with a human-readable message on validation
@@ -113,6 +113,6 @@ class YamlConfig(BaseModel):
         except ValidationError as exc:
             lines = [f"Invalid config file ({path}):"]
             for err in exc.errors():
-                loc = " -> ".join(str(l) for l in err["loc"])
+                loc = " -> ".join(str(part) for part in err["loc"])
                 lines.append(f"  {loc}: {err['msg']}")
             raise ValueError("\n".join(lines)) from exc
