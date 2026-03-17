@@ -28,8 +28,6 @@ import {
   extractField,
   replaceField,
   safeName,
-  findRosterCards,
-  loadPreset,
   listPresets,
   bootstrap,
   addMember,
@@ -77,14 +75,11 @@ describe("presets", () => {
     }
   });
 
-  it("should load preset by name", () => {
-    const preset = loadPreset("library");
-    expect(preset.name).toBe("library");
-    expect(preset.default_team_size).toBeGreaterThan(0);
-  });
-
-  it("should throw for unknown preset", () => {
-    expect(() => loadPreset("nonexistent")).toThrow("Unknown preset");
+  it("should load preset by name via listPresets", () => {
+    const presets = listPresets();
+    const library = presets.find((p) => p.name === "library");
+    expect(library).toBeDefined();
+    expect(library!.default_team_size).toBeGreaterThan(0);
   });
 
   it("should list all presets", () => {
@@ -333,43 +328,6 @@ describe("replaceField", () => {
     const content = "- **Role:** Engineer\n";
     const result = replaceField(content, "Level", "Staff");
     expect(result).toBe(content);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// findRosterCards
-// ---------------------------------------------------------------------------
-
-describe("findRosterCards", () => {
-  it("should return empty for nonexistent directory", () => {
-    expect(findRosterCards("/nonexistent/path", "test")).toEqual([]);
-  });
-
-  it("should find matching cards", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "test-roster-"));
-    writeFileSync(
-      join(tmp, "engineer_john_doe.md"),
-      "- **Name:** John Doe\n",
-    );
-    writeFileSync(
-      join(tmp, "manager_jane_smith.md"),
-      "- **Name:** Jane Smith\n",
-    );
-    const result = findRosterCards(tmp, "John Doe");
-    expect(result).toHaveLength(1);
-    expect(result[0]).toContain("john_doe");
-    rmSync(tmp, { recursive: true });
-  });
-
-  it("should exclude departed cards", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "test-roster-"));
-    writeFileSync(
-      join(tmp, "_departed_engineer_john_doe.md"),
-      "- **Name:** John Doe\n",
-    );
-    const result = findRosterCards(tmp, "John Doe");
-    expect(result).toHaveLength(0);
-    rmSync(tmp, { recursive: true });
   });
 });
 
