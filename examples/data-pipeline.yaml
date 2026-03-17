@@ -1,0 +1,16 @@
+# Example config for the "data-pipeline" preset.
+# Usage: 2real-team init --config examples/data-pipeline.yaml
+
+preset: data-pipeline
+project_name: analytics-pipeline
+team_size: 10
+git_email_prefix: "data-team"
+
+# Override installed skills
+skills:
+  - retro
+  - wave-start
+  - wave-end
+  - review-pr
+  - plan-phase
+  - close-stale-issues

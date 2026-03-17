@@ -1,0 +1,21 @@
+# Example config for the "fullstack-monorepo" preset.
+# Usage: 2real-team init --config examples/fullstack-monorepo.yaml
+
+preset: fullstack-monorepo
+project_name: my-fullstack-app
+
+# Override the default team size (default: 10)
+team_size: 8
+
+git_email_prefix: "myorg"
+
+# Per-member overrides — useful for pinning key roles
+members:
+  - name: "Jordan Rivera"
+    role: "Manager"
+    level: "Senior VP"
+    personality: "Direct and structured. Prefers bullet points."
+  - name: "Alex Chen"
+    role: "Tech Lead"
+    level: "Staff"
+    personality: "Analytical and precise. Favors data-driven decisions."

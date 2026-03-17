@@ -1,0 +1,31 @@
+# Example config for the "library" preset.
+# Usage: 2real-team init --config examples/library.yaml
+
+preset: library
+project_name: my-awesome-lib
+
+# Override the default team size (default: 5)
+team_size: 5
+
+# Optional: prefix for generated git emails
+# e.g., "myorg" -> myorg+First.Last@gmail.com
+git_email_prefix: ""
+
+# Optional: override which skills are installed
+# (defaults to preset skills if omitted)
+# skills:
+#   - retro
+#   - wave-start
+#   - wave-end
+#   - review-pr
+
+# Optional: per-member overrides
+# Each entry can specify name, role, level, and/or personality.
+# members:
+#   - name: "Alice Smith"
+#     role: "Tech Lead"
+#     level: "Staff"
+#     personality: "Direct and structured."
+#   - name: "Bob Jones"
+#     role: "Software Engineer"
+#     level: "Senior"
