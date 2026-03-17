@@ -18,14 +18,31 @@
 
 ### Key Rules
 
-- **Commit identity:** Each team member commits using per-commit `-c` flags — never set global/repo git config.
+- **Commit identity:** Each team member commits using per-commit `-c` flags with two `Co-Authored-By` trailers (team member + Claude) — **never** set global/repo git config. See `.claude/team/charter.md` § Commit Identity for details.
 - **Worktrees** are the preferred isolation method for all code-writing agents.
 - Manager spawns team members, creates stories/AC, and owns timelines.
 - Feedback flows up and down; severe feedback triggers fire-and-replace.
+- If the Manager receives significant negative feedback from the user, the Manager is replaced.
+- Team evolves toward steady state of minimal negative feedback.
 
-## Developer Tooling
+### User Approval Gates
+
+The following require **explicit User approval** before proceeding:
+1. **Wave kickoff** — present the plan, wait for go-ahead
+2. **Merge to main** — present PR summary, wait for approval
+3. **Release creation** — confirm tag name and notes with User
+
+Never merge to main or create releases without the project owner's sign-off.
+
+### Release Process
+
+When a deployments branch is merged into `main`, create a GitHub Release tagged with the branch name (slashes → hyphens). Example: `deployments/phase2/wave-1` → tag & release `deployments-phase2-wave-1`.
+
+## Developer Tooling & Orchestration
 
 - **gh-cli** for GitHub operations
-- **GitHub Projects** — project/feature tracking
-- **GitHub Issues** — story/task/bug tracking
-- **GitHub Actions** — CI/CD pipelines
+- **GitHub Projects** — project/feature tracking and board management
+- **GitHub Issues** — story/task/bug tracking (created by Manager, assigned to team members)
+- **GitHub Actions** — CI/CD pipelines, automated tests, linting, deployment
+- These are the **core orchestration layer** — do not introduce alternative tools for these concerns
+- **Branching strategy:** Feature branches named `{FirstInitial}.{LastName}/{IIII}-{issue-name}` merged to deployments branch via PR
