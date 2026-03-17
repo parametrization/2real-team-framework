@@ -1,0 +1,16 @@
+# Example: library preset with custom team
+preset: library
+project_name: my-library
+team_size: 4
+git_email_prefix: myorg
+skills:
+  - retro
+  - wave-start
+  - wave-end
+members:
+  - name: Alice Chen
+    role: Tech Lead
+    level: Staff
+  - name: Bob García
+    role: Software Engineer
+    level: Senior

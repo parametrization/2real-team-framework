@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .bootstrap import bootstrap_project, generate_team
-from .models import TeamConfig
+from .models import TeamConfig, YamlConfig
 from .presets import get_preset, list_presets
 
 app = typer.Typer(name="2real-team", help="AI agent team framework for Claude Code projects")
@@ -34,14 +34,20 @@ def init(
     target_path = Path(target).resolve()
 
     if config:
-        import yaml
+        try:
+            yaml_cfg = YamlConfig.from_yaml(config)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1) from exc
 
-        with open(config) as f:
-            data = yaml.safe_load(f)
-        preset = data.get("preset", preset)
-        team_size = data.get("team_size", team_size)
-        project_name = data.get("project_name", project_name)
-        git_email_prefix = data.get("git_email_prefix", git_email_prefix)
+        preset = yaml_cfg.preset
+        team_size = yaml_cfg.team_size or team_size
+        project_name = yaml_cfg.project_name or project_name
+        git_email_prefix = yaml_cfg.git_email_prefix or git_email_prefix
+        if yaml_cfg.target != ".":
+            target_path = Path(yaml_cfg.target).resolve()
+        # Config mode is fully non-interactive
+        interactive = False
 
     if not preset and interactive:
         available = list_presets()
@@ -72,13 +78,38 @@ def init(
         )
 
     console.print(f"\n[bold]Generating team for [cyan]{project_name}[/cyan]...[/bold]")
+    # Determine skills list — config overrides preset defaults
+    skills = preset_config.skills
+    if config and yaml_cfg.skills is not None:
+        skills = yaml_cfg.skills
+
     members = generate_team(preset_config, team_size)
+
+    # Apply per-member overrides from YAML config
+    if config and yaml_cfg.members:
+        from .bootstrap import make_email
+
+        for i, override in enumerate(yaml_cfg.members):
+            if i >= len(members):
+                break
+            if override.name:
+                members[i].name = override.name
+                parts = override.name.split(" ", 1)
+                first = parts[0]
+                last = parts[1] if len(parts) > 1 else ""
+                members[i].email = make_email(first, last, git_email_prefix)
+            if override.role:
+                members[i].role = override.role
+            if override.level:
+                members[i].level = override.level
+            if override.personality:
+                members[i].personality = override.personality
 
     team_config = TeamConfig(
         project_name=project_name,
         preset=preset,
         team_members=members,
-        skills=preset_config.skills,
+        skills=skills,
         git_email_prefix=git_email_prefix,
     )
 

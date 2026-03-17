@@ -1,0 +1,4 @@
+# Example: fullstack monorepo with defaults
+preset: fullstack-monorepo
+project_name: my-app
+team_size: 6
