@@ -120,7 +120,7 @@ export function makeEmail(first: string, last: string, prefix: string = ""): str
   return `${clean(first)}.${clean(last)}@gmail.com`;
 }
 
-function loadPreset(name: string): Preset {
+export function loadPreset(name: string): Preset {
   const path = join(PRESETS_DIR, `${name}.json`);
   if (!existsSync(path)) {
     throw new Error(`Unknown preset: ${name}`);
@@ -384,6 +384,13 @@ export function replaceField(content: string, field: string, value: string): str
 
 export function safeName(name: string): string {
   return name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+}
+
+export function findRosterCards(rosterDir: string, name: string): string[] {
+  if (!existsSync(rosterDir)) return [];
+  const safe = safeName(name);
+  return readdirSync(rosterDir)
+    .filter((f) => f.endsWith(".md") && f.includes(safe) && !f.startsWith("_departed_"));
 }
 
 export function updateMember(opts: MemberOptions): void {
