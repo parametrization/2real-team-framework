@@ -7,9 +7,19 @@ from pathlib import Path
 
 from .models import PresetConfig
 
-# Built-in presets are shipped in the presets/ directory at the repo root.
-# At runtime we resolve relative to this file → ../../presets/
-_PRESETS_DIR = Path(__file__).resolve().parents[3] / "presets"
+_PKG_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_presets_dir() -> Path:
+    """Resolve the presets directory, checking bundled location first."""
+    bundled = _PKG_DIR / "_bundled" / "presets"
+    if bundled.is_dir():
+        return bundled
+    # Fallback: repo checkout layout  (src/real_team -> ../../.. -> repo root)
+    return _PKG_DIR.parents[2] / "presets"
+
+
+_PRESETS_DIR = _resolve_presets_dir()
 
 _BUILTIN_PRESETS: dict[str, PresetConfig] = {}
 

@@ -6,8 +6,24 @@ from pathlib import Path
 
 import chevron
 
-_TEMPLATES_DIR = Path(__file__).resolve().parents[3] / "templates"
-_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills"
+_PKG_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_dir(name: str) -> Path:
+    """Resolve a bundled data directory, falling back to repo-relative path.
+
+    When installed via pip, data is bundled under ``_bundled/``.
+    During development the repo-root relative path is used instead.
+    """
+    bundled = _PKG_DIR / "_bundled" / name
+    if bundled.is_dir():
+        return bundled
+    # Fallback: repo checkout layout  (src/real_team -> ../../.. -> repo root)
+    return _PKG_DIR.parents[2] / name
+
+
+_TEMPLATES_DIR = _resolve_dir("templates")
+_SKILLS_DIR = _resolve_dir("skills")
 
 
 def render_template(template_name: str, context: dict) -> str:
