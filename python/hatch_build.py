@@ -10,7 +10,6 @@ the correct source for each directory and adds it to the wheel under
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface

@@ -65,6 +65,7 @@ include = [
 ]
 
 [tool.hatch.build.targets.sdist.force-include]
+"../README.md" = "README.md"
 "../templates" = "templates"
 "../presets" = "presets"
 "../skills" = "skills"
