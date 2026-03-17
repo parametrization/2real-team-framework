@@ -1,5 +1,10 @@
 # 2real-team-framework
 
+[![CI](https://github.com/parametrization/2real-team-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/parametrization/2real-team-framework/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/2real-team-framework)](https://pypi.org/project/2real-team-framework/)
+[![npm](https://img.shields.io/npm/v/2real-team-framework)](https://www.npmjs.com/package/2real-team-framework)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A drop-in AI agent team framework for [Claude Code](https://claude.ai/code) projects. Bootstrap a simulated team of specialized agents with persistent identities, trust matrices, feedback loops, and structured workflows — all driven by Claude Code's agent tooling.
 
 ## What is this?
@@ -19,25 +24,37 @@ Each team member has a persistent name, personality, git identity, communication
 
 ```bash
 pip install 2real-team-framework
+
+# With AI persona generation support
+pip install '2real-team-framework[ai]'
 ```
 
 ### Node.js (npm)
 
 ```bash
 npm install -g 2real-team-framework
+
+# Or use without installing
+npx 2real-team-framework init --preset library
 ```
 
 ## Quick Start
 
 ```bash
-# Bootstrap a new project with interactive prompts
+# 1. Bootstrap a new project with interactive prompts
 2real-team init
 
-# Or specify everything up front
-2real-team init --preset fullstack-monorepo --team-size 10 --project-name my-app
+# 2. Review the generated team structure
+2real-team status
 
-# Use a preset for data-heavy projects
-2real-team init --preset data-pipeline --project-name my-etl
+# 3. Validate everything is in place
+2real-team validate
+```
+
+Or specify everything up front:
+
+```bash
+2real-team init --preset fullstack-monorepo --team-size 10 --project-name my-app
 ```
 
 This creates the following in your project:
@@ -81,21 +98,90 @@ This creates the following in your project:
 | `--preset <name>` | Project preset: `fullstack-monorepo`, `data-pipeline`, `library` |
 | `--team-size <n>` | Override the preset's default team size |
 | `--project-name <name>` | Project name (defaults to directory name) |
-| `--config <path>` | Path to a YAML config file |
+| `--config <path>` | Path to a YAML config file (see below) |
 | `--target <dir>` | Target directory (defaults to `.`) |
 | `--no-interactive` | Disable interactive prompts |
 | `--git-email-prefix <prefix>` | Email prefix (e.g., `myorg` produces `myorg+First.Last@gmail.com`) |
+| `--ai-personas` | Use Claude API to generate rich, diverse personas |
+| `--seed <n>` | Seed for reproducible AI persona generation |
+
+## Configuration File
+
+Instead of command-line flags, you can use a YAML config file for repeatable, automated bootstrapping:
+
+```yaml
+# config.yaml
+preset: library
+project_name: my-library
+team_size: 4
+git_email_prefix: myorg
+skills:
+  - retro
+  - wave-start
+  - wave-end
+members:
+  - name: Alice Chen
+    role: Tech Lead
+    level: Staff
+  - name: Bob Garcia
+    role: Software Engineer
+    level: Senior
+```
+
+```bash
+2real-team init --config config.yaml
+```
+
+Config file fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `preset` | string | **Required.** Preset name |
+| `project_name` | string | Project name |
+| `team_size` | integer | Team size override |
+| `git_email_prefix` | string | Email prefix |
+| `target` | string | Target directory |
+| `skills` | list | Override preset's default skills list |
+| `members` | list | Per-member overrides (name, role, level, personality) |
+
+See `examples/` for sample configs for each preset.
+
+## AI Persona Generation
+
+Generate culturally diverse, role-appropriate personas using Claude:
+
+```bash
+# Requires ANTHROPIC_API_KEY in environment
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Generate AI personas
+2real-team init --preset library --ai-personas
+
+# Reproducible results with a seed
+2real-team init --preset library --ai-personas --seed 42
+```
+
+Install the optional AI dependency:
+
+```bash
+# Python
+pip install '2real-team-framework[ai]'
+
+# Node
+npm install @anthropic-ai/sdk
+```
+
+If the API key is missing or the SDK isn't installed, the CLI falls back to the built-in name pool with a warning.
 
 ## Presets
 
-### `fullstack-monorepo` (default size: 10)
-Full-stack application with frontend, backend, and data pipeline. Includes Manager, System Architect, DevOps, Tech Lead, Engineers, QA, and Security.
+| Preset | Default Size | Required Roles | Description |
+|--------|-------------|----------------|-------------|
+| `fullstack-monorepo` | 10 | Manager, System Architect, DevOps Engineer, Tech Lead, Principal Engineer | Full-stack application with frontend, backend, and infrastructure |
+| `data-pipeline` | 12 | Manager, System Architect, DevOps Architect, DevOps Engineer, Tech Lead, Data Engineer | Data engineering with ETL, databases, and analytics |
+| `library` | 5 | Manager, Tech Lead, Principal Engineer | Lean team for open-source libraries or SDKs |
 
-### `data-pipeline` (default size: 12)
-Data engineering pipeline with ETL, graph/relational databases, and analytics. Adds DevOps Architect, Data Lead, Data Engineers, and Data Scientist roles.
-
-### `library` (default size: 5)
-Focused team for open-source libraries or SDKs. Lean structure: Manager, Tech Lead, Principal + Senior Engineer, QA.
+All presets include 6 skills: `retro`, `wave-start`, `wave-end`, `review-pr`, `plan-phase`, `close-stale-issues`.
 
 ## Skills
 
@@ -107,6 +193,26 @@ Skills are Claude Code slash commands installed in `.claude/skills/`. After boot
 - `/review-pr <number>` — Review a PR using the charter's structured format
 - `/plan-phase <number>` — Decompose a phase into issues with acceptance criteria
 - `/close-stale-issues` — Audit and close issues resolved by merged PRs
+
+## How it works with Claude Code
+
+1. **Bootstrap:** Run `2real-team init` in your project
+2. **Start a session:** Claude Code reads `.claude/team/charter.md` and roster files
+3. **Manager spawns team:** The Manager agent decomposes work and spawns specialists
+4. **Isolated work:** Each engineer works in a git worktree via `isolation: "worktree"`
+5. **Coordination:** Team members communicate via `SendMessage` tool
+6. **Quality gates:** Peer review, tech debt tracking, trust scoring
+7. **Feedback loops:** Retrospectives after each wave, firing underperformers
+
+## Dual CLI Architecture
+
+The framework provides identical CLIs in both Python and Node.js. They share the same:
+
+- **Templates** — Mustache templates in `templates/` (logic-less, works in both ecosystems)
+- **Presets** — JSON preset definitions in `presets/`
+- **Skills** — Skill templates in `skills/`
+
+Neither implementation depends on the other. Use whichever fits your toolchain.
 
 ## Case Study: isnad-graph
 
@@ -121,23 +227,9 @@ The framework was developed and battle-tested on [isnad-graph](https://github.co
 
 The patterns, templates, and presets in this framework are directly extracted from that project's operational experience.
 
-## How it works with Claude Code
-
-1. **Bootstrap:** Run `2real-team init` in your project
-2. **Start a session:** Claude Code reads `.claude/team/charter.md` and roster files
-3. **Manager spawns team:** The Manager agent decomposes work and spawns specialists
-4. **Isolated work:** Each engineer works in a git worktree via `isolation: "worktree"`
-5. **Coordination:** Team members communicate via `SendMessage` tool
-6. **Quality gates:** Peer review, tech debt tracking, trust scoring
-7. **Feedback loops:** Retrospectives after each wave, firing underperformers
-
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes (both Python and Node implementations should stay in sync)
-4. Run tests: `cd python && pytest` and `cd node && npm test`
-5. Submit a PR
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and PR guidelines.
 
 ## License
 
