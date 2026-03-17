@@ -500,6 +500,101 @@ class TestInitCommand:
         ])
         assert result.exit_code == 0
 
+
+    def test_init_with_config_yaml_member_overrides(self, tmp_path: Path):
+        import yaml
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.dump({
+            "preset": "library",
+            "project_name": "override-test",
+            "team_size": 3,
+            "members": [
+                {"name": "Alice Smith", "role": "Tech Lead", "level": "Staff"},
+                {"name": "Bob Jones"},
+            ],
+        }))
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init",
+            "--config", str(cfg),
+            "--target", str(target),
+            "--no-interactive",
+        ])
+        assert result.exit_code == 0
+        roster_dir = target / ".claude" / "team" / "roster"
+        cards = list(roster_dir.glob("*.md"))
+        assert len(cards) == 3
+        card_contents = [c.read_text() for c in cards]
+        alice_cards = [c for c in card_contents if "Alice Smith" in c]
+        assert len(alice_cards) == 1
+        assert "Tech Lead" in alice_cards[0]
+        assert "Staff" in alice_cards[0]
+        bob_cards = [c for c in card_contents if "Bob Jones" in c]
+        assert len(bob_cards) == 1
+
+    def test_init_with_config_yaml_skills_override(self, tmp_path: Path):
+        import yaml
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.dump({
+            "preset": "library",
+            "project_name": "skills-test",
+            "team_size": 2,
+            "skills": ["retro"],
+        }))
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init",
+            "--config", str(cfg),
+            "--target", str(target),
+            "--no-interactive",
+        ])
+        assert result.exit_code == 0
+        skills_dir = target / ".claude" / "skills"
+        skill_files = list(skills_dir.glob("*.md"))
+        skill_names = {s.stem for s in skill_files}
+        assert "retro" in skill_names
+
+    def test_init_with_config_yaml_target_override(self, tmp_path: Path):
+        import yaml
+
+        actual_target = tmp_path / "real_output"
+        actual_target.mkdir()
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.dump({
+            "preset": "library",
+            "project_name": "target-test",
+            "team_size": 2,
+            "target": str(actual_target),
+        }))
+        result = runner.invoke(app, [
+            "init",
+            "--config", str(cfg),
+            "--no-interactive",
+        ])
+        assert result.exit_code == 0
+        assert (actual_target / ".claude" / "team" / "charter.md").exists()
+
+    def test_init_with_config_disables_interactive(self, tmp_path: Path):
+        import yaml
+
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.dump({
+            "preset": "library",
+            "team_size": 2,
+        }))
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init",
+            "--config", str(cfg),
+            "--target", str(target),
+        ])
+        assert result.exit_code == 0
+
     def test_init_project_name_defaults_to_dirname(self, tmp_path: Path):
         result = runner.invoke(app, [
             "init",

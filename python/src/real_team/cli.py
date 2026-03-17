@@ -78,13 +78,38 @@ def init(
         )
 
     console.print(f"\n[bold]Generating team for [cyan]{project_name}[/cyan]...[/bold]")
+    # Determine skills list — config overrides preset defaults
+    skills = preset_config.skills
+    if config and yaml_cfg.skills is not None:
+        skills = yaml_cfg.skills
+
     members = generate_team(preset_config, team_size)
+
+    # Apply per-member overrides from YAML config
+    if config and yaml_cfg.members:
+        from .bootstrap import make_email
+
+        for i, override in enumerate(yaml_cfg.members):
+            if i >= len(members):
+                break
+            if override.name:
+                members[i].name = override.name
+                parts = override.name.split(" ", 1)
+                first = parts[0]
+                last = parts[1] if len(parts) > 1 else ""
+                members[i].email = make_email(first, last, git_email_prefix)
+            if override.role:
+                members[i].role = override.role
+            if override.level:
+                members[i].level = override.level
+            if override.personality:
+                members[i].personality = override.personality
 
     team_config = TeamConfig(
         project_name=project_name,
         preset=preset,
         team_members=members,
-        skills=preset_config.skills,
+        skills=skills,
         git_email_prefix=git_email_prefix,
     )
 
