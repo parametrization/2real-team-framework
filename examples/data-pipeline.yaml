@@ -1,0 +1,7 @@
+# Example: data pipeline with custom skills
+preset: data-pipeline
+project_name: etl-system
+team_size: 5
+skills:
+  - retro
+  - review-pr

@@ -29,6 +29,7 @@ import {
   replaceField,
   safeName,
   listPresets,
+  loadYamlConfig,
   bootstrap,
   addMember,
   removeMember,
@@ -878,6 +879,126 @@ describe("bootstrap edge cases", () => {
     writeFileSync(join(teamDir, "feedback_log.md"), "# Feedback\n");
     expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
     exitSpy.mockRestore();
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// YAML config file support
+// ---------------------------------------------------------------------------
+
+describe("loadYamlConfig", () => {
+  it("should load a valid YAML config", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-yaml-"));
+    const cfgPath = join(tmp, "config.yaml");
+    writeFileSync(cfgPath, "preset: library\nproject_name: test\nteam_size: 3\n");
+    const cfg = loadYamlConfig(cfgPath);
+    expect(cfg.preset).toBe("library");
+    expect(cfg.project_name).toBe("test");
+    expect(cfg.team_size).toBe(3);
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should throw for missing file", () => {
+    expect(() => loadYamlConfig("/nonexistent/path.yaml")).toThrow("Config file not found");
+  });
+
+  it("should throw for non-mapping YAML", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-listyaml-"));
+    const cfgPath = join(tmp, "list.yaml");
+    writeFileSync(cfgPath, "- item1\n- item2\n");
+    expect(() => loadYamlConfig(cfgPath)).toThrow("YAML mapping");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should throw for missing preset", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-nopreset-yaml-"));
+    const cfgPath = join(tmp, "nopreset.yaml");
+    writeFileSync(cfgPath, "project_name: test\n");
+    expect(() => loadYamlConfig(cfgPath)).toThrow("preset: Field required");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should throw for invalid team_size type", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-badsize-"));
+    const cfgPath = join(tmp, "badsize.yaml");
+    writeFileSync(cfgPath, "preset: library\nteam_size: not_a_number\n");
+    expect(() => loadYamlConfig(cfgPath)).toThrow("valid integer");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should parse members and skills arrays", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-arrays-"));
+    const cfgPath = join(tmp, "arrays.yaml");
+    writeFileSync(cfgPath, "preset: library\nskills:\n  - retro\n  - wave-start\nmembers:\n  - name: Alice Smith\n    role: Tech Lead\n");
+    const cfg = loadYamlConfig(cfgPath);
+    expect(cfg.skills).toEqual(["retro", "wave-start"]);
+    expect(cfg.members).toHaveLength(1);
+    expect(cfg.members![0].name).toBe("Alice Smith");
+    expect(cfg.members![0].role).toBe("Tech Lead");
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+describe("bootstrap with YAML config", () => {
+  it("should bootstrap from config file", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-cfgboot-"));
+    const cfgPath = join(tmp, "config.yaml");
+    writeFileSync(cfgPath, "preset: library\nproject_name: cfg-test\nteam_size: 3\n");
+    const target = join(tmp, "output");
+    mkdirSync(target);
+    await bootstrap({
+      config: cfgPath,
+      target,
+      interactive: false,
+    });
+    expect(existsSync(join(target, ".claude", "team", "charter.md"))).toBe(true);
+    const cards = readdirSync(join(target, ".claude", "team", "roster")).filter(f => f.endsWith(".md"));
+    expect(cards.length).toBe(3);
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should apply member overrides from config", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-cfgoverride-"));
+    const cfgPath = join(tmp, "config.yaml");
+    writeFileSync(cfgPath, "preset: library\nproject_name: override-test\nteam_size: 3\nmembers:\n  - name: Alice Smith\n    role: Tech Lead\n    level: Staff\n  - name: Bob Jones\n");
+    const target = join(tmp, "output");
+    mkdirSync(target);
+    await bootstrap({
+      config: cfgPath,
+      target,
+      interactive: false,
+    });
+    const rosterDir = join(target, ".claude", "team", "roster");
+    const cards = readdirSync(rosterDir).filter(f => f.endsWith(".md"));
+    expect(cards.length).toBe(3);
+    const aliceCard = cards.find(f => f.includes("alice_smith"));
+    expect(aliceCard).toBeDefined();
+    const aliceContent = readFileSync(join(rosterDir, aliceCard!), "utf-8");
+    expect(aliceContent).toContain("Alice Smith");
+    expect(aliceContent).toContain("Tech Lead");
+    expect(aliceContent).toContain("Staff");
+    const bobCard = cards.find(f => f.includes("bob_jones"));
+    expect(bobCard).toBeDefined();
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should apply skills override from config", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-cfgskills-"));
+    const cfgPath = join(tmp, "config.yaml");
+    writeFileSync(cfgPath, "preset: library\nproject_name: skills-test\nteam_size: 2\nskills:\n  - retro\n");
+    const target = join(tmp, "output");
+    mkdirSync(target);
+    await bootstrap({
+      config: cfgPath,
+      target,
+      interactive: false,
+    });
+    const skillsDir = join(target, ".claude", "skills");
+    const skills = readdirSync(skillsDir).filter(f => f.endsWith(".md"));
+    const skillNames = skills.map(f => f.replace(".md", ""));
+    expect(skillNames).toContain("retro");
+    expect(skills.length).toBe(1);
     rmSync(tmp, { recursive: true });
   });
 });

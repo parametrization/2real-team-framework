@@ -5,7 +5,10 @@
 import { readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import Mustache from "mustache";
+
+const _require = createRequire(import.meta.url);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,6 +36,8 @@ interface BootstrapOptions {
   projectName?: string;
   target: string;
   interactive: boolean;
+  aiPersonas?: boolean;
+  seed?: number;
 }
 
 interface PresetRole {
@@ -120,7 +125,7 @@ export function makeEmail(first: string, last: string, prefix: string = ""): str
   return `${clean(first)}.${clean(last)}@gmail.com`;
 }
 
-function loadPreset(name: string): Preset {
+export function loadPreset(name: string): Preset {
   const path = join(PRESETS_DIR, `${name}.json`);
   if (!existsSync(path)) {
     throw new Error(`Unknown preset: ${name}`);
@@ -151,9 +156,79 @@ function renderSkill(name: string, context: Record<string, unknown>): string {
   return Mustache.render(template, context);
 }
 
+// ---------------------------------------------------------------------------
+// YAML config file support
+// ---------------------------------------------------------------------------
+
+interface MemberOverride {
+  name?: string;
+  role?: string;
+  level?: string;
+  personality?: string;
+}
+
+interface YamlConfig {
+  preset: string;
+  project_name?: string;
+  team_size?: number;
+  git_email_prefix?: string;
+  target?: string;
+  skills?: string[];
+  members?: MemberOverride[];
+}
+
+export function loadYamlConfig(configPath: string): YamlConfig {
+  const absPath = resolve(configPath);
+  if (!existsSync(absPath)) {
+    throw new Error(`Config file not found: ${configPath}`);
+  }
+  const content = readFileSync(absPath, "utf-8");
+  const yaml = _require("yaml") as { parse: (s: string) => unknown };
+  let raw: unknown;
+  try {
+    raw = yaml.parse(content);
+  } catch (err) {
+    throw new Error(`Invalid YAML in config file (${configPath}): ${err}`);
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Config file must be a YAML mapping, got ${typeof raw}`);
+  }
+  const cfg = raw as Record<string, unknown>;
+  if (!cfg.preset || typeof cfg.preset !== "string" || !cfg.preset.trim()) {
+    throw new Error(`Invalid config file (${configPath}):\n  preset: Field required`);
+  }
+  if (cfg.team_size !== undefined && typeof cfg.team_size !== "number") {
+    throw new Error(`Invalid config file (${configPath}):\n  team_size: Input should be a valid integer`);
+  }
+  return cfg as unknown as YamlConfig;
+}
+
 export async function bootstrap(opts: BootstrapOptions): Promise<void> {
-  const target = resolve(opts.target);
+  let target = resolve(opts.target);
   let presetName = opts.preset;
+  let configSkills: string[] | undefined;
+  let memberOverrides: MemberOverride[] | undefined;
+  let emailPrefix = "";
+
+  // Load YAML config if provided
+  if (opts.config) {
+    let yamlCfg: YamlConfig;
+    try {
+      yamlCfg = loadYamlConfig(opts.config);
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+    presetName = yamlCfg.preset;
+    if (yamlCfg.project_name) opts.projectName = yamlCfg.project_name;
+    if (yamlCfg.team_size) opts.teamSize = yamlCfg.team_size;
+    if (yamlCfg.git_email_prefix) emailPrefix = yamlCfg.git_email_prefix;
+    if (yamlCfg.target && yamlCfg.target !== ".") target = resolve(yamlCfg.target);
+    if (yamlCfg.skills) configSkills = yamlCfg.skills;
+    if (yamlCfg.members) memberOverrides = yamlCfg.members;
+    // Config mode is fully non-interactive
+    opts.interactive = false;
+  }
 
   if (!presetName) {
     if (opts.interactive) {
@@ -217,6 +292,50 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
     }
   }
 
+  // Apply per-member overrides from YAML config
+  if (memberOverrides) {
+    for (let i = 0; i < memberOverrides.length && i < members.length; i++) {
+      const override = memberOverrides[i];
+      if (override.name) {
+        members[i].name = override.name;
+        members[i].agent_name = toAgentName(override.name);
+        const parts = override.name.split(" ");
+        members[i].email = makeEmail(parts[0], parts.slice(1).join(" "), emailPrefix);
+      }
+      if (override.role) members[i].role = override.role;
+      if (override.level) members[i].level = override.level;
+      if (override.personality) members[i].personality = override.personality;
+    }
+  }
+
+  // Apply AI-generated personas if requested
+  if (opts.aiPersonas) {
+    const { generatePersonas } = await import("./personas.js");
+    const roleSpecs = members.map((m) => ({ role: m.role, level: m.level }));
+    const personas = await generatePersonas(
+      { name: preset.name, description: preset.description ?? preset.name },
+      roleSpecs,
+      members.length,
+      opts.seed,
+    );
+    if (personas.length > 0) {
+      for (let i = 0; i < personas.length && i < members.length; i++) {
+        members[i].name = personas[i].name;
+        members[i].agent_name = toAgentName(personas[i].name);
+        const nameParts = personas[i].name.split(" ");
+        members[i].email = makeEmail(nameParts[0], nameParts.slice(1).join(" "));
+        members[i].personality = personas[i].personality;
+      }
+      console.log("AI personas generated successfully");
+    } else {
+      console.log("Using local name pool (AI generation unavailable)");
+    }
+  }
+
+  // Use config skills override if provided, otherwise preset defaults
+  const skillsList = configSkills ?? preset.skills;
+
+
   const context = { project_name: projectName, team_members: members };
 
   // Create directories
@@ -259,7 +378,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   created.push(".claude/CLAUDE.md");
 
   // Skills
-  for (const skill of preset.skills) {
+  for (const skill of skillsList) {
     const rendered = renderSkill(`${skill}.md.mustache`, context);
     if (rendered) {
       writeFileSync(join(skillsDir, `${skill}.md`), rendered);
@@ -384,6 +503,13 @@ export function replaceField(content: string, field: string, value: string): str
 
 export function safeName(name: string): string {
   return name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+}
+
+export function findRosterCards(rosterDir: string, name: string): string[] {
+  if (!existsSync(rosterDir)) return [];
+  const safe = safeName(name);
+  return readdirSync(rosterDir)
+    .filter((f) => f.endsWith(".md") && f.includes(safe) && !f.startsWith("_departed_"));
 }
 
 export function updateMember(opts: MemberOptions): void {
