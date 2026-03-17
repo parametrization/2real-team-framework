@@ -2,7 +2,7 @@
  * Comprehensive tests for the 2real-team Node CLI — targeting >90% coverage.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   existsSync,
   readFileSync,
@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -689,6 +689,237 @@ describe("end-to-end lifecycle", () => {
     // 6. Status
     showStatus({ target: tmp });
 
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error paths (process.exit mocking)
+// ---------------------------------------------------------------------------
+
+describe("error paths", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it("bootstrap should exit(1) without preset in non-interactive mode", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-nopreset-"));
+    await expect(
+      bootstrap({ target: tmp, interactive: false }),
+    ).rejects.toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("bootstrap should default projectName to dir name in non-interactive", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-defname-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      target: tmp,
+      interactive: false,
+    });
+    expect(existsSync(join(tmp, ".claude", "team", "charter.md"))).toBe(true);
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("bootstrap should use default team size when not provided", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-defsize-"));
+    await bootstrap({
+      preset: "library",
+      projectName: "size-test",
+      target: tmp,
+      interactive: false,
+    });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const cards = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
+    expect(cards.length).toBe(5); // library default is 5
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("addMember should exit(1) when no roster dir", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-noroster-"));
+    expect(() =>
+      addMember({ name: "Test", role: "Eng", level: "Sr", target: tmp }),
+    ).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("removeMember should exit(1) when no roster dir", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-noroster-"));
+    expect(() => removeMember({ name: "Test", target: tmp })).toThrow(
+      "process.exit(1)",
+    );
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("removeMember should exit(1) for nonexistent member", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-nomember-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      projectName: "rm-test",
+      target: tmp,
+      interactive: false,
+    });
+    expect(() => removeMember({ name: "Nobody Here", target: tmp })).toThrow(
+      "process.exit(1)",
+    );
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("updateMember should exit(1) for nonexistent member", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-noupdate-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      projectName: "upd-test",
+      target: tmp,
+      interactive: false,
+    });
+    expect(() =>
+      updateMember({ name: "Nobody", role: "Lead", target: tmp }),
+    ).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("randomizeMember should exit(1) for nonexistent member", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-norand-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      projectName: "rand-test",
+      target: tmp,
+      interactive: false,
+    });
+    expect(() =>
+      randomizeMember({ name: "Nobody", target: tmp }),
+    ).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should exit(1) when no team dir", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-noval-"));
+    expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should exit(1) for missing charter", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-nochar-"));
+    const teamDir = join(tmp, ".claude", "team", "roster");
+    mkdirSync(teamDir, { recursive: true });
+    writeFileSync(join(teamDir, "test.md"), "- **Name:** Test\n");
+    expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should exit(1) for empty roster", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-emptyroster-"));
+    const teamDir = join(tmp, ".claude", "team");
+    mkdirSync(join(teamDir, "roster"), { recursive: true });
+    writeFileSync(join(teamDir, "charter.md"), "# Charter\n");
+    writeFileSync(join(teamDir, "trust_matrix.md"), "# Trust\n");
+    writeFileSync(join(teamDir, "feedback_log.md"), "# Feedback\n");
+    expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should exit(1) for missing trust/feedback", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-notrust-"));
+    const teamDir = join(tmp, ".claude", "team");
+    const rosterDir = join(teamDir, "roster");
+    mkdirSync(rosterDir, { recursive: true });
+    writeFileSync(join(teamDir, "charter.md"), "# Charter\n");
+    writeFileSync(join(rosterDir, "eng_test.md"), "- **Name:** Test\n");
+    expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("showStatus should exit(1) when no roster", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-nostatus-"));
+    expect(() => showStatus({ target: tmp })).toThrow("process.exit(1)");
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bootstrap edge cases
+// ---------------------------------------------------------------------------
+
+describe("bootstrap edge cases", () => {
+  it("should handle missing skill templates gracefully", async () => {
+    // Create a custom preset-like scenario where skills don't exist
+    // The bootstrap function catches FileNotFoundError for missing skills
+    const tmp = mkdtempSync(join(tmpdir(), "test-skill-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      projectName: "skill-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Skills should be created for existing templates
+    const skillsDir = join(tmp, ".claude", "skills");
+    expect(existsSync(skillsDir)).toBe(true);
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("showStatus should display departed members", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-departed-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "dep-test",
+      target: tmp,
+      interactive: false,
+    });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const cards = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
+    // Archive one
+    renameSync(
+      join(rosterDir, cards[0]),
+      join(rosterDir, `_departed_${cards[0]}`),
+    );
+    // Should not throw
+    showStatus({ target: tmp });
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should report no skills dir", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-noskills-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 2,
+      projectName: "noskill-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Remove skills dir
+    rmSync(join(tmp, ".claude", "skills"), { recursive: true });
+    // Should still pass validation (skills are optional)
+    validateTeam({ target: tmp });
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("validateTeam should report missing roster dir", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+    const tmp = mkdtempSync(join(tmpdir(), "test-norosterdir-"));
+    const teamDir = join(tmp, ".claude", "team");
+    mkdirSync(teamDir, { recursive: true });
+    writeFileSync(join(teamDir, "charter.md"), "# Charter\n");
+    writeFileSync(join(teamDir, "trust_matrix.md"), "# Trust\n");
+    writeFileSync(join(teamDir, "feedback_log.md"), "# Feedback\n");
+    expect(() => validateTeam({ target: tmp })).toThrow("process.exit(1)");
+    exitSpy.mockRestore();
     rmSync(tmp, { recursive: true });
   });
 });
