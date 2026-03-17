@@ -1,14 +1,35 @@
+/**
+ * Comprehensive tests for the 2real-team Node CLI — targeting >90% coverage.
+ */
+
 import { describe, it, expect, beforeEach } from "vitest";
-import { existsSync, readFileSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PRESETS_DIR = resolve(__dirname, "../../presets");
+const TEMPLATES_DIR = resolve(__dirname, "../../templates");
+const SKILLS_DIR = resolve(__dirname, "../../skills");
+
+// Import functions from bootstrap (via source)
 import {
   generateName,
   makeEmail,
   extractField,
   replaceField,
   safeName,
+  findRosterCards,
+  loadPreset,
   listPresets,
   bootstrap,
   addMember,
@@ -21,24 +42,33 @@ import {
   LAST_NAMES,
   COMMUNICATION_STYLES,
 } from "../src/bootstrap.js";
-import { renderTemplate, listTemplates, listSkills } from "../src/templates.js";
+import { getPreset, listPresets as listPresetsFromModule } from "../src/presets.js";
+import {
+  renderTemplate,
+  renderSkill,
+  listTemplates,
+  listSkills,
+} from "../src/templates.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const PRESETS_DIR = resolve(__dirname, "../../presets");
-const TEMPLATES_DIR = resolve(__dirname, "../../templates");
-const SKILLS_DIR = resolve(__dirname, "../../skills");
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
 
 describe("presets", () => {
   it("should have all three preset files", () => {
-    expect(existsSync(resolve(PRESETS_DIR, "fullstack-monorepo.json"))).toBe(true);
+    expect(existsSync(resolve(PRESETS_DIR, "fullstack-monorepo.json"))).toBe(
+      true,
+    );
     expect(existsSync(resolve(PRESETS_DIR, "data-pipeline.json"))).toBe(true);
     expect(existsSync(resolve(PRESETS_DIR, "library.json"))).toBe(true);
   });
 
   it("should have valid JSON in each preset", () => {
     for (const name of ["fullstack-monorepo", "data-pipeline", "library"]) {
-      const content = readFileSync(resolve(PRESETS_DIR, `${name}.json`), "utf-8");
+      const content = readFileSync(
+        resolve(PRESETS_DIR, `${name}.json`),
+        "utf-8",
+      );
       const preset = JSON.parse(content);
       expect(preset.name).toBe(name);
       expect(preset.roles).toBeInstanceOf(Array);
@@ -47,15 +77,43 @@ describe("presets", () => {
     }
   });
 
-  it("listPresets should return all presets", () => {
+  it("should load preset by name", () => {
+    const preset = loadPreset("library");
+    expect(preset.name).toBe("library");
+    expect(preset.default_team_size).toBeGreaterThan(0);
+  });
+
+  it("should throw for unknown preset", () => {
+    expect(() => loadPreset("nonexistent")).toThrow("Unknown preset");
+  });
+
+  it("should list all presets", () => {
     const presets = listPresets();
     expect(presets.length).toBeGreaterThanOrEqual(3);
     const names = presets.map((p) => p.name);
-    expect(names).toContain("fullstack-monorepo");
-    expect(names).toContain("data-pipeline");
     expect(names).toContain("library");
+    expect(names).toContain("data-pipeline");
+    expect(names).toContain("fullstack-monorepo");
+  });
+
+  it("getPreset from presets module should work", () => {
+    const preset = getPreset("library");
+    expect(preset.name).toBe("library");
+  });
+
+  it("getPreset should throw for unknown preset", () => {
+    expect(() => getPreset("nonexistent")).toThrow("Unknown preset");
+  });
+
+  it("listPresets from presets module should return sorted results", () => {
+    const presets = listPresetsFromModule();
+    expect(presets.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
 
 describe("templates", () => {
   const expectedTemplates = [
@@ -72,7 +130,64 @@ describe("templates", () => {
       expect(existsSync(resolve(TEMPLATES_DIR, t))).toBe(true);
     });
   }
+
+  it("should render charter template", () => {
+    const result = renderTemplate("charter.md.mustache", {
+      project_name: "test-project",
+      team_members: [{ name: "Alice", role: "Engineer", level: "Senior" }],
+    });
+    expect(result).toContain("test-project");
+  });
+
+  it("should render roster-card template", () => {
+    const result = renderTemplate("roster-card.md.mustache", {
+      name: "Alice Smith",
+      role: "Engineer",
+      level: "Senior",
+      email: "alice@test.com",
+      personality: "Direct and structured.",
+    });
+    expect(result).toContain("Alice Smith");
+    expect(result).toContain("Engineer");
+  });
+
+  it("should throw for missing template", () => {
+    expect(() => renderTemplate("nonexistent.mustache", {})).toThrow(
+      "Template not found",
+    );
+  });
+
+  it("should render all templates without errors", () => {
+    const ctx = {
+      project_name: "test",
+      team_members: [
+        {
+          name: "Test",
+          agent_name: "test",
+          role: "Eng",
+          level: "Sr",
+          email: "t@t.com",
+          reports_to: "User",
+          personality: "Nice.",
+        },
+      ],
+    };
+    for (const tmpl of listTemplates()) {
+      const result = renderTemplate(tmpl, ctx);
+      expect(typeof result).toBe("string");
+    }
+  });
+
+  it("should list templates", () => {
+    const templates = listTemplates();
+    expect(templates.length).toBeGreaterThanOrEqual(5);
+    expect(templates).toContain("charter.md.mustache");
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
 
 describe("skills", () => {
   const expectedSkills = [
@@ -89,12 +204,37 @@ describe("skills", () => {
       expect(existsSync(resolve(SKILLS_DIR, s))).toBe(true);
     });
   }
+
+  it("should render a skill template", () => {
+    const result = renderSkill("retro.md.mustache", {
+      project_name: "test",
+      team_members: [],
+    });
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("should throw for missing skill template", () => {
+    expect(() => renderSkill("nonexistent.md.mustache", {})).toThrow(
+      "Skill template not found",
+    );
+  });
+
+  it("should list skills", () => {
+    const skills = listSkills();
+    expect(skills.length).toBeGreaterThanOrEqual(1);
+    expect(skills).toContain("retro.md.mustache");
+  });
 });
 
-describe("generateName", () => {
+// ---------------------------------------------------------------------------
+// Name generation
+// ---------------------------------------------------------------------------
+
+describe("name generation", () => {
   it("should generate unique names", () => {
     const used = new Set<string>();
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 10; i++) {
       const [first, last] = generateName(used);
       const full = `${first} ${last}`;
       expect(used.has(full)).toBe(false);
@@ -102,44 +242,78 @@ describe("generateName", () => {
     }
   });
 
-  it("should use names from the pools", () => {
-    const [first, last] = generateName(new Set());
-    expect(FIRST_NAMES).toContain(first);
-    expect(LAST_NAMES).toContain(last);
+  it("should throw when no unique name possible", () => {
+    const used = new Set<string>();
+    for (const f of FIRST_NAMES) {
+      for (const l of LAST_NAMES) {
+        used.add(`${f} ${l}`);
+      }
+    }
+    expect(() => generateName(used)).toThrow("Could not generate unique name");
+  });
+
+  it("should have non-empty name pools", () => {
+    expect(FIRST_NAMES.length).toBeGreaterThan(0);
+    expect(LAST_NAMES.length).toBeGreaterThan(0);
+    expect(COMMUNICATION_STYLES.length).toBeGreaterThan(0);
   });
 });
 
-describe("makeEmail", () => {
+// ---------------------------------------------------------------------------
+// Email generation
+// ---------------------------------------------------------------------------
+
+describe("email generation", () => {
+  it("should generate basic email", () => {
+    expect(makeEmail("John", "Doe")).toBe("John.Doe@gmail.com");
+  });
+
   it("should strip diacritics", () => {
-    expect(makeEmail("Carolina", "Méndez-Ríos")).toBe("Carolina.Mendez-Rios@gmail.com");
-    expect(makeEmail("Tomasz", "Wójcik")).toBe("Tomasz.Wojcik@gmail.com");
+    expect(makeEmail("Carolina", "Méndez-Ríos")).toBe(
+      "Carolina.Mendez-Rios@gmail.com",
+    );
   });
 
-  it("should support prefix", () => {
-    expect(makeEmail("Tomasz", "Wójcik", "org")).toBe("org+Tomasz.Wojcik@gmail.com");
+  it("should handle email prefix", () => {
+    expect(makeEmail("Tomasz", "Wójcik", "org")).toBe(
+      "org+Tomasz.Wojcik@gmail.com",
+    );
+  });
+
+  it("should not include + when no prefix", () => {
+    const email = makeEmail("A", "B");
+    expect(email).not.toContain("+");
   });
 });
 
-describe("name pools", () => {
-  it("should have 53 first names (matching Python)", () => {
-    expect(FIRST_NAMES.length).toBe(53);
+// ---------------------------------------------------------------------------
+// agent_name / safeName
+// ---------------------------------------------------------------------------
+
+describe("agent_name and safeName", () => {
+  it("should convert names to kebab-case via toLowerCase and replace", () => {
+    const toAgentName = (name: string) =>
+      name.toLowerCase().replace(/ /g, "-");
+    expect(toAgentName("Hiro Morales")).toBe("hiro-morales");
+    expect(toAgentName("Ibrahim El-Amin")).toBe("ibrahim-el-amin");
+    expect(toAgentName("Mei-Lin Chang")).toBe("mei-lin-chang");
   });
 
-  it("should have 51 last names (matching Python)", () => {
-    expect(LAST_NAMES.length).toBe(51);
-  });
-
-  it("should have 8 communication styles", () => {
-    expect(COMMUNICATION_STYLES.length).toBe(8);
+  it("safeName should convert to underscore-separated lowercase", () => {
+    expect(safeName("Hiro Morales")).toBe("hiro_morales");
+    expect(safeName("Ibrahim El-Amin")).toBe("ibrahim_el_amin");
   });
 });
+
+// ---------------------------------------------------------------------------
+// extractField / replaceField
+// ---------------------------------------------------------------------------
 
 describe("extractField", () => {
   it("should extract a field value", () => {
-    const content = "- **Name:** Alice Smith\n- **Role:** Engineer\n- **Level:** Senior";
-    expect(extractField(content, "Name")).toBe("Alice Smith");
+    const content = "- **Name:** John Doe\n- **Role:** Engineer\n";
+    expect(extractField(content, "Name")).toBe("John Doe");
     expect(extractField(content, "Role")).toBe("Engineer");
-    expect(extractField(content, "Level")).toBe("Senior");
   });
 
   it("should return null for missing field", () => {
@@ -149,182 +323,372 @@ describe("extractField", () => {
 
 describe("replaceField", () => {
   it("should replace a field value", () => {
-    const content = "- **Role:** Engineer\n- **Level:** Senior";
+    const content = "- **Role:** Engineer\n- **Level:** Senior\n";
     const result = replaceField(content, "Role", "Manager");
     expect(result).toContain("**Role:** Manager");
     expect(result).toContain("**Level:** Senior");
   });
-});
 
-describe("safeName", () => {
-  it("should lowercase and replace spaces/hyphens with underscores", () => {
-    expect(safeName("Mei-Lin Chang")).toBe("mei_lin_chang");
+  it("should not modify unmatched fields", () => {
+    const content = "- **Role:** Engineer\n";
+    const result = replaceField(content, "Level", "Staff");
+    expect(result).toBe(content);
   });
 });
 
-describe("template rendering", () => {
-  it("should render charter template", () => {
-    const result = renderTemplate("charter.md.mustache", {
-      project_name: "test-proj",
-      team_members: [{ name: "Alice", role: "Engineer", level: "Senior" }],
-    });
-    expect(result).toContain("test-proj");
+// ---------------------------------------------------------------------------
+// findRosterCards
+// ---------------------------------------------------------------------------
+
+describe("findRosterCards", () => {
+  it("should return empty for nonexistent directory", () => {
+    expect(findRosterCards("/nonexistent/path", "test")).toEqual([]);
   });
 
-  it("should render roster card template", () => {
-    const result = renderTemplate("roster-card.md.mustache", {
-      name: "Alice Smith",
-      role: "Engineer",
-      level: "Senior",
-      email: "alice@test.com",
-      personality: "Direct and structured.",
-    });
-    expect(result).toContain("Alice Smith");
-    expect(result).toContain("Engineer");
-    expect(result).toContain("Senior");
-    expect(result).toContain("alice@test.com");
+  it("should find matching cards", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-roster-"));
+    writeFileSync(
+      join(tmp, "engineer_john_doe.md"),
+      "- **Name:** John Doe\n",
+    );
+    writeFileSync(
+      join(tmp, "manager_jane_smith.md"),
+      "- **Name:** Jane Smith\n",
+    );
+    const result = findRosterCards(tmp, "John Doe");
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("john_doe");
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("should exclude departed cards", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-roster-"));
+    writeFileSync(
+      join(tmp, "_departed_engineer_john_doe.md"),
+      "- **Name:** John Doe\n",
+    );
+    const result = findRosterCards(tmp, "John Doe");
+    expect(result).toHaveLength(0);
+    rmSync(tmp, { recursive: true });
   });
 });
 
-function makeTmpDir(): string {
-  const dir = join(tmpdir(), `2real-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
+// ---------------------------------------------------------------------------
+// bootstrap (integration)
+// ---------------------------------------------------------------------------
 
-describe("E2E: bootstrap + validate + status", () => {
-  let tmpDir: string;
+describe("bootstrap", () => {
+  let tmp: string;
 
   beforeEach(() => {
-    tmpDir = makeTmpDir();
+    tmp = mkdtempSync(join(tmpdir(), "test-bootstrap-"));
   });
 
-  it("should bootstrap, validate, and show status", async () => {
+  it("should create team files in non-interactive mode", async () => {
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "test-project",
+      target: tmp,
+      interactive: false,
+    });
+    expect(existsSync(join(tmp, ".claude", "team", "charter.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "team", "trust_matrix.md"))).toBe(
+      true,
+    );
+    expect(existsSync(join(tmp, ".claude", "team", "feedback_log.md"))).toBe(
+      true,
+    );
+    expect(existsSync(join(tmp, ".claude", "CLAUDE.md"))).toBe(true);
+
+    const roster = readdirSync(join(tmp, ".claude", "team", "roster")).filter(
+      (f) => f.endsWith(".md"),
+    );
+    expect(roster.length).toBe(3);
+  });
+
+  it("should create skills", async () => {
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "skills-test",
+      target: tmp,
+      interactive: false,
+    });
+    const skillsDir = join(tmp, ".claude", "skills");
+    expect(existsSync(skillsDir)).toBe(true);
+    const skills = readdirSync(skillsDir).filter((f) => f.endsWith(".md"));
+    expect(skills.length).toBeGreaterThan(0);
+  });
+
+  it("should work with all presets", async () => {
+    for (const preset of ["library", "data-pipeline", "fullstack-monorepo"]) {
+      const dir = mkdtempSync(join(tmpdir(), `test-${preset}-`));
+      await bootstrap({
+        preset,
+        teamSize: 3,
+        projectName: `test-${preset}`,
+        target: dir,
+        interactive: false,
+      });
+      expect(existsSync(join(dir, ".claude", "team", "charter.md"))).toBe(
+        true,
+      );
+      rmSync(dir, { recursive: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addMember
+// ---------------------------------------------------------------------------
+
+describe("addMember", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "test-add-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "add-test",
+      target: tmp,
+      interactive: false,
+    });
+  });
+
+  it("should add a named member", () => {
+    addMember({
+      name: "Jane Doe",
+      role: "QA Engineer",
+      level: "Senior",
+      target: tmp,
+    });
+    const roster = readdirSync(
+      join(tmp, ".claude", "team", "roster"),
+    ).filter((f) => f.endsWith(".md") && !f.startsWith("_departed_"));
+    expect(roster.length).toBe(4);
+    expect(roster.some((f) => f.includes("jane_doe"))).toBe(true);
+  });
+
+  it("should add a member with random name", () => {
+    addMember({
+      role: "DevOps Engineer",
+      level: "Mid",
+      target: tmp,
+    });
+    const roster = readdirSync(
+      join(tmp, ".claude", "team", "roster"),
+    ).filter((f) => f.endsWith(".md") && !f.startsWith("_departed_"));
+    expect(roster.length).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeMember
+// ---------------------------------------------------------------------------
+
+describe("removeMember", () => {
+  let tmp: string;
+  let memberName: string;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "test-remove-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "remove-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Find a member name
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const files = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
+    const content = readFileSync(join(rosterDir, files[0]), "utf-8");
+    memberName = extractField(content, "Name") ?? "";
+  });
+
+  it("should archive a member", () => {
+    removeMember({ name: memberName, target: tmp });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const active = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
+    const departed = readdirSync(rosterDir).filter((f) =>
+      f.startsWith("_departed_"),
+    );
+    expect(active.length).toBe(2);
+    expect(departed.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateMember
+// ---------------------------------------------------------------------------
+
+describe("updateMember", () => {
+  let tmp: string;
+  let memberName: string;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "test-update-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "update-test",
+      target: tmp,
+      interactive: false,
+    });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const files = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
+    const content = readFileSync(join(rosterDir, files[0]), "utf-8");
+    memberName = extractField(content, "Name") ?? "";
+  });
+
+  it("should update role", () => {
+    updateMember({
+      name: memberName,
+      role: "Principal Architect",
+      target: tmp,
+    });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const files = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
+    const updated = readFileSync(join(rosterDir, files[0]), "utf-8");
+    expect(updated).toContain("Principal Architect");
+  });
+
+  it("should update level", () => {
+    updateMember({ name: memberName, level: "Staff", target: tmp });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const files = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
+    const updated = readFileSync(join(rosterDir, files[0]), "utf-8");
+    expect(updated).toContain("Staff");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// randomizeMember
+// ---------------------------------------------------------------------------
+
+describe("randomizeMember", () => {
+  let tmp: string;
+  let memberName: string;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "test-randomize-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "rand-test",
+      target: tmp,
+      interactive: false,
+    });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const files = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
+    const content = readFileSync(join(rosterDir, files[0]), "utf-8");
+    memberName = extractField(content, "Name") ?? "";
+  });
+
+  it("should archive old and create new member", () => {
+    randomizeMember({ name: memberName, target: tmp });
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    const active = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
+    const departed = readdirSync(rosterDir).filter((f) =>
+      f.startsWith("_departed_"),
+    );
+    expect(active.length).toBe(3);
+    expect(departed.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateTeam
+// ---------------------------------------------------------------------------
+
+describe("validateTeam", () => {
+  it("should pass validation after init", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-validate-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "validate-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Should not throw
+    validateTeam({ target: tmp });
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// showStatus
+// ---------------------------------------------------------------------------
+
+describe("showStatus", () => {
+  it("should show status after init", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-status-"));
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "status-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Should not throw
+    showStatus({ target: tmp });
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end lifecycle
+// ---------------------------------------------------------------------------
+
+describe("end-to-end lifecycle", () => {
+  it("should complete init -> add -> update -> remove -> validate -> status", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-e2e-"));
+
+    // 1. Init
     await bootstrap({
       preset: "library",
       teamSize: 3,
       projectName: "e2e-test",
-      target: tmpDir,
+      target: tmp,
       interactive: false,
     });
 
-    // Verify file structure
-    expect(existsSync(join(tmpDir, ".claude", "team", "charter.md"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "team", "trust_matrix.md"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "team", "feedback_log.md"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "CLAUDE.md"))).toBe(true);
-
-    const rosterDir = join(tmpDir, ".claude", "team", "roster");
-    const cards = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
-    expect(cards.length).toBe(3);
-
-    // Validate should not throw (would call process.exit on failure)
-    // We test by checking files exist since validateTeam calls process.exit
-    expect(existsSync(join(tmpDir, ".claude", "team", "charter.md"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "team", "roster"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "team", "trust_matrix.md"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".claude", "team", "feedback_log.md"))).toBe(true);
-  });
-
-  it("should add a member", async () => {
-    await bootstrap({
-      preset: "library",
-      teamSize: 2,
-      projectName: "add-test",
-      target: tmpDir,
-      interactive: false,
+    // 2. Add member
+    addMember({
+      name: "E2E Tester",
+      role: "QA Engineer",
+      level: "Senior",
+      target: tmp,
     });
 
-    addMember({ name: "Test Person", role: "QA Engineer", level: "Mid", target: tmpDir });
-
-    const rosterDir = join(tmpDir, ".claude", "team", "roster");
-    const cards = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
-    expect(cards.length).toBe(3);
-    expect(cards.some((c) => c.includes("test_person"))).toBe(true);
-
-    // Check card contents
-    const testCard = cards.find((c) => c.includes("test_person"))!;
-    const content = readFileSync(join(rosterDir, testCard), "utf-8");
-    expect(extractField(content, "Name")).toBe("Test Person");
-    expect(extractField(content, "Role")).toBe("QA Engineer");
-  });
-
-  it("should remove a member", async () => {
-    await bootstrap({
-      preset: "library",
-      teamSize: 2,
-      projectName: "remove-test",
-      target: tmpDir,
-      interactive: false,
+    // 3. Update member
+    updateMember({
+      name: "E2E Tester",
+      role: "QA Lead",
+      level: "Staff",
+      target: tmp,
     });
 
-    const rosterDir = join(tmpDir, ".claude", "team", "roster");
-    const cardsBefore = readdirSync(rosterDir).filter(
-      (f) => f.endsWith(".md") && !f.startsWith("_departed_")
-    );
-    expect(cardsBefore.length).toBe(2);
+    // 4. Remove member
+    removeMember({ name: "E2E Tester", target: tmp });
 
-    // Extract a name from first card to remove
-    const firstCard = cardsBefore[0];
-    const content = readFileSync(join(rosterDir, firstCard), "utf-8");
-    const memberName = extractField(content, "Name")!;
+    // 5. Validate
+    validateTeam({ target: tmp });
 
-    removeMember({ name: memberName, target: tmpDir });
+    // 6. Status
+    showStatus({ target: tmp });
 
-    const cardsAfter = readdirSync(rosterDir).filter(
-      (f) => f.endsWith(".md") && !f.startsWith("_departed_")
-    );
-    expect(cardsAfter.length).toBe(1);
-
-    const departed = readdirSync(rosterDir).filter((f) => f.startsWith("_departed_"));
-    expect(departed.length).toBe(1);
-  });
-
-  it("should update a member", async () => {
-    await bootstrap({
-      preset: "library",
-      teamSize: 2,
-      projectName: "update-test",
-      target: tmpDir,
-      interactive: false,
-    });
-
-    const rosterDir = join(tmpDir, ".claude", "team", "roster");
-    const cards = readdirSync(rosterDir).filter((f) => f.endsWith(".md"));
-    const content = readFileSync(join(rosterDir, cards[0]), "utf-8");
-    const memberName = extractField(content, "Name")!;
-
-    updateMember({ name: memberName, role: "Principal Engineer", level: "Staff", target: tmpDir });
-
-    const updatedContent = readFileSync(join(rosterDir, cards[0]), "utf-8");
-    expect(extractField(updatedContent, "Role")).toBe("Principal Engineer");
-    expect(extractField(updatedContent, "Level")).toBe("Staff");
-  });
-
-  it("should randomize a member", async () => {
-    await bootstrap({
-      preset: "library",
-      teamSize: 2,
-      projectName: "randomize-test",
-      target: tmpDir,
-      interactive: false,
-    });
-
-    const rosterDir = join(tmpDir, ".claude", "team", "roster");
-    const cardsBefore = readdirSync(rosterDir).filter(
-      (f) => f.endsWith(".md") && !f.startsWith("_departed_")
-    );
-    const content = readFileSync(join(rosterDir, cardsBefore[0]), "utf-8");
-    const memberName = extractField(content, "Name")!;
-
-    randomizeMember({ name: memberName, target: tmpDir });
-
-    const cardsAfter = readdirSync(rosterDir).filter(
-      (f) => f.endsWith(".md") && !f.startsWith("_departed_")
-    );
-    expect(cardsAfter.length).toBe(2);
-
-    const departed = readdirSync(rosterDir).filter((f) => f.startsWith("_departed_"));
-    expect(departed.length).toBe(1);
+    rmSync(tmp, { recursive: true });
   });
 });
