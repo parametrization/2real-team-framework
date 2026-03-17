@@ -65,33 +65,44 @@ function toAgentName(name: string): string {
   return name.toLowerCase().replace(/ /g, "-");
 }
 
-const FIRST_NAMES = [
-  "Aisha", "Amara", "Andrei", "Carolina", "Chen", "Dmitri",
-  "Elena", "Fatima", "Hiro", "Ibrahim", "Jada", "Kai", "Kwame",
-  "Lena", "Mei-Lin", "Nadia", "Omar", "Priya", "Ravi", "Renaud",
-  "Sakura", "Sunita", "Tariq", "Tomasz", "Yara", "Zara",
+// Name pools — match Python pools exactly
+export const FIRST_NAMES = [
+  "Aisha", "Amara", "Andrei", "Björk", "Carolina", "Chen", "Dmitri",
+  "Elena", "Fatima", "Hiro", "Ibrahim", "Jada", "Kai", "Kwame", "Lena",
+  "Mei-Lin", "Nadia", "Omar", "Priya", "Ravi", "Renaud", "Sakura",
+  "Sunita", "Tariq", "Tomasz", "Yara", "Zara", "Alejandro", "Beatriz",
+  "Ciro", "Dalia", "Elio", "Femi", "Greta", "Hugo", "Ingrid", "Jun",
+  "Kofi", "Lila", "Marco", "Nia", "Oscar", "Paloma", "Qasim", "Rosa",
+  "Sven", "Tara", "Umar", "Vera", "Wei", "Xena", "Yuki", "Zuri",
 ];
 
-const LAST_NAMES = [
+export const LAST_NAMES = [
   "Asante", "Al-Rashidi", "Bianchi", "Chang", "Diallo", "Eriksson",
-  "García", "Hadid", "Inoue", "Jensen", "Krishnamurthy",
-  "López", "Nakamura", "Okonkwo", "Petrova", "Qureshi",
-  "Rossi", "Singh", "Tanaka", "Volkov", "Wójcik", "Zhang",
+  "Fernández", "García", "Hadid", "Inoue", "Jensen", "Krishnamurthy",
+  "López", "Méndez-Ríos", "Nakamura", "Okonkwo", "Petrova", "Qureshi",
+  "Rossi", "Singh", "Tanaka", "Ueda", "Volkov", "Wójcik", "Xu",
+  "Yamamoto", "Zhang", "Abubakar", "Bjornsson", "Costa", "Devi",
+  "El-Amin", "Fischer", "Gupta", "Hassan", "Ito", "Johansson", "Kim",
+  "Li", "Morales", "Nair", "Osei", "Park", "Rahman", "Sato",
+  "Tremblay", "Uchida", "Vargas", "Wang", "Yamada", "Zhao",
 ];
 
-const STYLES = [
+export const COMMUNICATION_STYLES = [
   "Direct and structured. Prefers bullet points and numbered lists over prose.",
   "Deliberate and thorough. Reads the entire thread before responding.",
   "Enthusiastic and collaborative. Brings energy to discussions.",
   "Analytical and precise. Favors data-driven decisions.",
   "Pragmatic and concise. Focuses on what needs to get done.",
+  "Thoughtful and empathetic. Considers team dynamics in every decision.",
+  "Crisp and action-oriented. Every message ends with a clear next step.",
+  "Measured and diplomatic. Navigates disagreements with tact.",
 ];
 
 function randomChoice<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function generateName(used: Set<string>): [string, string] {
+export function generateName(used: Set<string>): [string, string] {
   for (let i = 0; i < 100; i++) {
     const first = randomChoice(FIRST_NAMES);
     const last = randomChoice(LAST_NAMES);
@@ -101,8 +112,11 @@ function generateName(used: Set<string>): [string, string] {
   throw new Error("Could not generate unique name");
 }
 
-function makeEmail(first: string, last: string): string {
+export function makeEmail(first: string, last: string, prefix: string = ""): string {
   const clean = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (prefix) {
+    return `${prefix}+${clean(first)}.${clean(last)}@gmail.com`;
+  }
   return `${clean(first)}.${clean(last)}@gmail.com`;
 }
 
@@ -112,6 +126,13 @@ function loadPreset(name: string): Preset {
     throw new Error(`Unknown preset: ${name}`);
   }
   return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+export function listPresets(): Preset[] {
+  if (!existsSync(PRESETS_DIR)) return [];
+  return readdirSync(PRESETS_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => JSON.parse(readFileSync(join(PRESETS_DIR, f), "utf-8")) as Preset);
 }
 
 function renderTemplate(name: string, context: Record<string, unknown>): string {
@@ -173,7 +194,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
         level: role.level,
         email: makeEmail(first, last),
         reports_to: "",
-        personality: randomChoice(STYLES),
+        personality: randomChoice(COMMUNICATION_STYLES),
       });
     }
   }
@@ -191,7 +212,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
         level: role.level,
         email: makeEmail(first, last),
         reports_to: "",
-        personality: randomChoice(STYLES),
+        personality: randomChoice(COMMUNICATION_STYLES),
       });
     }
   }
@@ -339,7 +360,7 @@ export function removeMember(opts: MemberOptions): void {
   }
 }
 
-function extractField(content: string, field: string): string | null {
+export function extractField(content: string, field: string): string | null {
   for (const line of content.split("\n")) {
     if (line.includes(`**${field}:**`)) {
       return line.split(`**${field}:**`)[1]?.trim() ?? null;
@@ -348,7 +369,7 @@ function extractField(content: string, field: string): string | null {
   return null;
 }
 
-function replaceField(content: string, field: string, value: string): string {
+export function replaceField(content: string, field: string, value: string): string {
   return content
     .split("\n")
     .map((line) => {
@@ -359,6 +380,10 @@ function replaceField(content: string, field: string, value: string): string {
       return line;
     })
     .join("\n");
+}
+
+export function safeName(name: string): string {
+  return name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
 }
 
 export function updateMember(opts: MemberOptions): void {
@@ -422,7 +447,7 @@ export function randomizeMember(opts: { name: string; target: string }): void {
     role,
     level,
     email,
-    personality: randomChoice(STYLES),
+    personality: randomChoice(COMMUNICATION_STYLES),
   };
 
   const card = renderTemplate("roster-card.md.mustache", context);
