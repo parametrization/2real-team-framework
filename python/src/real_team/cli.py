@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .bootstrap import bootstrap_project, generate_team
+from .bootstrap import bootstrap_project, generate_team, make_email
 from .models import TeamConfig, YamlConfig
 from .presets import get_preset, list_presets
 
@@ -29,6 +29,8 @@ def init(
     git_email_prefix: str = typer.Option(
         "", help="Email prefix (e.g., 'myorg' -> myorg+First.Last@gmail.com)"
     ),
+    ai_personas: bool = typer.Option(False, help="Use Claude API to generate rich personas"),
+    seed: int = typer.Option(None, help="Seed for reproducible AI persona generation"),
 ) -> None:
     """Bootstrap a new project with the team framework."""
     target_path = Path(target).resolve()
@@ -87,8 +89,6 @@ def init(
 
     # Apply per-member overrides from YAML config
     if config and yaml_cfg.members:
-        from .bootstrap import make_email
-
         for i, override in enumerate(yaml_cfg.members):
             if i >= len(members):
                 break
@@ -104,6 +104,26 @@ def init(
                 members[i].level = override.level
             if override.personality:
                 members[i].personality = override.personality
+
+    # Apply AI-generated personas if requested
+    if ai_personas:
+        from .personas import generate_personas
+
+        roles = [{"role": m.role, "level": m.level} for m in members]
+        personas = generate_personas(preset_config, roles, len(members), seed)
+        if personas:
+            for i, persona in enumerate(personas):
+                if i >= len(members):
+                    break
+                members[i].name = persona["name"]
+                parts = persona["name"].split(" ", 1)
+                first = parts[0]
+                last = parts[1] if len(parts) > 1 else ""
+                members[i].email = make_email(first, last, git_email_prefix)
+                members[i].personality = persona["personality"]
+            console.print("[dim]AI personas generated successfully[/dim]")
+        else:
+            console.print("[dim]Using local name pool (AI generation unavailable)[/dim]")
 
     team_config = TeamConfig(
         project_name=project_name,

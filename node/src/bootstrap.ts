@@ -36,6 +36,8 @@ interface BootstrapOptions {
   projectName?: string;
   target: string;
   interactive: boolean;
+  aiPersonas?: boolean;
+  seed?: number;
 }
 
 interface PresetRole {
@@ -306,8 +308,33 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
     }
   }
 
+  // Apply AI-generated personas if requested
+  if (opts.aiPersonas) {
+    const { generatePersonas } = await import("./personas.js");
+    const roleSpecs = members.map((m) => ({ role: m.role, level: m.level }));
+    const personas = await generatePersonas(
+      { name: preset.name, description: preset.description ?? preset.name },
+      roleSpecs,
+      members.length,
+      opts.seed,
+    );
+    if (personas.length > 0) {
+      for (let i = 0; i < personas.length && i < members.length; i++) {
+        members[i].name = personas[i].name;
+        members[i].agent_name = toAgentName(personas[i].name);
+        const nameParts = personas[i].name.split(" ");
+        members[i].email = makeEmail(nameParts[0], nameParts.slice(1).join(" "));
+        members[i].personality = personas[i].personality;
+      }
+      console.log("AI personas generated successfully");
+    } else {
+      console.log("Using local name pool (AI generation unavailable)");
+    }
+  }
+
   // Use config skills override if provided, otherwise preset defaults
   const skillsList = configSkills ?? preset.skills;
+
 
   const context = { project_name: projectName, team_members: members };
 
