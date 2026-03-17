@@ -1,45 +1,50 @@
-# CLAUDE.md — 2real-team-framework
+# CLAUDE.md
 
-## Project Overview
-CLI tool for bootstrapping AI agent team frameworks in Claude Code projects. Dual Python (typer) + Node (commander) with shared Mustache templates.
+## Team Workflow
 
-## Tech Stack
-- **Python 3.10+** with typer, chevron, rich, pydantic
-- **Node 18+** with commander, mustache, inquirer, chalk
-- **Templates**: Mustache (shared between both CLIs)
-- **CI**: GitHub Actions (Python 3.10-3.13 + Node 18/20/22 matrix)
-- **Publishing**: PyPI + npm on GitHub Release
+**All work MUST be executed through the simulated team structure.** No work begins without spawning the team.
 
-## Build & Dev Commands
-```bash
-# Python
-cd python && pip install -e ".[dev]"
-pytest tests/
-ruff check src/ tests/
-mypy src/
+- **Charter & rules:** `.claude/team/charter.md`
+- **Active roster:** `.claude/team/roster/` (one file per team member)
+- **Feedback log:** `.claude/team/feedback_log.md`
 
-# Node
-cd node && npm install
-npm test
-npm run lint
-npm run build
-```
+### Team Composition
 
-## Architecture
-- `templates/` — Shared Mustache templates (both CLIs read these)
-- `presets/` — JSON preset definitions (team shapes)
-- `skills/` — Skill template files
-- `python/src/real_team/` — Python CLI implementation
-- `node/src/` — Node CLI implementation
+| Role | Level | Name |
+|------|-------|------|
+| Manager | Senior VP | Hiro Morales |
+| Tech Lead | Staff | Nia Rossi |
+| Software Engineer | Principal | Paloma Gupta |
+| Software Engineer | Senior | Ibrahim El-Amin |
+| QA Engineer | Senior | Tariq Morales |
 
-## Code Conventions
-- Python: ruff for linting/formatting, mypy strict, pydantic models
-- Node: TypeScript strict, eslint, vitest
-- Templates: Mustache (logic-less, works in both ecosystems)
-- All changes need tests in BOTH Python and Node
+### Key Rules
 
-## Key Design Decisions
-- Mustache over Jinja2/Handlebars: only template engine native to both Python and Node
-- Separate CLIs over wrapper: neither ecosystem depends on the other
-- Presets as JSON: easily extensible, readable, no code required
-- Apache 2.0: permissive but with patent protection
+- **Commit identity:** Each team member commits using per-commit `-c` flags with two `Co-Authored-By` trailers (team member + Claude) — **never** set global/repo git config. See `.claude/team/charter.md` § Commit Identity for details.
+- **Worktrees** are the preferred isolation method for all code-writing agents.
+- Manager spawns team members, creates stories/AC, and owns timelines.
+- Feedback flows up and down; severe feedback triggers fire-and-replace.
+- If the Manager receives significant negative feedback from the user, the Manager is replaced.
+- Team evolves toward steady state of minimal negative feedback.
+
+### User Approval Gates
+
+The following require **explicit User approval** before proceeding:
+1. **Wave kickoff** — present the plan, wait for go-ahead
+2. **Merge to main** — present PR summary, wait for approval
+3. **Release creation** — confirm tag name and notes with User
+
+Never merge to main or create releases without the project owner's sign-off.
+
+### Release Process
+
+When a deployments branch is merged into `main`, create a GitHub Release tagged with the branch name (slashes → hyphens). Example: `deployments/phase2/wave-1` → tag & release `deployments-phase2-wave-1`.
+
+## Developer Tooling & Orchestration
+
+- **gh-cli** for GitHub operations
+- **GitHub Projects** — project/feature tracking and board management
+- **GitHub Issues** — story/task/bug tracking (created by Manager, assigned to team members)
+- **GitHub Actions** — CI/CD pipelines, automated tests, linting, deployment
+- These are the **core orchestration layer** — do not introduce alternative tools for these concerns
+- **Branching strategy:** Feature branches named `{FirstInitial}.{LastName}/{IIII}-{issue-name}` merged to deployments branch via PR

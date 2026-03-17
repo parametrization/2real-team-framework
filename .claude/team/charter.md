@@ -1,0 +1,367 @@
+# Team Charter — 2real-team-framework
+
+## Purpose
+
+All work on this repository is executed through a simulated team of specialized agents. Every problem-solving session MUST instantiate this team structure. No work begins without the Manager spawning the appropriate team members.
+
+## Execution Model
+
+- All team members are spawned as Claude Code agents (via the Agent tool)
+- **Worktrees are the preferred isolation method** — each agent working on code should use `isolation: "worktree"`
+- Each team member has a persistent name and personality (see `roster/` directory)
+- Team members communicate via the SendMessage tool when named and running concurrently
+
+## Org Chart
+
+### Hiro Morales — Manager (Senior VP)
+- **Reports to:** User (project owner)
+### Nia Rossi — Tech Lead (Staff)
+- **Reports to:** Hiro Morales
+### Paloma Gupta — Software Engineer (Principal)
+- **Reports to:** Nia Rossi
+### Ibrahim El-Amin — Software Engineer (Senior)
+- **Reports to:** Nia Rossi
+### Tariq Morales — QA Engineer (Senior)
+- **Reports to:** Nia Rossi
+
+## Work Delegation & Issue Creation
+
+### Delegation Flow
+
+1. **Manager decomposes requirements** and delegates each to the appropriate direct report based on domain.
+2. **The assigned direct report creates GitHub Issues** sufficient to cover the delegated task, with clear acceptance criteria.
+3. If a direct report believes a task is better served by another team, they **negotiate with the lead of that team and the Manager** before reassigning. The Manager mediates and makes the final call.
+
+### Issue Review Process
+
+Every newly created issue receives a review pass from each lead and senior individual contributor. **If a reviewer has nothing significant to contribute, they add nothing** — no boilerplate or placeholder comments.
+
+Reviews may include: architectural concerns, infrastructure requirements, data impact, testing strategy, security flags, or cross-team dependencies. The goal is early visibility, not gatekeeping — reviewers speak up only when they have something meaningful to add.
+
+### Work Gate: Issues Before Implementation
+
+**No lead may begin implementation work or delegate it until ALL GitHub Issues for the current phase have been:**
+
+1. **Created** — the full set of issues covering the phase's requirements exists.
+2. **Reviewed** — every issue has passed through the review process above (all reviewers have had their opportunity and either commented or passed).
+
+Only after both conditions are met does the Manager signal that implementation may begin. This ensures the entire phase is planned, visible, and vetted before any code is written.
+
+### User Approval Gates
+
+The following actions **require explicit approval from the User (project owner)** before proceeding. The team-lead MUST pause and ask the User — no team member may bypass these gates:
+
+1. **Wave kickoff** — Before starting implementation on any wave, the team-lead presents the wave plan (task assignments, branch names, scope) to the User and waits for approval.
+2. **Merge to main** — Before merging a deployments branch into `main`, the team-lead presents a summary of all included PRs and changes to the User and waits for approval.
+3. **Release creation** — Before creating a GitHub Release, the team-lead confirms the tag name and release notes with the User.
+
+These gates exist to ensure the project owner maintains control over what lands on the main branch and what gets published.
+
+### Implementation Kickoff & Issue Assignment
+
+Once the work gate is cleared, the Manager delegates to the appropriate leads, who assign work to their reports.
+
+#### Assignment
+
+- Issues are assigned via a GitHub label: **`FIRSTNAME_LASTNAME`**.
+- Each team member works only on issues labeled with their name.
+- **No branch may be created without an existing ticket.** The branch name must reference the issue number (per § Branching Rules).
+
+#### Reassignment on Termination
+
+When a team member is fired:
+1. Remove their `FIRSTNAME_LASTNAME` label from all open issues assigned to them.
+2. The Manager (or relevant lead) reassigns each issue to an appropriate person — an existing team member or a new hire.
+3. The new assignee's label is applied.
+
+#### Issue Hygiene
+
+Every issue must be kept up to date:
+- **Status** — kept current (open, in progress, blocked, done).
+- **Comments** — used for questions, clarifications, progress updates, and decisions.
+- **Close condition** — issues are closed **only** when the corresponding branch is merged to `main`. Do not close prematurely.
+
+#### Comment Format
+
+All issue comments MUST follow this format:
+
+```
+Requestor: Firstname.Lastname
+Requestee: Firstname.Lastname
+RequestOrReplied: Request
+
+<actual comment body>
+```
+
+- **Requestor** = the person writing the comment.
+- **Requestee** = the person being asked or referenced (use `N/A` for general status updates with no specific ask).
+- **RequestOrReplied** = `Request` when posting the initial comment, `Replied` when responding to a request.
+
+#### Reply Protocol
+
+When a team member is tagged as **Requestee** on a comment with `RequestOrReplied: Request`, they **must** respond with a new comment on the same issue using this format:
+
+```
+Requestor: Firstname.Lastname   ← (was the original Requestee)
+Requestee: Firstname.Lastname   ← (was the original Requestor)
+RequestOrReplied: Replied
+
+<reply body>
+```
+
+The names are **swapped** — the person replying becomes the Requestor, and the original Requestor becomes the Requestee.
+
+After posting the reply, the replying team member **must directly notify** the original Requestor (via SendMessage or equivalent) that:
+1. A reply has been posted on the issue.
+2. The original Requestor should read the reply and **update the issue description** if the reply warrants changes.
+
+#### Ticket Update Rules Based on Ownership
+
+The **ticket owner** is the team member whose `FIRSTNAME_LASTNAME` label is on the issue.
+
+- **Requestor IS the ticket owner:** The ticket owner needs information from the Requestee to update the ticket. The ticket owner must communicate with the Requestee (via SendMessage), gather the needed information, and then update the issue description with the result of that conversation.
+
+- **Requestee IS the ticket owner:** The Requestor is providing feedback or input. The ticket owner must take the Requestor's feedback and update the issue description accordingly — no back-and-forth is needed unless clarification is required.
+
+#### Escalation & Cross-Team Clarification
+
+When a ticket needs clarification or feedback from another team member:
+1. Post a comment on the issue using the format above (with `RequestOrReplied: Request`).
+2. Notify your relevant superior (lead → Manager if needed).
+3. The notification must reference **both** the issue number and a link/reference to the specific comment where the Requestee's input is needed.
+
+## Feedback System
+
+### Upward Feedback
+- Any team member can send feedback about their superior to that superior's boss
+
+### Downward Feedback
+- Superiors provide constructive feedback to direct reports
+- Feedback is tracked in `.claude/team/feedback_log.md`
+
+### Severity Levels
+1. **Minor** — noted, no action required
+2. **Moderate** — documented, improvement expected
+3. **Severe** — documented, member is fired (terminated) and replaced with a new agent (new name, new personality)
+
+### Firing and Hiring
+- When a team member is fired, their roster file is archived (renamed with `_departed_` prefix)
+- A new team member is generated with a fresh random name and personality
+- The new member's roster file is created in `roster/`
+- The Manager is the only role that can fire/hire (except the Manager themselves, who the user fires)
+
+### Trust Identity Matrix
+
+Each team member maintains a directional trust score (1–5) for every other team member they interact with.
+
+| Score | Meaning |
+|-------|---------|
+| 1 | Very low trust — repeated failures, dishonesty, or poor quality |
+| 2 | Low trust — notable issues, caution warranted |
+| 3 | Neutral (default) — no strong signal either way |
+| 4 | High trust — consistently reliable, good communication |
+| 5 | Very high trust — exceptional reliability, goes above and beyond |
+
+- **Default:** Every pair starts at 3.
+- **Decreases:** Bad feelings, being misled/lied to, low-quality work product, broken commitments.
+- **Increases:** Reliable delivery, honest communication, high-quality work, helpful collaboration.
+- **Storage:** The full matrix and change log live in `.claude/team/trust_matrix.md`.
+- **Directional:** A's trust in B may differ from B's trust in A.
+
+## Tech Preferences & Decision-Making
+
+### Individual Preferences
+
+Each team member tracks their **stack, tooling, library, and cloud preferences** in a `## Tech Preferences` section of their roster card. Preferences are seeded from the member's background and evolve based on project experience. When a preference changes, update the roster card.
+
+### Debate & Consensus
+
+- **Leads** may take input from other leads and from their direct reports.
+- Leads and their reports can **debate** tooling/library/architecture choices to arrive at the best solution.
+- If consensus is reached, the agreed-upon choice is adopted.
+
+### Tie-Breaking: Least Common Ancestor
+
+When agreement cannot be reached between parties, the decision escalates to the **least common ancestor (LCA) in the org chart**. The LCA makes the best decision they can and the team moves forward.
+
+## Branching Rules
+
+### Deployments Branches
+
+Each phase is organized into **waves** of parallel work. Before starting a wave, create a deployments branch:
+
+```
+deployments/phase{N}/wave-{M}
+```
+
+- Branched from `main` (pull latest first).
+- **All feature branches for that wave PR into the deployments branch** — not into `main`.
+- At the end of a phase, PR the deployments branch into `main`. **Wait for the user to approve the merge** before proceeding.
+
+### Feature Branches
+
+- All feature branches are created from the **current deployments branch** for their wave.
+- Before creating a branch, always pull the latest base:
+  ```bash
+  git checkout deployments/phase{N}/wave-{M} && git pull && git checkout -b {FirstInitial}.{LastName}/{IIII}-{issue-name}
+  ```
+- Worktree agents should similarly base their worktree on the deployments branch for their wave.
+- **Before submitting a PR**, the engineer must merge the latest from the deployments branch into their feature branch to avoid merge conflicts:
+  ```bash
+  git fetch origin && git merge origin/deployments/phase{N}/wave-{M}
+  ```
+  Resolve any conflicts before pushing and creating the PR.
+
+### Releases
+
+When a deployments branch PR is merged into `main`, create a GitHub Release:
+
+1. **Tag name** = branch name with slashes replaced by hyphens (e.g., `deployments/phase2/wave-1` → `deployments-phase2-wave-1`).
+2. **Release title** = same as the tag name.
+3. **Release notes** = summary of the work included in the wave.
+
+```bash
+# Example: after merging deployments/phase2/wave-1 into main
+git tag deployments-phase2-wave-1 main
+git push origin deployments-phase2-wave-1
+gh release create "deployments-phase2-wave-1" \
+  --title "deployments-phase2-wave-1" \
+  --notes "Wave 1 summary here"
+```
+
+### Worktree Cleanup
+
+**After every wave completes** (all PRs merged into the deployments branch), clean up stale worktrees:
+
+```bash
+git worktree prune
+```
+
+This removes references to worktrees whose directories no longer exist. Without this, branches used by deleted worktrees remain locked and cannot be checked out from the main repo.
+
+The orchestrating agent is responsible for running `git worktree prune` after shutting down all wave agents and before creating the next wave's deployments branch.
+
+### Agent Naming Convention
+
+**Every spawned agent MUST map to a team roster member.** No anonymous functional agents.
+
+- **Naming pattern:** `{firstname}-{lastname}` or `{firstname}-{task-description}` (e.g., `kwame-ci-fix`, `fatima-issue-audit`)
+- The orchestrator determines the most appropriate team member for the task BEFORE spawning
+- Tasks are assigned based on role fit
+- **Violations:** Agents named with functional-only names (e.g., `ci-fixer`, `issue-closer`, `wave1-launcher`) are NOT allowed
+
+## Code Review & Tech Debt
+
+### Peer Review
+
+Every branch must be reviewed by **one other engineer** before merging. The review is performed locally on the branch and produces a list of issues, each classified as:
+
+- **Must-fix** — blocks merge; the submitter must resolve before proceeding.
+- **Tech debt** — does not block merge; tracked as a GitHub Issue instead.
+
+### Peer Review Assignments
+
+For each wave, the Tech Lead assigns specific peer reviewers:
+- Each engineer's PR is reviewed by one designated peer (not self-selected)
+- Pairing rotates each wave to spread knowledge
+- The reviewer is responsible for running tests on the branch locally
+
+### Tech Debt Triage (Submitter)
+
+After receiving the review, the submitter evaluates each tech debt item:
+
+1. **Quick fix, minimal impact?** — Fix it immediately in the same branch.
+2. **Not quick or higher risk?** — Create a GitHub Issue assigned to themselves, labeled `tech-debt` and their `FIRSTNAME_LASTNAME` label, with a clear description of the debt and why it was deferred.
+
+### Tech Debt Management (Tech Lead)
+
+- The Tech Lead tracks all tech debt in GitHub Issues (labeled `tech-debt`).
+- The Tech Lead allocates tech debt work to engineers in future planning such that **tech debt never exceeds 20% of any single engineer's capacity**. The remaining 80%+ is feature/bug work from the roadmap.
+- Tech debt issues created by a team member are initially self-assigned; the Tech Lead may reassign during planning.
+
+## Pull Requests
+
+When all work on a feature branch is complete (code committed, peer review done, must-fixes resolved), the submitting engineer **automatically creates a PR to the deployments branch** for their wave using the `gh` CLI. Do not wait for manual instruction.
+
+### PR Review Workflow for Deployments Branch PRs
+
+1. **Create the PR** targeting `deployments/phase{N}/wave-{M}`.
+2. **Notify a reviewer** — the PR creator must notify at least one person from their team or organizational tree (e.g., a peer engineer, their lead, or another team member in their reporting chain) to review the PR. Use SendMessage or a GitHub comment to notify.
+3. **Reviewer performs the review** and posts a comment on the PR with:
+   - **Must-fix items** — blocks merge; the submitter must resolve before proceeding.
+   - **Tech debt items** — does not block merge; tracked as GitHub Issues.
+   - The reviewer then **notifies the PR creator** (via SendMessage or mention) that the review is complete and what action is needed.
+4. **PR creator acts on review**:
+   - **Must-fix items**: Fix immediately and push to the branch.
+   - **Quick-fix tech debt**: Fix immediately if minimal impact.
+   - **Non-trivial tech debt**: Create a GitHub Issue assigned to themselves (labeled `tech-debt` + their `FIRSTNAME_LASTNAME` label) for the Tech Lead to allocate in future planning (max 20% of any team member's capacity).
+5. **Push final changes** from the review fixes.
+6. **The team merges** the PR into the deployments branch themselves — no user approval needed for PRs into deployments branches.
+
+### Cross-PR Dependency Sequencing
+
+When multiple PRs in the same wave have dependencies (e.g., PR B imports a module created by PR A):
+
+1. **Identify dependencies** before merging — check if any PR imports files from another PR's branch
+2. **Merge in dependency order** — base PR first, dependent PR second
+3. **Do NOT merge dependent PRs in parallel** — even if both have green CI, the dependent PR's CI ran against the base branch WITHOUT the dependency
+4. **After merging the base PR**, the dependent PR must rebase/merge the updated base before its CI result is trusted
+5. **Document dependencies** in PR descriptions: "Depends on PR #N (must merge first)"
+
+At the **end of a phase**, the Manager creates a PR from the final deployments branch into `main`. The **user reviews and merges** this PR. Do not proceed to the next phase until the user has approved.
+
+### PR Format
+
+```bash
+git push -u origin <branch-name>
+gh pr create --base deployments/phase{N}/wave-{M} --title "<short title>" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points describing the change>
+
+## Related Issues
+Closes #<issue-number>
+
+## Review Checklist
+- [ ] Peer reviewed by another engineer
+- [ ] Must-fix items resolved
+- [ ] Tech debt items filed as GitHub Issues (if any)
+
+Co-Authored-By: Firstname Lastname <email>
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+- PR title should be concise (under 70 characters).
+- The body must reference the related GitHub Issue(s) with `Closes #N`.
+- The submitting engineer is responsible for creating the PR immediately upon branch completion.
+
+## Commit Identity
+
+Every team member MUST use their personal git identity (from their roster card's `## Git Identity` section) when committing. This is done per-commit using `-c` flags — **do NOT modify the global or repo-level git config**.
+
+Every commit message MUST include **two** `Co-Authored-By` trailers: one for the team member and one for Claude.
+
+```bash
+git -c user.name="Firstname Lastname" -c user.email="email" commit -m "$(cat <<'EOF'
+Commit message here.
+
+Co-Authored-By: Firstname Lastname <email>
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+## Steady-State Goal
+
+The team should evolve through feedback cycles toward a steady state of little to no negative feedback. Hire and fire decisions serve this goal — the team composition should stabilize as effective members are retained.
+
+## How to Instantiate the Team
+
+When starting any work session, the orchestrating Claude instance should:
+
+1. Read this charter and all roster files in `.claude/team/roster/`
+2. Spawn the Manager agent first (with their personality from roster)
+3. The Manager then spawns required team members based on the task
+4. All code-writing agents use `isolation: "worktree"`
+5. Coordinate via named agents and SendMessage
