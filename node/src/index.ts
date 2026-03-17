@@ -33,6 +33,8 @@ program
   .option("--project-name <name>", "Project name")
   .option("--target <dir>", "Target directory", ".")
   .option("--no-interactive", "Disable interactive mode")
+  .option("--ai-personas", "Use Claude API to generate rich personas")
+  .option("--seed <n>", "Seed for reproducible AI persona generation", parseInt)
   .action(async (opts) => {
     await bootstrap({
       preset: opts.preset,
@@ -41,6 +43,8 @@ program
       projectName: opts.projectName,
       target: opts.target,
       interactive: opts.interactive !== false,
+      aiPersonas: opts.aiPersonas ?? false,
+      seed: opts.seed,
     });
   });
 
