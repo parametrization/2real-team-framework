@@ -7,14 +7,22 @@
  */
 
 import { Command } from "commander";
-import { bootstrap } from "./bootstrap.js";
+import {
+  bootstrap,
+  addMember,
+  removeMember,
+  updateMember,
+  randomizeMember,
+  validateTeam,
+  showStatus,
+} from "./bootstrap.js";
 
 const program = new Command();
 
 program
   .name("2real-team")
   .description("AI agent team framework for Claude Code projects")
-  .version("0.1.0");
+  .version("0.2.0");
 
 program
   .command("init")
@@ -43,8 +51,7 @@ program
   .option("--level <level>", "Level", "Senior")
   .option("--target <dir>", "Target directory", ".")
   .action(async (name, opts) => {
-    console.log(`Adding member: ${name ?? "(random)"} as ${opts.role}`);
-    // Implementation delegates to bootstrap module
+    addMember({ name, role: opts.role, level: opts.level, target: opts.target });
   });
 
 program
@@ -52,7 +59,7 @@ program
   .description("Archive a team member")
   .option("--target <dir>", "Target directory", ".")
   .action(async (name, opts) => {
-    console.log(`Archiving member: ${name}`);
+    removeMember({ name, target: opts.target });
   });
 
 program
@@ -62,7 +69,7 @@ program
   .option("--level <level>", "New level")
   .option("--target <dir>", "Target directory", ".")
   .action(async (name, opts) => {
-    console.log(`Updating member: ${name}`);
+    updateMember({ name, role: opts.role, level: opts.level, target: opts.target });
   });
 
 program
@@ -70,7 +77,7 @@ program
   .description("Regenerate a team member's name, background, and personality")
   .option("--target <dir>", "Target directory", ".")
   .action(async (name, opts) => {
-    console.log(`Randomizing member: ${name}`);
+    randomizeMember({ name, target: opts.target });
   });
 
 program
@@ -78,7 +85,7 @@ program
   .description("Verify charter, roster, and skills consistency")
   .option("--target <dir>", "Target directory", ".")
   .action(async (opts) => {
-    console.log("Validating team framework...");
+    validateTeam({ target: opts.target });
   });
 
 program
@@ -86,7 +93,7 @@ program
   .description("Show team composition and project status")
   .option("--target <dir>", "Target directory", ".")
   .action(async (opts) => {
-    console.log("Team status:");
+    showStatus({ target: opts.target });
   });
 
 program.parse();

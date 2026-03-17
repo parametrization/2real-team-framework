@@ -33,6 +33,7 @@ class TeamMember(BaseModel):
     """A generated team member."""
 
     name: str
+    agent_name: str = ""
     role: str
     level: str
     email: str
