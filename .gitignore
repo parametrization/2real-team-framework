@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.coverage
+.pytest_cache/
+.mypy_cache/
+*.whl
+*.tar.gz
+
+# Node
+node_modules/
+coverage/
+*.tgz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+python/dist/
+python/build/
+node/dist/
+node/coverage/
+node/presets/
+node/skills/
+node/templates/
