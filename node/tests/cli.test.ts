@@ -416,8 +416,8 @@ describe("addMember", () => {
     });
   });
 
-  it("should add a named member", () => {
-    addMember({
+  it("should add a named member", async () => {
+    await addMember({
       name: "Jane Doe",
       role: "QA Engineer",
       level: "Senior",
@@ -430,8 +430,8 @@ describe("addMember", () => {
     expect(roster.some((f) => f.includes("jane_doe"))).toBe(true);
   });
 
-  it("should add a member with random name", () => {
-    addMember({
+  it("should add a member with random name", async () => {
+    await addMember({
       role: "DevOps Engineer",
       level: "Mid",
       target: tmp,
@@ -552,8 +552,8 @@ describe("randomizeMember", () => {
     memberName = extractField(content, "Name") ?? "";
   });
 
-  it("should archive old and create new member", () => {
-    randomizeMember({ name: memberName, target: tmp });
+  it("should archive old and create new member", async () => {
+    await randomizeMember({ name: memberName, target: tmp });
     const rosterDir = join(tmp, ".claude", "team", "roster");
     const active = readdirSync(rosterDir).filter(
       (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
@@ -624,7 +624,7 @@ describe("end-to-end lifecycle", () => {
     });
 
     // 2. Add member
-    addMember({
+    await addMember({
       name: "E2E Tester",
       role: "QA Engineer",
       level: "Senior",
@@ -703,11 +703,11 @@ describe("error paths", () => {
     rmSync(tmp, { recursive: true });
   });
 
-  it("addMember should exit(1) when no roster dir", () => {
+  it("addMember should exit(1) when no roster dir", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "test-noroster-"));
-    expect(() =>
+    await expect(
       addMember({ name: "Test", role: "Eng", level: "Sr", target: tmp }),
-    ).toThrow("process.exit(1)");
+    ).rejects.toThrow("process.exit(1)");
     rmSync(tmp, { recursive: true });
   });
 
@@ -758,9 +758,9 @@ describe("error paths", () => {
       target: tmp,
       interactive: false,
     });
-    expect(() =>
+    await expect(
       randomizeMember({ name: "Nobody", target: tmp }),
-    ).toThrow("process.exit(1)");
+    ).rejects.toThrow("process.exit(1)");
     rmSync(tmp, { recursive: true });
   });
 

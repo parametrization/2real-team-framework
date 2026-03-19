@@ -54,8 +54,10 @@ program
   .requiredOption("--role <role>", "Role")
   .option("--level <level>", "Level", "Senior")
   .option("--target <dir>", "Target directory", ".")
+  .option("--ai-personas", "Use Claude API to generate rich persona")
+  .option("--seed <n>", "Seed for reproducible AI persona generation", parseInt)
   .action(async (name, opts) => {
-    addMember({ name, role: opts.role, level: opts.level, target: opts.target });
+    await addMember({ name, role: opts.role, level: opts.level, target: opts.target, aiPersonas: opts.aiPersonas ?? false, seed: opts.seed });
   });
 
 program
@@ -80,8 +82,10 @@ program
   .command("randomize-member <name>")
   .description("Regenerate a team member's name, background, and personality")
   .option("--target <dir>", "Target directory", ".")
+  .option("--ai-personas", "Use Claude API to generate rich persona")
+  .option("--seed <n>", "Seed for reproducible AI persona generation", parseInt)
   .action(async (name, opts) => {
-    randomizeMember({ name, target: opts.target });
+    await randomizeMember({ name, target: opts.target, aiPersonas: opts.aiPersonas ?? false, seed: opts.seed });
   });
 
 program
