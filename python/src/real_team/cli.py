@@ -152,6 +152,8 @@ def add_member(
     role: str = typer.Option(..., help="Role (e.g., 'Software Engineer')"),
     level: str = typer.Option("Senior", help="Level"),
     target: str = typer.Option(".", help="Target directory"),
+    ai_personas: bool = typer.Option(False, help="Use Claude API to generate rich persona"),
+    seed: int = typer.Option(None, help="Seed for reproducible AI persona generation"),
 ) -> None:
     """Add a team member to the roster."""
     from .bootstrap import generate_name, make_email
@@ -163,6 +165,31 @@ def add_member(
     if not roster_dir.exists():
         console.print("[red]Error:[/red] No roster directory found. Run `2real-team init` first.")
         raise typer.Exit(1)
+
+    personality = "To be defined."
+
+    # Try AI persona generation if requested
+    if ai_personas:
+        from .personas import generate_personas
+        from .presets import get_preset
+
+        # Use a minimal preset context for single-member generation
+        try:
+            preset_config = get_preset("library")
+        except ValueError:
+            preset_config = None
+
+        if preset_config:
+            roles = [{"role": role, "level": level}]
+            personas = generate_personas(preset_config, roles, 1, seed)
+            if personas:
+                persona = personas[0]
+                if not name:
+                    name = persona["name"]
+                personality = persona["personality"]
+                console.print("[dim]AI persona generated successfully[/dim]")
+            else:
+                console.print("[dim]Using local name pool (AI generation unavailable)[/dim]")
 
     if not name:
         used = {p.stem.replace("_", " ") for p in roster_dir.glob("*.md")}
@@ -178,7 +205,7 @@ def add_member(
         "role": role,
         "level": level,
         "email": email,
-        "personality": "To be defined.",
+        "personality": personality,
     }
 
     card = render_template("roster-card.md.mustache", context)
@@ -254,6 +281,8 @@ def update_member(
 def randomize_member(
     name: str = typer.Argument(..., help="Member name to regenerate"),
     target: str = typer.Option(".", help="Target directory"),
+    ai_personas: bool = typer.Option(False, help="Use Claude API to generate rich persona"),
+    seed: int = typer.Option(None, help="Seed for reproducible AI persona generation"),
 ) -> None:
     """Regenerate a team member's name, background, and personality."""
     import random
@@ -283,10 +312,41 @@ def randomize_member(
     archived = old_path.parent / f"_departed_{old_path.name}"
     old_path.rename(archived)
 
-    # Generate new identity
-    used = {p.stem.replace("_", " ") for p in roster_dir.glob("*.md")}
-    first, last = generate_name(used)
-    new_name = f"{first} {last}"
+    # Try AI persona generation if requested
+    new_name = None
+    personality = None
+    if ai_personas:
+        from .personas import generate_personas
+        from .presets import get_preset
+
+        try:
+            preset_config = get_preset("library")
+        except ValueError:
+            preset_config = None
+
+        if preset_config:
+            roles = [{"role": role, "level": level}]
+            personas = generate_personas(preset_config, roles, 1, seed)
+            if personas:
+                persona = personas[0]
+                new_name = persona["name"]
+                personality = persona["personality"]
+                console.print("[dim]AI persona generated successfully[/dim]")
+            else:
+                console.print("[dim]Using local name pool (AI generation unavailable)[/dim]")
+
+    if not new_name:
+        # Generate new identity from local pool
+        used = {p.stem.replace("_", " ") for p in roster_dir.glob("*.md")}
+        first, last = generate_name(used)
+        new_name = f"{first} {last}"
+
+    if not personality:
+        personality = random.choice(COMMUNICATION_STYLES)
+
+    parts = new_name.split(" ", 1)
+    first = parts[0]
+    last = parts[1] if len(parts) > 1 else ""
     email = make_email(first, last)
 
     context = {
@@ -294,7 +354,7 @@ def randomize_member(
         "role": role,
         "level": level,
         "email": email,
-        "personality": random.choice(COMMUNICATION_STYLES),
+        "personality": personality,
     }
 
     card = render_template("roster-card.md.mustache", context)

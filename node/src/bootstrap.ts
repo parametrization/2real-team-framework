@@ -402,9 +402,11 @@ interface AddMemberOptions {
   role: string;
   level: string;
   target: string;
+  aiPersonas?: boolean;
+  seed?: number;
 }
 
-export function addMember(opts: AddMemberOptions): void {
+export async function addMember(opts: AddMemberOptions): Promise<void> {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
@@ -414,6 +416,29 @@ export function addMember(opts: AddMemberOptions): void {
   }
 
   let name = opts.name;
+  let personality = "To be defined.";
+
+  // Try AI persona generation if requested
+  if (opts.aiPersonas) {
+    try {
+      const { generatePersonas } = await import("./personas.js");
+      const preset = { name: "library", description: "Open source library" };
+      const roles = [{ role: opts.role, level: opts.level }];
+      const personas = await generatePersonas(preset, roles, 1, opts.seed);
+      if (personas.length > 0) {
+        if (!name) {
+          name = personas[0].name;
+        }
+        personality = personas[0].personality;
+        console.log("AI persona generated successfully");
+      } else {
+        console.log("Using local name pool (AI generation unavailable)");
+      }
+    } catch {
+      console.log("Using local name pool (AI generation unavailable)");
+    }
+  }
+
   if (!name) {
     const used = new Set<string>();
     for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
@@ -433,7 +458,7 @@ export function addMember(opts: AddMemberOptions): void {
     role: opts.role,
     level: opts.level,
     email,
-    personality: "To be defined.",
+    personality,
   };
 
   const card = renderTemplate("roster-card.md.mustache", context);
@@ -536,7 +561,7 @@ export function updateMember(opts: MemberOptions): void {
   console.log(`Updated: ${opts.name}`);
 }
 
-export function randomizeMember(opts: { name: string; target: string }): void {
+export async function randomizeMember(opts: { name: string; target: string; aiPersonas?: boolean; seed?: number }): Promise<void> {
   const target = resolve(opts.target);
   const rosterDir = join(target, ".claude", "team", "roster");
 
@@ -559,13 +584,45 @@ export function randomizeMember(opts: { name: string; target: string }): void {
   // Archive old
   renameSync(oldPath, join(rosterDir, `_departed_${files[0]}`));
 
-  // Generate new identity
-  const used = new Set<string>();
-  for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
-    used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
+  let newName: string | null = null;
+  let personality: string | null = null;
+
+  // Try AI persona generation if requested
+  if (opts.aiPersonas) {
+    try {
+      const { generatePersonas } = await import("./personas.js");
+      const preset = { name: "library", description: "Open source library" };
+      const roles = [{ role, level }];
+      const personas = await generatePersonas(preset, roles, 1, opts.seed);
+      if (personas.length > 0) {
+        newName = personas[0].name;
+        personality = personas[0].personality;
+        console.log("AI persona generated successfully");
+      } else {
+        console.log("Using local name pool (AI generation unavailable)");
+      }
+    } catch {
+      console.log("Using local name pool (AI generation unavailable)");
+    }
   }
-  const [first, last] = generateName(used);
-  const newName = `${first} ${last}`;
+
+  if (!newName) {
+    // Generate new identity from local pool
+    const used = new Set<string>();
+    for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
+      used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
+    }
+    const [first, last] = generateName(used);
+    newName = `${first} ${last}`;
+  }
+
+  if (!personality) {
+    personality = randomChoice(COMMUNICATION_STYLES);
+  }
+
+  const parts = newName.split(" ");
+  const first = parts[0];
+  const last = parts.slice(1).join(" ");
   const email = makeEmail(first, last);
 
   const context: Record<string, unknown> = {
@@ -573,7 +630,7 @@ export function randomizeMember(opts: { name: string; target: string }): void {
     role,
     level,
     email,
-    personality: randomChoice(COMMUNICATION_STYLES),
+    personality,
   };
 
   const card = renderTemplate("roster-card.md.mustache", context);
