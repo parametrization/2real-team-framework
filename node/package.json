@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/parametrization/2real-team-framework.git"
+    "url": "git+https://github.com/parametrization/2real-team-framework.git"
   },
   "bugs": {
     "url": "https://github.com/parametrization/2real-team-framework/issues"
@@ -30,7 +30,7 @@
     "node": ">=18"
   },
   "bin": {
-    "2real-team": "./dist/index.js"
+    "2real-team": "dist/index.js"
   },
   "files": [
     "dist/",
