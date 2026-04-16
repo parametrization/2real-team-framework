@@ -361,7 +361,9 @@ The team should evolve through feedback cycles toward a steady state of little t
 When starting any work session, the orchestrating Claude instance should:
 
 1. Read this charter and all roster files in `.claude/team/roster/`
-2. Spawn the Manager agent first (with their personality from roster)
-3. The Manager then spawns required team members based on the task
+2. Spawn the Manager agent first (with their personality from roster), using `team_name: "2real-team-framework"`
+3. The Manager then spawns required team members based on the task — **all agents MUST use `team_name: "2real-team-framework"`**
 4. All code-writing agents use `isolation: "worktree"`
 5. Coordinate via named agents and SendMessage
+
+> **Team name:** Every Agent tool call in this repo MUST include `team_name: "2real-team-framework"`. This registers agents in Claude Code's team system, enabling the tree-view status line and inter-agent coordination.
