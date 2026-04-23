@@ -1,0 +1,21 @@
+{
+  "name": "data-pipeline",
+  "description": "Data engineering pipeline with ETL, graph/relational databases, and analytics",
+  "default_team_size": 12,
+  "roles": [
+    {"role": "Manager", "level": "Senior VP", "count": 1, "required": true},
+    {"role": "System Architect", "level": "Partner", "count": 1, "required": true},
+    {"role": "DevOps Architect", "level": "Staff", "count": 1, "required": true},
+    {"role": "DevOps Engineer", "level": "Senior", "count": 1, "required": true},
+    {"role": "Tech Lead", "level": "Staff", "count": 1, "required": true},
+    {"role": "Data Engineer", "level": "Staff", "count": 1, "required": true},
+    {"role": "Software Engineer", "level": "Principal", "count": 1, "required": false},
+    {"role": "Software Engineer", "level": "Senior", "count": 2, "required": false},
+    {"role": "Data Engineer", "level": "Principal", "count": 1, "required": false},
+    {"role": "Data Scientist", "level": "Principal", "count": 1, "required": false},
+    {"role": "Security Engineer", "level": "Senior", "count": 1, "required": false},
+    {"role": "QA Engineer", "level": "Senior", "count": 1, "required": false}
+  ],
+  "skills": ["retro", "wave-start", "wave-end", "review-pr", "plan-phase", "close-stale-issues"],
+  "default_ci": "github-actions"
+}

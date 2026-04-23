@@ -1,0 +1,31 @@
+/**
+ * Preset loading and validation.
+ */
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+function resolvePresetsDir() {
+    const pkg = resolve(__dirname, "..", "presets");
+    if (existsSync(pkg))
+        return pkg;
+    return resolve(__dirname, "../..", "presets");
+}
+const PRESETS_DIR = resolvePresetsDir();
+export function getPreset(name) {
+    const path = join(PRESETS_DIR, `${name}.json`);
+    if (!existsSync(path)) {
+        const available = listPresets().map((p) => p.name).join(", ");
+        throw new Error(`Unknown preset '${name}'. Available: ${available}`);
+    }
+    return JSON.parse(readFileSync(path, "utf-8"));
+}
+export function listPresets() {
+    if (!existsSync(PRESETS_DIR))
+        return [];
+    return readdirSync(PRESETS_DIR)
+        .filter((f) => f.endsWith(".json"))
+        .sort()
+        .map((f) => JSON.parse(readFileSync(join(PRESETS_DIR, f), "utf-8")));
+}
