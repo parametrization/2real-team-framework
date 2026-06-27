@@ -61,6 +61,8 @@ def test_install_is_complete_and_idempotent(tmp_path: Path) -> None:
     assert (claude / "settings.json").is_file()
     assert (claude / "hooks" / "dispatcher.py").is_file()
     assert (claude / "lib" / "upsert_status_keys.py").is_file()
+    assert (claude / "lib" / "lifecycle.py").is_file()
+    assert (claude / "skills" / "wave-lifecycle" / "SKILL.md").is_file()
 
     settings = json.loads((claude / "settings.json").read_text())
     pre = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]

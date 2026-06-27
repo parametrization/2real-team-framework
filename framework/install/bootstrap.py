@@ -176,23 +176,40 @@ def _iter_asset_files(subdir: str):
         yield p
 
 
+def _iter_skill_files():
+    """Yield (relative-path, source) for every file under assets/skills/."""
+    base = _ASSETS / "skills"
+    if not base.is_dir():
+        return
+    for p in sorted(base.rglob("*")):
+        if p.is_file() and "__pycache__" not in p.parts:
+            yield p.relative_to(base), p
+
+
 def install_assets(target_claude: Path, *, force: bool, dry_run: bool) -> dict[str, list[str]]:
-    """Copy hooks/ and lib/ assets into <target>/.claude/. Idempotent."""
+    """Copy hooks/ + lib/ (+ skills/) assets into <target>/.claude/. Idempotent."""
     report: dict[str, list[str]] = {"copied": [], "skipped": [], "would_copy": []}
+
+    def _emit(dest: Path, rel: str, src: Path) -> None:
+        if dest.exists() and not force:
+            report["skipped"].append(rel)
+            return
+        if dry_run:
+            report["would_copy"].append(rel)
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        report["copied"].append(rel)
+
     for subdir in ("hooks", "lib"):
         dest_dir = target_claude / subdir
         for src in _iter_asset_files(subdir):
-            dest = dest_dir / src.name
-            rel = f"{subdir}/{src.name}"
-            if dest.exists() and not force:
-                report["skipped"].append(rel)
-                continue
-            if dry_run:
-                report["would_copy"].append(rel)
-                continue
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            report["copied"].append(rel)
+            _emit(dest_dir / src.name, f"{subdir}/{src.name}", src)
+
+    # Skills are a nested markdown tree (skills/<name>/SKILL.md) → .claude/skills/.
+    for relpath, src in _iter_skill_files():
+        _emit(target_claude / "skills" / relpath, f"skills/{relpath}", src)
+
     return report
 
 

@@ -73,6 +73,9 @@ framework/
       pr_ci_state.py                # merge-readiness oracle (shares the gate's classifier)
       upsert_status_keys.py         # text-level JSON upsert (compact-shape-preserving)
       trust_signals.py              # TEAM: mechanical per-engineer trust scoring
+      lifecycle.py                  # TEAM: wave/iteration state machine (allocator + transitions + merge model)
+    skills/
+      wave-lifecycle/SKILL.md       # the generic config-driven orchestration skill
     settings.template.json          # the dispatcher wiring the bootstrap merges
   install/
     bootstrap.py                    # deterministic installer (new or existing repo)
@@ -146,15 +149,17 @@ two documented project-coupling points feeding off the lifecycle/state file).
 
 ## What's covered vs. what's next
 
-**Working, tested end-to-end (`tests/`, 14 passing):** the config keystone, the
+**Working, tested end-to-end (`tests/`, 29 passing):** the config keystone, the
 loader/logger/parsers, both dispatchers, 8 hooks (4 safety + 1 SCM advisory + 2
-CI + 1 identity), 3 libs (CI oracle, status upsert, trust scoring), the
-deterministic bootstrapper, and the repo-introspecting roster generator
-(single-repo + meta+children + the generated-roster→identity-gate loop).
+CI + 1 identity), 4 libs (CI oracle, status upsert, trust scoring, lifecycle
+state machine), the deterministic bootstrapper (now also installing a skills
+tree), the repo-introspecting roster generator with per-child union rosters
+(single-repo + meta+children + the generated-roster→identity-gate loop), and the
+`wave-lifecycle` orchestration skill driving `lifecycle.py` + `trust_signals.py`.
 
 **Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the remaining net-new
-hooks/libs, the lifecycle skills (wave/phase state machine that consumes
-`trust_signals`), optional
+hooks/libs, a mid-wave reachability gh wrapper around `lifecycle.classify_reachability`,
+optional
 LLM persona personalities (wire in `python/src/real_team/personas.py`), and — a
 larger, separate effort — wiring this config-driven asset model into the existing
 `python/`+`node/` CLI so `init` renders hooks, not just templates. All layers meet
