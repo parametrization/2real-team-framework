@@ -66,8 +66,10 @@ framework/
       no_worktree_self_delete.py    # SAFETY: refuse a worktree deleting itself
       warn_zsh_wordsplit.py         # SAFETY: zsh bash-ism advisory (shell==zsh)
       warn_pipe_mask_rc.py          # SCM: rc-masking pipe advisory (PostToolUse)
+      validate_labels.py            # SCM: block gh issue create on a missing label
       validate_pr_ci_status.py      # CI: block gh pr merge on red/empty rollup
       validate_workflow_paths_coverage.py  # CI: empty-rollup discriminator + orphan-workflow flag
+      block_squash_wave_merge.py    # CI: block --squash into an integration branch (identity on)
       validate_commit_identity.py   # TEAM: commits must carry a roster identity (opt-in)
     lib/
       pr_ci_state.py                # merge-readiness oracle (shares the gate's classifier)
@@ -149,18 +151,18 @@ two documented project-coupling points feeding off the lifecycle/state file).
 
 ## What's covered vs. what's next
 
-**Working, tested end-to-end (`tests/`, 29 passing):** the config keystone, the
-loader/logger/parsers, both dispatchers, 8 hooks (4 safety + 1 SCM advisory + 2
-CI + 1 identity), 4 libs (CI oracle, status upsert, trust scoring, lifecycle
-state machine), the deterministic bootstrapper (now also installing a skills
-tree), the repo-introspecting roster generator with per-child union rosters
-(single-repo + meta+children + the generated-roster→identity-gate loop), and the
+**Working, tested end-to-end (`tests/`, 39 passing):** the config keystone, the
+loader/logger/parsers, both dispatchers, 10 hooks (4 safety + 2 SCM + 3 CI + 1
+identity), 4 libs (CI oracle, status upsert, trust scoring, lifecycle state
+machine), the deterministic bootstrapper (also installing a skills tree), the
+repo-introspecting roster generator with per-child union rosters (single-repo +
+meta+children + the generated-roster→identity-gate loop), and the
 `wave-lifecycle` orchestration skill driving `lifecycle.py` + `trust_signals.py`.
 
-**Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the remaining net-new
-hooks/libs, a mid-wave reachability gh wrapper around `lifecycle.classify_reachability`,
-optional
-LLM persona personalities (wire in `python/src/real_team/personas.py`), and — a
-larger, separate effort — wiring this config-driven asset model into the existing
-`python/`+`node/` CLI so `init` renders hooks, not just templates. All layers meet
-at the `framework.config.json` contract.
+**Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the review-gate tranche
+(`validate_pr_review` — the 1189-line N-reviewer/TechDebt gate — + the
+`pr_review_state` oracle that reuses it, + `validate_review_comment_format`),
+`validate_branch_freshness`, a mid-wave reachability gh wrapper around
+`lifecycle.classify_reachability`, and optional LLM persona personalities (wire
+in `python/src/real_team/personas.py`). All layers meet at the
+`framework.config.json` contract.

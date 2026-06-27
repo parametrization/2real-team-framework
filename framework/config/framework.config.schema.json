@@ -137,7 +137,7 @@
         "pre_bash": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_workflow_paths_coverage", "validate_pr_ci_status"],
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_workflow_paths_coverage", "validate_pr_ci_status", "block_squash_wave_merge"],
           "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
         },
         "post_bash": {
