@@ -59,6 +59,39 @@ def _agent_name(full: str) -> str:
     return f"{first.lower()}-{last.lower()}"
 
 
+# --------------------------------------------------------------- role → domains
+
+# Org-level coordination roles: they live in the META roster only and (via the
+# parent-merge in validate_commit_identity) may commit in any child repo. They
+# are NOT scoped to a single child's stacks.
+_ORG_ROLES: set[str] = {
+    "Program Director",
+    "Technical Program Manager",
+    "QA Engineer",
+    "Standards & Quality Lead",
+}
+
+# The Tech Lead spans every repo — it appears in the meta roster AND every child
+# roster (so a child cloned in isolation still has a lead identity).
+_LEAD_ROLE = "Tech Lead"
+
+# Domain engineer role -> the stack tags it serves. A persona is assigned to a
+# child repo iff its domains intersect that child's sniffed stacks. Keep this in
+# sync with derive_roles (the roles it can emit).
+_ROLE_DOMAINS: dict[str, set[str]] = {
+    "Frontend Engineer": {"frontend"},
+    "Data Engineer": {"data", "database"},
+    "DevOps Engineer": {"infra", "docker", "kubernetes", "ci"},
+    "Security Engineer": {"security"},
+    "Software Engineer": {"python", "node", "typescript", "go", "rust", "java", "backend"},
+}
+
+
+def _role_domains(role: str) -> set[str]:
+    """Stack tags a role serves (empty for org-level / lead roles)."""
+    return _ROLE_DOMAINS.get(role, set())
+
+
 # --------------------------------------------------------------- stack sniffing
 
 # marker (relative path or glob) -> stack tag
@@ -244,6 +277,17 @@ class Persona:
     level: str
     email: str
     agent_name: str
+    domains: set[str] = field(default_factory=set)
+
+    @property
+    def is_org(self) -> bool:
+        """Org-level coordination role — meta roster only, commits anywhere."""
+        return self.role in _ORG_ROLES
+
+    @property
+    def is_lead(self) -> bool:
+        """Spans every repo (meta + every child roster)."""
+        return self.role == _LEAD_ROLE
 
 
 def assign_personas(roles: list[tuple[str, str]], email_pattern: str) -> list[Persona]:
@@ -262,9 +306,57 @@ def assign_personas(roles: list[tuple[str, str]], email_pattern: str) -> list[Pe
                 level=level,
                 email=_email_for(name, email_pattern),
                 agent_name=_agent_name(name),
+                domains=_role_domains(role),
             )
         )
     return personas
+
+
+def partition_for_children(
+    personas: list[Persona], intro: Introspection
+) -> tuple[list[Persona], dict[str, list[Persona]]]:
+    """Split personas into the meta roster + a per-child roster (union model).
+
+    Returns ``(meta_personas, {child_name: [personas]})`` where:
+
+      * **meta_personas** — org-level coordination roles + the Tech Lead, plus
+        any domain engineer that matched no child (fallback so nobody is
+        dropped). These are the META roster; via the parent-merge in
+        ``validate_commit_identity`` they may commit in any child.
+      * **child rosters** — for each child repo: the Tech Lead (so a child
+        cloned alone has a lead identity) + every domain engineer whose
+        ``domains`` intersect that child's sniffed stacks.
+
+    The full per-child allowlist the identity gate enforces is
+    ``meta ∪ child`` (reconstructed at validate time), so a child PR is signable
+    by that child's engineers AND the org leads, but not by another child's
+    engineers. Single-repo introspections never call this (only one repo).
+
+    Deterministic: input persona order is preserved in every output list.
+    """
+    # The meta/target repo is repos[0]; children are repos[1:]. Domain engineers
+    # are scoped to CHILDREN, not the meta repo (which typically holds only
+    # shared config).
+    children = [r for r in intro.repos[1:]]
+    leads = [p for p in personas if p.is_lead]
+    org = [p for p in personas if p.is_org]
+    engineers = [p for p in personas if not p.is_org and not p.is_lead]
+
+    child_rosters: dict[str, list[Persona]] = {}
+    assigned: set[str] = set()
+    for child in children:
+        members = list(leads)  # the lead spans every child
+        for eng in engineers:
+            if eng.domains & child.stacks:
+                members.append(eng)
+                assigned.add(eng.name)
+        child_rosters[child.name] = members
+
+    # Engineers that matched no child fall back into the meta roster so they are
+    # never silently dropped from the allowlist.
+    unassigned = [e for e in engineers if e.name not in assigned]
+    meta_personas = leads + org + unassigned
+    return meta_personas, child_rosters
 
 
 @dataclass
@@ -327,39 +419,105 @@ def _card_filename(p: Persona) -> str:
     return f"{role_slug}_{p.agent_name}.md"
 
 
-def write_roster(team_dir: Path, plan_: RosterPlan, *, force: bool, dry_run: bool) -> dict:
-    """Write roster.json + persona cards + trust_matrix.md + feedback_log.md."""
-    report: dict = {"written": [], "skipped": [], "would_write": []}
-    roster_dir = team_dir / "roster"
+def _emit(report: dict, anchor: Path, path: Path, content: str, *, force: bool, dry_run: bool) -> None:
+    """Write ``content`` to ``path`` honouring force/dry-run; record in report.
 
-    def _emit(path: Path, content: str) -> None:
-        rel = str(path.relative_to(team_dir.parent.parent)) if team_dir.parent.parent in path.parents else str(path)
-        if path.exists() and not force:
-            report["skipped"].append(rel)
-            return
-        if dry_run:
-            report["would_write"].append(rel)
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        report["written"].append(rel)
+    ``anchor`` is the repo root the relative path in the report is computed
+    against (so a child write reads ``.claude/team/roster.json`` not an absolute
+    path).
+    """
+    rel = str(path.relative_to(anchor)) if anchor in path.parents else str(path)
+    if path.exists() and not force:
+        report["skipped"].append(rel)
+        return
+    if dry_run:
+        report["would_write"].append(rel)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    report["written"].append(rel)
 
-    # roster.json — the name->email allowlist
-    roster_map = {p.name: p.email for p in plan_.personas}
-    _emit(team_dir / "roster.json", json.dumps(roster_map, indent=2) + "\n")
 
-    # persona cards
-    for p in plan_.personas:
-        _emit(roster_dir / _card_filename(p), _CARD_TEMPLATE.format(name=p.name, role=p.role, level=p.level, email=p.email))
-
-    # trust matrix seed (all start neutral = 3)
+def _trust_matrix(personas: list[Persona]) -> str:
     tm = ["# Trust Matrix", "", "Mechanical 1-5 scores, updated from countable wave signals.", "",
           "| Member | Role | Score | Last updated |", "|--------|------|:-----:|--------------|"]
-    for p in plan_.personas:
+    for p in personas:
         tm.append(f"| {p.name} | {p.role} | 3 | (seed) |")
-    _emit(team_dir / "trust_matrix.md", "\n".join(tm) + "\n")
+    return "\n".join(tm) + "\n"
 
-    # feedback log seed
-    _emit(team_dir / "feedback_log.md", "# Feedback Log\n\nPer-wave retros: going-well, pain points, proposed changes.\n")
+
+def _write_team(
+    team_dir: Path,
+    *,
+    allowlist: list[Persona],
+    cards_for: list[Persona],
+    org_artifacts_for: list[Persona] | None,
+    report: dict,
+    force: bool,
+    dry_run: bool,
+) -> None:
+    """Write one team dir: roster.json + persona cards (+ org artifacts if asked).
+
+    ``allowlist`` becomes ``roster.json`` (the name->email gate allowlist).
+    ``cards_for`` get a persona card each. ``org_artifacts_for`` (when not None)
+    seeds ``trust_matrix.md`` + ``feedback_log.md`` — meta-level only; per-child
+    team dirs pass None (trust/feedback are org-wide, kept at the meta).
+    """
+    anchor = team_dir.parent.parent  # repo root
+    roster_dir = team_dir / "roster"
+
+    roster_map = {p.name: p.email for p in allowlist}
+    _emit(report, anchor, team_dir / "roster.json", json.dumps(roster_map, indent=2) + "\n",
+          force=force, dry_run=dry_run)
+
+    for p in cards_for:
+        _emit(report, anchor, roster_dir / _card_filename(p),
+              _CARD_TEMPLATE.format(name=p.name, role=p.role, level=p.level, email=p.email),
+              force=force, dry_run=dry_run)
+
+    if org_artifacts_for is not None:
+        _emit(report, anchor, team_dir / "trust_matrix.md", _trust_matrix(org_artifacts_for),
+              force=force, dry_run=dry_run)
+        _emit(report, anchor, team_dir / "feedback_log.md",
+              "# Feedback Log\n\nPer-wave retros: going-well, pain points, proposed changes.\n",
+              force=force, dry_run=dry_run)
+
+
+def write_roster(team_dir: Path, plan_: RosterPlan, *, force: bool, dry_run: bool) -> dict:
+    """Write the roster artifacts for the planned team.
+
+    Single-repo: one team dir at ``team_dir`` with the full roster, all cards,
+    and the org artifacts (trust_matrix + feedback_log).
+
+    Meta-and-children: the META roster (org roles + lead + unmatched engineers)
+    plus org artifacts and ALL persona cards land at ``team_dir``; each child
+    repo gets its own ``<child>/.claude/team/roster.json`` + that child's persona
+    cards (Tech Lead + the child's domain engineers). The identity gate
+    reconstructs each child's full allowlist as ``meta ∪ child`` via its
+    parent-merge.
+    """
+    report: dict = {"written": [], "skipped": [], "would_write": []}
+
+    if plan_.intro.model != "meta-and-children" or len(plan_.intro.repos) <= 1:
+        _write_team(team_dir, allowlist=plan_.personas, cards_for=plan_.personas,
+                    org_artifacts_for=plan_.personas, report=report, force=force, dry_run=dry_run)
+        return report
+
+    meta_personas, child_rosters = partition_for_children(plan_.personas, plan_.intro)
+
+    # Meta team dir: org allowlist, org artifacts, but cards for the WHOLE org
+    # (the meta dir documents every persona; the child dirs duplicate the cards
+    # of their own members for self-containment).
+    _write_team(team_dir, allowlist=meta_personas, cards_for=plan_.personas,
+                org_artifacts_for=plan_.personas, report=report, force=force, dry_run=dry_run)
+
+    # Per-child team dirs (children = intro.repos[1:]).
+    for child in plan_.intro.repos[1:]:
+        members = child_rosters.get(child.name, [])
+        if not members:
+            continue
+        child_team_dir = child.path / ".claude" / "team"
+        _write_team(child_team_dir, allowlist=members, cards_for=members,
+                    org_artifacts_for=None, report=report, force=force, dry_run=dry_run)
 
     return report

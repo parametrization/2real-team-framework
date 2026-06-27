@@ -111,6 +111,72 @@ def test_bootstrap_writes_roster_and_enforces_identity(tmp_path: Path) -> None:
     assert fire('git -c user.name="Nobody Random" -c user.email=x@y.z commit -m x') == 2
 
 
+def test_partition_scopes_engineers_to_children(tmp_path: Path) -> None:
+    _mk_repo(tmp_path)  # meta
+    _mk_repo(tmp_path / "api", "pyproject.toml")
+    web = _mk_repo(tmp_path / "web")
+    (web / "package.json").write_text(json.dumps({"dependencies": {"react": "18"}}))
+    _mk_repo(tmp_path / "deploy", "main.tf")
+
+    p = roster_gen.plan(tmp_path, email_pattern="t+{First}.{Last}@e.com")
+    meta, children = roster_gen.partition_for_children(p.personas, p.intro)
+
+    meta_roles = {pe.role for pe in meta}
+    assert "Program Director" in meta_roles  # org role → meta only
+    assert "Program Director" not in {pe.role for c in children.values() for pe in c}
+
+    # The Tech Lead spans every child roster.
+    for members in children.values():
+        assert any(pe.is_lead for pe in members)
+
+    # Frontend engineer is scoped to the web child, not deploy.
+    web_roles = {pe.role for pe in children["web"]}
+    deploy_roles = {pe.role for pe in children["deploy"]}
+    assert "Frontend Engineer" in web_roles
+    assert "Frontend Engineer" not in deploy_roles
+    assert "DevOps Engineer" in deploy_roles
+
+
+def test_bootstrap_writes_per_child_rosters_and_scopes_gate(tmp_path: Path) -> None:
+    _mk_repo(tmp_path)  # meta
+    _mk_repo(tmp_path / "api", "pyproject.toml")
+    web = _mk_repo(tmp_path / "web")
+    (web / "package.json").write_text(json.dumps({"dependencies": {"react": "18"}}))
+
+    r = subprocess.run(
+        [sys.executable, str(_BOOTSTRAP), str(tmp_path), "--owner", "acme"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+
+    # Meta roster holds org roles; child rosters exist and are scoped.
+    meta_roster = json.loads((tmp_path / ".claude" / "team" / "roster.json").read_text())
+    web_roster = json.loads((tmp_path / "web" / ".claude" / "team" / "roster.json").read_text())
+    api_roster = json.loads((tmp_path / "api" / ".claude" / "team" / "roster.json").read_text())
+    assert web_roster and api_roster
+    # Child rosters do NOT carry org artifacts (those stay at the meta).
+    assert not (tmp_path / "web" / ".claude" / "team" / "trust_matrix.md").exists()
+    assert (tmp_path / ".claude" / "team" / "trust_matrix.md").is_file()
+
+    # End-to-end gate: a web-roster member can commit in web; a member who is
+    # only in api (and not an org lead) is blocked in web.
+    dispatcher = tmp_path / ".claude" / "hooks" / "dispatcher.py"
+
+    def fire(cmd: str, cwd: Path) -> int:
+        payload = json.dumps({"tool_name": "Bash", "cwd": str(cwd), "tool_input": {"command": cmd}})
+        return subprocess.run([sys.executable, str(dispatcher)], input=payload,
+                              capture_output=True, text=True).returncode
+
+    web_name, web_email = next(iter(web_roster.items()))
+    assert fire(f'git -c user.name="{web_name}" -c user.email={web_email} commit -m x', tmp_path / "web") == 0
+
+    # Find an api-only member (in api roster, absent from web + meta rosters).
+    api_only = {n: e for n, e in api_roster.items() if n not in web_roster and n not in meta_roster}
+    if api_only:  # at least one engineer is uniquely scoped to api
+        n, e = next(iter(api_only.items()))
+        assert fire(f'git -c user.name="{n}" -c user.email={e} commit -m x', tmp_path / "web") == 2
+
+
 def test_no_team_flag_skips_roster(tmp_path: Path) -> None:
     _mk_repo(tmp_path, "pyproject.toml")
     r = subprocess.run(

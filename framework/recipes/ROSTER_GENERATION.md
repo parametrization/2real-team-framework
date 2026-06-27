@@ -25,6 +25,31 @@ stub. Runs as part of `bootstrap.py`; implemented in `framework/install/roster_g
 5. **Writes** into `<repo>/.claude/team/`: `roster.json` (the name→email
    allowlist the commit-identity gate reads), one persona card per member,
    a seeded `trust_matrix.md`, and an empty `feedback_log.md`.
+6. **For meta+children, splits into per-child union rosters** (see below).
+
+## Per-child union rosters (meta+children model)
+
+A single flat roster would let any persona commit in any repo. For the
+meta+children model the generator partitions the team (`partition_for_children`)
+so the commit-identity gate scopes engineers to their repo, reconstructing the
+full allowlist per child via the gate's parent-merge:
+
+- **Meta roster** (`<meta>/.claude/team/roster.json`) — org-level coordination
+  roles only: Program Director, TPM, QA, Standards Lead, **plus the Tech Lead**
+  and any domain engineer that matched no child (fallback, never dropped). The
+  meta dir also holds **all** persona cards (org documentation) + the org
+  `trust_matrix.md` / `feedback_log.md`.
+- **Each child roster** (`<child>/.claude/team/roster.json`) — the Tech Lead (so
+  a child cloned alone still has a lead identity) + every domain engineer whose
+  `domains` intersect that child's sniffed stacks. Child dirs get their members'
+  persona cards but **not** the org artifacts (those stay at the meta).
+- **The gate enforces `meta ∪ child`.** `validate_commit_identity` loads the
+  child's roster and merges its parent (meta) roster one level up (child wins on
+  collision). So a child PR is signable by that child's engineers **and** the org
+  leads — but not by a *different* child's engineers.
+
+Role→domain mapping lives in `_ROLE_DOMAINS` / `_ORG_ROLES` / `_LEAD_ROLE` in
+`roster_gen.py` — the single place to tune which stacks a role serves.
 
 When a roster is generated, the bootstrapper also sets `identity.enforce=true`
 and puts `validate_commit_identity` first in `hooks.pre_bash` — so commits must
@@ -59,6 +84,8 @@ python3 framework/install/bootstrap.py /path/to/repo --owner my-org --no-enforce
   this stdlib path stays deterministic and dependency-free.
 - **Role heuristic** — `derive_roles()` is the single place to tune the mix; it
   reads the detected stacks/model. Mirror the `presets/*.json` role vocabulary.
-- **Per-child rosters** — currently one roster at the install target. For the
-  meta+children union-roster model, generate per-child `.claude/team/roster.json`
-  and union them (the source project's `roster_union_sync` pattern) — a follow-up.
+- **Per-child rosters** — implemented (see "Per-child union rosters" above). The
+  meta gets org roles + all cards + org artifacts; each child gets its own
+  `.claude/team/roster.json` (lead + domain engineers) and the gate enforces
+  `meta ∪ child`. To change who lands where, edit `partition_for_children` /
+  `_ROLE_DOMAINS` in `roster_gen.py`.

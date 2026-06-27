@@ -232,7 +232,6 @@ def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
         existing["hooks"].setdefault(event, [])
         for tmpl_block in blocks:
             matcher = tmpl_block["matcher"]
-            tmpl_cmd = tmpl_block["hooks"][0]["command"]
             # find an existing block with the same matcher
             same = [b for b in existing["hooks"][event] if b.get("matcher") == matcher]
             if not same:
@@ -351,10 +350,12 @@ def main() -> int:
     roster_status = "skipped (--no-team)"
     if team_enabled and roster_plan is not None:
         rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
+        n_children = max(0, len(roster_plan.intro.repos) - 1) if roster_plan.intro.model == "meta-and-children" else 0
+        child_note = f"; {n_children} per-child roster(s)" if n_children else ""
         if args.dry_run:
-            roster_status = f"would write {len(rep['would_write'])} file(s) for {len(roster_plan.personas)} member(s)"
+            roster_status = f"would write {len(rep['would_write'])} file(s) for {len(roster_plan.personas)} member(s){child_note}"
         else:
-            roster_status = f"wrote {len(rep['written'])} file(s) ({len(roster_plan.personas)} member(s)); {len(rep['skipped'])} skipped"
+            roster_status = f"wrote {len(rep['written'])} file(s) ({len(roster_plan.personas)} member(s){child_note}); {len(rep['skipped'])} skipped"
 
     print("\n-- plan --" if args.dry_run else "\n-- result --")
     print(f"hooks/lib copied:  {len(assets['copied'])}")

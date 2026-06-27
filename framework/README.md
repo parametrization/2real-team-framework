@@ -123,6 +123,11 @@ roster that fits it (`roster_gen.py`; full detail in
   Data as detected) scaled by repo count + QA + Standards Lead.
 - **Writes** `<repo>/.claude/team/`: `roster.json` (the name→email allowlist),
   one persona card per member, a seeded `trust_matrix.md`, an empty `feedback_log.md`.
+- **For meta+children, writes per-child union rosters** — the meta roster holds
+  org roles (PD/TPM/QA/Standards) + the Tech Lead; each child gets its own
+  `roster.json` (lead + that child's domain engineers). The identity gate
+  enforces `meta ∪ child` via its parent-merge, so a child PR is signable by that
+  child's engineers + the org leads, not by another child's engineers.
 - **Enables the identity gate** — sets `identity.enforce=true` and puts
   `validate_commit_identity` first in `hooks.pre_bash`, so every commit must carry
   a roster identity (`git -c user.name=… -c user.email=…`).
@@ -141,7 +146,7 @@ two documented project-coupling points feeding off the lifecycle/state file).
 
 ## What's covered vs. what's next
 
-**Working, tested end-to-end (`tests/`, 12 passing):** the config keystone, the
+**Working, tested end-to-end (`tests/`, 14 passing):** the config keystone, the
 loader/logger/parsers, both dispatchers, 8 hooks (4 safety + 1 SCM advisory + 2
 CI + 1 identity), 3 libs (CI oracle, status upsert, trust scoring), the
 deterministic bootstrapper, and the repo-introspecting roster generator
@@ -149,7 +154,7 @@ deterministic bootstrapper, and the repo-introspecting roster generator
 
 **Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the remaining net-new
 hooks/libs, the lifecycle skills (wave/phase state machine that consumes
-`trust_signals`), per-child union rosters for the meta+children model, optional
+`trust_signals`), optional
 LLM persona personalities (wire in `python/src/real_team/personas.py`), and — a
 larger, separate effort — wiring this config-driven asset model into the existing
 `python/`+`node/` CLI so `init` renders hooks, not just templates. All layers meet
