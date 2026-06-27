@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "project": {
+    "name": "My Project",
+    "model": "meta-and-children",
+    "meta_repo": "my-org-main",
+    "repos": ["my-org-main", "my-org-api", "my-org-web"]
+  },
+  "scm": {
+    "provider": "github",
+    "owner": "my-org",
+    "default_branch": "main",
+    "allow_force": false
+  },
+  "branch": {
+    "feature": "{initials}/{issue}-{slug}",
+    "integration": "deployments/wave-{wave}"
+  },
+  "labels": {
+    "wave": "wave-{id}",
+    "tech_debt": "tech-debt"
+  },
+  "board": {
+    "enabled": true,
+    "project_number": 1,
+    "wave_field": "Wave"
+  },
+  "identity": {
+    "enforce": true,
+    "email_pattern": "team+{First}.{Last}@example.com",
+    "roster_source": ".claude/team/roster.json",
+    "allow_emails": ["owner@example.com"]
+  },
+  "policy": {
+    "reviewers_required": 2,
+    "merge_model": "wave-branch",
+    "admin_merge_exceptions": {
+      "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
+      "emergency": "[EMERGENCY]-prefixed restore work"
+    }
+  },
+  "ci": {
+    "merge_requires_green": true,
+    "empty_rollup_is_blocking": true,
+    "neutral_pending_check_prefixes": ["chromatic"],
+    "tooling": ["ruff", "mypy", "pytest"]
+  },
+  "shell": "zsh",
+  "paths": {
+    "team": ".claude/team",
+    "memory": ".claude/memory",
+    "ontology": "ontology",
+    "state_file": ".claude/state.json",
+    "events_log": ".claude/framework/events.jsonl"
+  },
+  "hooks": {
+    "pre_bash": [
+      "block_no_verify",
+      "block_git_config",
+      "no_worktree_self_delete",
+      "warn_zsh_wordsplit",
+      "validate_workflow_paths_coverage",
+      "validate_pr_ci_status"
+    ],
+    "post_bash": ["warn_pipe_mask_rc"]
+  }
+}

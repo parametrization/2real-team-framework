@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/parametrization/2real-team-framework/framework/config/framework.config.schema.json",
+  "title": "2real framework config",
+  "description": "The single shared-config object every genericised framework artifact (hooks, libs, skills) reads. Installed at <repo>/.claude/framework.config.json by the bootstrapper. Nearly all fields are optional and fall back to the defaults documented here, so a minimal config is just {\"version\":1,\"scm\":{\"provider\":\"github\",\"owner\":\"my-org\"}}.",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Config schema version. Bumped only on a breaking change to this schema."
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Human-facing identity of the project this config governs.",
+      "properties": {
+        "name": { "type": "string", "description": "Display name." },
+        "model": {
+          "type": "string",
+          "enum": ["single-repo", "meta-and-children"],
+          "default": "single-repo",
+          "description": "single-repo: one repository. meta-and-children: a parent meta-repo that .gitignores N child repos (the cross-repo orchestration model)."
+        },
+        "meta_repo": {
+          "type": "string",
+          "description": "Name of the meta-repo (meta-and-children model only). The repo that holds the shared .claude/ config."
+        },
+        "repos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Repos in scope (meta-and-children model). Bare names, resolved under scm.owner. Single-repo projects omit this."
+        }
+      }
+    },
+    "scm": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Source-control + host provider settings. Read by every git/gh-aware hook and lib.",
+      "properties": {
+        "provider": { "type": "string", "enum": ["github"], "default": "github", "description": "Only github is implemented today; the field exists so a future provider (gitlab, …) is a config change, not a code fork." },
+        "owner": { "type": "string", "description": "GitHub org or user that owns the repo(s). Used to qualify bare repo names and gh calls." },
+        "default_branch": { "type": "string", "default": "main", "description": "The integration/default branch." },
+        "allow_force": { "type": "boolean", "default": false, "description": "When false, force-push / force-merge guards are active." }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Branch-name grammar. Tokens in braces are substituted by the skills/hooks that mint or validate branches.",
+      "properties": {
+        "feature": { "type": "string", "default": "{initials}/{issue}-{slug}", "description": "Per-issue feature branch. Tokens: {initials} {issue} {slug}." },
+        "integration": { "type": "string", "default": "deployments/wave-{wave}", "description": "Wave/iteration integration branch (meta-and-children / wave model). Tokens: {phase} {wave}." }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Issue-label grammar.",
+      "properties": {
+        "wave": { "type": "string", "default": "wave-{id}", "description": "Wave/iteration label. Token: {id}." },
+        "tech_debt": { "type": "string", "default": "tech-debt", "description": "Tech-debt label name." }
+      }
+    },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Planning-board (GitHub Projects v2) settings. Omit the whole block if the project does not use a board.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "project_number": { "type": "integer", "description": "GitHub Projects v2 number under scm.owner." },
+        "wave_field": { "type": "string", "default": "Wave", "description": "Single-select field name the wave label projects onto." }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Commit-identity convention. Read by the commit-identity hooks and the trust/roster libs.",
+      "properties": {
+        "enforce": { "type": "boolean", "default": false, "description": "When true, per-commit identity is validated against the roster + email pattern." },
+        "email_pattern": { "type": "string", "default": "team+{First}.{Last}@example.com", "description": "Per-commit author-email convention. Tokens: {First} {Last}." },
+        "roster_source": { "type": "string", "default": ".claude/team/roster.json", "description": "Path (repo-relative) to the roster manifest the identity hooks read." },
+        "allow_emails": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Bare author emails accepted without matching the persona pattern (e.g. the owner)." }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Process policy knobs read by the PR / merge / review gates.",
+      "properties": {
+        "reviewers_required": { "type": "integer", "default": 1, "minimum": 0, "description": "Approving reviewers required before merge (the N-reviewer gate)." },
+        "merge_model": { "type": "string", "enum": ["wave-branch", "direct-to-main"], "default": "direct-to-main", "description": "Per-iteration merge model. wave-branch: PRs base on the integration branch, integration PR at wrapup. direct-to-main: PRs base on the default branch." },
+        "admin_merge_exceptions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Map of <class> -> <human rationale> naming the only admin-merge bypass classes the CI gate accepts via ADMIN_MERGE_EXCEPTION=<class>:<rationale>. Empty = no admin bypass allowed."
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "CI/CD gate settings.",
+      "properties": {
+        "merge_requires_green": { "type": "boolean", "default": true, "description": "Block gh pr merge when the PR's statusCheckRollup is failing/pending." },
+        "empty_rollup_is_blocking": { "type": "boolean", "default": true, "description": "Treat an empty statusCheckRollup as not-ready (subject to the covering-workflow discriminator). 'No checks reported' is not the same as green." },
+        "neutral_pending_check_prefixes": { "type": "array", "items": { "type": "string" }, "default": [], "description": "CheckRun display-name prefixes whose NEUTRAL conclusion means 'review pending' (treated as pending), not 'no opinion' (treated as pass). E.g. ['chromatic']." },
+        "tooling": { "type": "array", "items": { "type": "string" }, "default": [], "description": "The complete CI check-set (linters/formatters/type/test/spell/…) the local<->CI parity gate expects mirrored in pre-commit. E.g. ['ruff','mypy','pytest']." }
+      }
+    },
+    "shell": {
+      "type": "string",
+      "enum": ["bash", "zsh"],
+      "default": "bash",
+      "description": "The dev/agent shell. When 'zsh', the zsh-wordsplit safety warner is meaningful (bash-isms that silently break under zsh)."
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Repo-relative locations of framework artifacts. Defaults match the bootstrap install layout.",
+      "properties": {
+        "team": { "type": "string", "default": ".claude/team", "description": "Charter + roster + trust matrix + feedback log." },
+        "memory": { "type": "string", "default": ".claude/memory", "description": "Version-controlled project memory." },
+        "ontology": { "type": "string", "default": "ontology", "description": "Two-layer ontology root (omit if unused)." },
+        "state_file": { "type": "string", "default": ".claude/state.json", "description": "The wave/iteration state file the lifecycle skills read/write." },
+        "events_log": { "type": "string", "default": ".claude/framework/events.jsonl", "description": "Where hooks append block/event records (the generic observability stream)." }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The dispatcher seam: which hook modules are active and in what order. The bootstrapper writes this; editing it enables/disables checks without touching code. Names are module names under .claude/hooks/ (no .py).",
+      "properties": {
+        "pre_bash": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_workflow_paths_coverage", "validate_pr_ci_status"],
+          "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
+        },
+        "post_bash": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["warn_pipe_mask_rc"],
+          "description": "Ordered PostToolUse/Bash checks. Advisory only — never block."
+        }
+      }
+    }
+  }
+}
