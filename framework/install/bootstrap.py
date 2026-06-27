@@ -49,6 +49,9 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import roster_gen  # noqa: E402  (sibling module in install/)
+
 # framework/install/bootstrap.py  ->  framework/
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 _ASSETS = _FRAMEWORK_ROOT / "assets"
@@ -265,7 +268,10 @@ def main() -> int:
     ap.add_argument("--shell", choices=["bash", "zsh"])
     ap.add_argument("--reviewers", type=int)
     ap.add_argument("--merge-model", choices=["wave-branch", "direct-to-main"])
-    ap.add_argument("--interactive", action="store_true", help="Prompt for missing fields (TTY only)")
+    ap.add_argument("--interactive", action="store_true", help="Prompt for missing fields + review the proposed team (TTY only)")
+    ap.add_argument("--no-team", action="store_true", help="Skip roster generation (install hooks only)")
+    ap.add_argument("--team-size", type=int, help="Target headcount for the generated roster")
+    ap.add_argument("--no-enforce-identity", action="store_true", help="Generate the roster but do NOT enable the commit-identity gate")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
     args = ap.parse_args()
@@ -283,6 +289,49 @@ def main() -> int:
         print("note:          no .git here — installing anyway (new repo / pre-init).")
 
     cfg = build_config(args)
+
+    # --- introspect the repo + plan the roster (the team layer) ---
+    team_enabled = not args.no_team
+    roster_plan = None
+    if team_enabled:
+        email_pattern = cfg.get("identity", {}).get("email_pattern") or "team+{First}.{Last}@example.com"
+        roster_plan = roster_gen.plan(
+            target,
+            email_pattern=email_pattern,
+            declared_model=cfg.get("project", {}).get("model"),
+            declared_repos=cfg.get("project", {}).get("repos"),
+            team_size=args.team_size,
+        )
+        # Record what introspection found back into the config.
+        cfg.setdefault("project", {})["model"] = roster_plan.intro.model
+        if roster_plan.intro.model == "meta-and-children":
+            cfg["project"]["repos"] = [r.name for r in roster_plan.intro.repos]
+
+        print("\n-- repo introspection + proposed team --")
+        print(roster_plan.summary())
+
+        if args.interactive and sys.stdin.isatty():
+            ans = input("\nProceed with this team? [Y]es / [s]ize N / [n]o team: ").strip().lower()
+            if ans.startswith("n"):
+                team_enabled = False
+                roster_plan = None
+            elif ans.startswith("s"):
+                try:
+                    size = int(ans.split()[-1])
+                    roster_plan = roster_gen.plan(target, email_pattern=email_pattern,
+                                                  declared_model=cfg["project"]["model"],
+                                                  declared_repos=cfg.get("project", {}).get("repos"),
+                                                  team_size=size)
+                    print(roster_plan.summary())
+                except (ValueError, IndexError):
+                    print("  (could not parse size; keeping the proposed team)")
+
+        if team_enabled and not args.no_enforce_identity:
+            cfg.setdefault("identity", {})["enforce"] = True
+            pre = cfg.setdefault("hooks", {}).setdefault("pre_bash", [])
+            if "validate_commit_identity" not in pre:
+                pre.insert(0, "validate_commit_identity")  # identity check runs first
+
     problems = validate_config(cfg)
     if problems:
         print("config problems:")
@@ -299,6 +348,14 @@ def main() -> int:
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
     settings_status = merge_settings(target_claude, dry_run=args.dry_run)
 
+    roster_status = "skipped (--no-team)"
+    if team_enabled and roster_plan is not None:
+        rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
+        if args.dry_run:
+            roster_status = f"would write {len(rep['would_write'])} file(s) for {len(roster_plan.personas)} member(s)"
+        else:
+            roster_status = f"wrote {len(rep['written'])} file(s) ({len(roster_plan.personas)} member(s)); {len(rep['skipped'])} skipped"
+
     print("\n-- plan --" if args.dry_run else "\n-- result --")
     print(f"hooks/lib copied:  {len(assets['copied'])}")
     if assets["would_copy"]:
@@ -307,11 +364,15 @@ def main() -> int:
         print(f"skipped (exists):  {len(assets['skipped'])} (use --force to overwrite)")
     print(f"framework.config:  {cfg_status}")
     print(f"settings.json:     {settings_status}")
+    print(f"team roster:       {roster_status}")
+    if team_enabled and roster_plan is not None and not args.no_enforce_identity:
+        print("identity gate:     ENABLED (commits must use -c user.name/-c user.email from the roster)")
 
     print("\nNext:")
-    print("  1. Review .claude/framework.config.json and set scm.owner / policy / ci.tooling.")
-    print("  2. Restart Claude Code in the repo so the new settings.json hooks load.")
-    print("  3. Try a blocked action (e.g. `git commit --no-verify`) to confirm the gate fires.")
+    print("  1. Review .claude/framework.config.json (scm.owner / policy / ci.tooling) and .claude/team/roster.json.")
+    print("  2. Flesh out the persona cards in .claude/team/roster/ (or generate personalities).")
+    print("  3. Restart Claude Code in the repo so the new settings.json hooks load.")
+    print("  4. Try a blocked action (e.g. `git commit --no-verify`) to confirm the gate fires.")
     return 0
 
 

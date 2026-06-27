@@ -19,8 +19,11 @@ _BOOTSTRAP = _FRAMEWORK_ROOT / "install" / "bootstrap.py"
 
 
 def _install(target: Path, *extra: str) -> subprocess.CompletedProcess:
+    # These tests isolate the SCM/CI/safety gates, so install WITHOUT the team
+    # layer (identity enforcement is covered by test_roster_gen.py — with it on,
+    # a bare `git commit` would be blocked by the identity gate first).
     return subprocess.run(
-        [sys.executable, str(_BOOTSTRAP), str(target), "--owner", "test-org", *extra],
+        [sys.executable, str(_BOOTSTRAP), str(target), "--owner", "test-org", "--no-team", *extra],
         capture_output=True,
         text=True,
     )
