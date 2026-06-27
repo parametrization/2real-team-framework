@@ -31,6 +31,15 @@ def init(
     ),
     ai_personas: bool = typer.Option(False, help="Use Claude API to generate rich personas"),
     seed: int = typer.Option(None, help="Seed for reproducible AI persona generation"),
+    with_hooks: bool = typer.Option(
+        True,
+        "--with-hooks/--no-hooks",
+        help="Also install the framework runtime (hooks/lib/skills/config + settings wiring)",
+    ),
+    owner: str = typer.Option(None, help="SCM org/user for the framework config (scm.owner)"),
+    merge_model: str = typer.Option(
+        None, help="Default merge model: wave-branch | direct-to-main"
+    ),
 ) -> None:
     """Bootstrap a new project with the team framework."""
     target_path = Path(target).resolve()
@@ -139,11 +148,41 @@ def init(
     for f in created:
         console.print(f"  {f}")
 
+    # Install the config-driven framework runtime (hooks/lib/skills/config +
+    # dispatcher wiring) on top of the mustache team scaffolding.
+    if with_hooks:
+        from .framework_install import install_framework
+
+        proc = install_framework(
+            target_path,
+            owner=owner or git_email_prefix or None,
+            merge_model=merge_model,
+        )
+        if proc is None:
+            console.print(
+                "\n[yellow]Framework runtime not installed:[/yellow] bundled assets not found "
+                "(re-run from a source checkout, or use the standalone framework installer)."
+            )
+        elif proc.returncode != 0:
+            console.print(
+                "\n[yellow]Framework runtime install reported an issue "
+                f"(exit {proc.returncode}):[/yellow]"
+            )
+            console.print(f"[dim]{(proc.stderr or proc.stdout).strip()[:500]}[/dim]")
+        else:
+            console.print(
+                "\n[green]Installed the framework runtime[/green] (hooks/lib/skills/config)."
+            )
+
     console.print(f"\n[bold green]Team framework bootstrapped for '{project_name}'![/bold green]")
     console.print("Next steps:")
     console.print("  1. Review .claude/team/charter.md")
     console.print("  2. Customize roster cards in .claude/team/roster/")
     console.print("  3. Add team section to your CLAUDE.md")
+    if with_hooks:
+        console.print(
+            "  4. Review .claude/framework.config.json + restart Claude Code so hooks load."
+        )
 
 
 @app.command()

@@ -149,6 +149,18 @@ Trust is scored mechanically from wave signals (`lib/trust_signals.py` — the p
 scoring model is product-neutral; the merged-PR extraction is config-driven with
 two documented project-coupling points feeding off the lifecycle/state file).
 
+## Installing via the `2real-team` CLI
+
+The standalone `framework/install/bootstrap.py` above is the canonical installer.
+The published `2real-team` CLI (`python/`) now drives it too: `2real-team init`
+scaffolds the mustache team (charter/roster/trust matrix) **and** installs this
+config-driven runtime by default (`--with-hooks`, on by default; `--no-hooks` to
+skip). The framework assets are bundled into the wheel (`real_team/_bundled/
+framework/`) and the CLI invokes the bundled `install/bootstrap.py --no-team`
+(the CLI already wrote the roster). So a single `init` lays down a complete,
+runnable `.claude/` — hooks, libs, lifecycle, the skill, config, and the
+dispatcher wiring — not templates alone.
+
 ## What's covered vs. what's next
 
 **Working, tested end-to-end (`tests/`, 39 passing):** the config keystone, the
@@ -163,6 +175,8 @@ meta+children + the generated-roster→identity-gate loop), and the
 (`validate_pr_review` — the 1189-line N-reviewer/TechDebt gate — + the
 `pr_review_state` oracle that reuses it, + `validate_review_comment_format`),
 `validate_branch_freshness`, a mid-wave reachability gh wrapper around
-`lifecycle.classify_reachability`, and optional LLM persona personalities (wire
-in `python/src/real_team/personas.py`). All layers meet at the
-`framework.config.json` contract.
+`lifecycle.classify_reachability`, optional LLM persona personalities (wire in
+`python/src/real_team/personas.py`), and the **node CLI** runtime install (the
+Python `2real-team init` is wired; the node `init` would subprocess `python3`
+the same bundled bootstrap, since the runtime is Python-only). All layers meet at
+the `framework.config.json` contract.

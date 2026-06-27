@@ -440,6 +440,44 @@ class TestInitCommand:
         cards = list(roster_dir.glob("*.md"))
         assert len(cards) == 5
 
+    def test_init_installs_framework_runtime(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "3",
+            "--project-name", "demo",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--owner", "acme",
+        ])
+        assert result.exit_code == 0, result.output
+        claude = tmp_path / ".claude"
+        # Framework runtime laid down alongside the mustache team scaffolding.
+        assert (claude / "hooks" / "dispatcher.py").is_file()
+        assert (claude / "lib" / "lifecycle.py").is_file()
+        assert (claude / "framework.config.json").is_file()
+        assert (claude / "settings.json").is_file()
+        assert (claude / "skills" / "wave-lifecycle" / "SKILL.md").is_file()
+        # The config carries the passed owner.
+        cfg = json.loads((claude / "framework.config.json").read_text())
+        assert cfg["scm"]["owner"] == "acme"
+
+    def test_init_no_hooks_skips_runtime(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "3",
+            "--project-name", "demo",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        # Team scaffolding present, framework runtime absent.
+        assert (tmp_path / ".claude" / "team" / "charter.md").is_file()
+        assert not (tmp_path / ".claude" / "framework.config.json").exists()
+        assert not (tmp_path / ".claude" / "hooks").exists()
+
     def test_init_missing_preset_noninteractive(self, tmp_path: Path):
         result = runner.invoke(app, [
             "init",
