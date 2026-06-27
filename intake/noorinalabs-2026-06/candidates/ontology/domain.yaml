@@ -1,0 +1,272 @@
+# Noorina Labs — Domain Ontology
+# Cross-repo entities, relationships, and core domain concepts.
+# Updated by /ontology-rebuild. Manual edits require checksums.json update.
+
+version: 1
+
+# --- Domain contexts ---
+contexts:
+  hadith_scholarship:
+    description: Core domain — hadith texts, chains of transmission, narrator criticism
+    repos: [isnad-graph, data-acquisition, isnad-ingest-platform]
+    pipeline_split:
+      data-acquisition: "Acquire stage only — scrapers, downloaders. Output → B2 raw/"
+      isnad-ingest-platform: "Processing pipeline (dedup → enrich → normalize → graph-load). Kafka workers in Docker. Planned P2W8."
+
+  user_management:
+    description: Authentication, authorization, subscriptions, RBAC
+    repos: [user-service]
+
+  content_delivery:
+    description: Public-facing content — landing page, design system
+    repos: [landing-page, design-system]
+
+  platform_ops:
+    description: Deployment, infrastructure, observability
+    repos: [deploy]
+
+# --- Entities ---
+entities:
+  # --- Hadith scholarship context ---
+  narrator:
+    context: hadith_scholarship
+    id_prefix: "nar:"
+    description: Individual in a hadith chain of transmission (isnad), with biographical metadata and graph metrics
+    fields:
+      id: { type: string, required: true }
+      name_ar: { type: string, required: true }
+      name_en: { type: string, required: true }
+      kunya: { type: string, nullable: true, description: "Patronymic (e.g., Abu Hurayra)" }
+      nisba: { type: string, nullable: true, description: "Geographic/tribal affiliation" }
+      laqab: { type: string, nullable: true, description: "Epithet or title" }
+      birth_year_ah: { type: int, nullable: true, description: "Hijri calendar birth year" }
+      death_year_ah: { type: int, nullable: true, description: "Hijri calendar death year" }
+      birth_location_id: { type: string, fk: location, nullable: true }
+      death_location_id: { type: string, fk: location, nullable: true }
+      generation: { type: enum, values: [sahabi, tabii, taba_tabii, atba_taba_tabiin, later, unknown] }
+      gender: { type: enum, values: [male, female, unknown] }
+      sect_affiliation: { type: enum, values: [sunni, shia, neutral, unknown] }
+      tabaqat_class: { type: string, nullable: true }
+      trustworthiness_consensus: { type: enum, values: [thiqa, saduq, maqbul, daif, matruk, kadhdhab, unknown] }
+      aliases: { type: "list[string]" }
+      # Phase 4 enrichment metrics (nullable until populated)
+      betweenness_centrality: { type: float, nullable: true }
+      in_degree: { type: int, nullable: true }
+      out_degree: { type: int, nullable: true }
+      pagerank: { type: float, nullable: true }
+      community_id: { type: int, nullable: true }
+
+  hadith:
+    context: hadith_scholarship
+    id_prefix: "hdt:"
+    description: Prophetic tradition — Arabic text (matn), translation, grading, and parallel detection
+    fields:
+      id: { type: string, required: true }
+      matn_ar: { type: string, required: true, description: "Arabic text body" }
+      matn_en: { type: string, nullable: true, description: "English translation" }
+      isnad_raw_ar: { type: string, nullable: true }
+      isnad_raw_en: { type: string, nullable: true }
+      grade_composite: { type: string, nullable: true }
+      topic_tags: { type: "list[string]" }
+      source_corpus: { type: enum, values: [lk, sanadset, thaqalayn, sunnah, fawaz, open_hadith, muhaddithat, sunnah_scraped] }
+      has_shia_parallel: { type: boolean }
+      has_sunni_parallel: { type: boolean }
+
+  chain:
+    context: hadith_scholarship
+    id_prefix: "chn:"
+    description: Isnad — ordered chain of narrators transmitting a hadith
+    fields:
+      id: { type: string, required: true }
+      hadith_id: { type: string, fk: hadith }
+      chain_index: { type: int }
+      full_chain_text_ar: { type: string, nullable: true }
+      full_chain_text_en: { type: string, nullable: true }
+      chain_length: { type: int }
+      is_complete: { type: boolean }
+      is_elevated: { type: boolean, description: "Ali isnad (shorter chain)" }
+      classification: { type: enum, values: [muttasil, mursal, muallaq, munqati, mudallas, mudtarib, unknown] }
+      narrator_ids: { type: "list[string]" }
+
+  collection:
+    context: hadith_scholarship
+    id_prefix: "col:"
+    description: Hadith compilation book (e.g., Sahih al-Bukhari)
+    fields:
+      id: { type: string, required: true }
+      name_ar: { type: string }
+      name_en: { type: string }
+      compiler_name: { type: string, nullable: true }
+      compiler_id: { type: string, fk: narrator, nullable: true }
+      compilation_year_ah: { type: int, nullable: true }
+      sect: { type: enum, values: [sunni, shia] }
+      canonical_rank: { type: int, nullable: true }
+      total_hadiths: { type: int, nullable: true }
+      book_count: { type: int, nullable: true }
+
+  grading:
+    context: hadith_scholarship
+    description: Scholar's authenticity assessment of a hadith
+    fields:
+      id: { type: string, required: true }
+      hadith_id: { type: string, fk: hadith }
+      scholar_name: { type: string }
+      grade: { type: enum, values: [sahih, hasan, daif, mawdu, sahih_li_ghayrihi, hasan_li_ghayrihi, unknown] }
+      methodology_school: { type: string, nullable: true }
+      era: { type: string, nullable: true }
+
+  historical_event:
+    context: hadith_scholarship
+    description: Historical event for contextualizing narrator timelines
+    fields:
+      id: { type: string, required: true }
+      name_en: { type: string }
+      name_ar: { type: string, nullable: true }
+      year_start_ah: { type: int }
+      year_end_ah: { type: int, nullable: true }
+      event_type: { type: enum, values: [caliphate, fitna, conquest, theological_controversy, compilation_effort, persecution, dynasty_transition] }
+      description: { type: string, nullable: true }
+
+  location:
+    context: hadith_scholarship
+    id_prefix: "loc:"
+    description: Geographic location for narrator biography
+    fields:
+      id: { type: string, required: true }
+      name_en: { type: string }
+      name_ar: { type: string, nullable: true }
+      region: { type: string, nullable: true }
+      lat: { type: float, nullable: true }
+      lon: { type: float, nullable: true }
+
+  # --- User management context ---
+  user:
+    context: user_management
+    description: Registered platform user with auth, roles, and subscription
+    fields:
+      id: { type: uuid, required: true }
+      email: { type: string, unique: true }
+      email_verified: { type: boolean }
+      display_name: { type: string, nullable: true }
+      password_hash: { type: string, nullable: true }
+      avatar_url: { type: string, nullable: true }
+      locale: { type: string, nullable: true }
+      is_active: { type: boolean }
+      last_login_at: { type: datetime, nullable: true }
+
+  role:
+    context: user_management
+    description: RBAC role with hierarchy level
+    fields:
+      id: { type: uuid, required: true }
+      name: { type: string, unique: true }
+      description: { type: string, nullable: true }
+    hierarchy:
+      admin: 40
+      researcher: 30
+      reader: 20
+      trial: 10
+
+  subscription:
+    context: user_management
+    description: User subscription to platform features
+    fields:
+      id: { type: uuid, required: true }
+      user_id: { type: uuid, fk: user }
+      plan: { type: enum, values: [free, trial, researcher, institutional] }
+      status: { type: enum, values: [active, expired, cancelled, suspended] }
+      starts_at: { type: datetime }
+      expires_at: { type: datetime, nullable: true }
+    rules:
+      - One active trial per user (enforced by partial unique index)
+      - Trial duration is 14 days
+
+  session:
+    context: user_management
+    description: Authenticated user session (refresh token stored as hash)
+    fields:
+      id: { type: uuid }
+      user_id: { type: uuid, fk: user }
+      token_hash: { type: string, unique: true }
+      expires_at: { type: datetime }
+      revoked_at: { type: datetime, nullable: true }
+
+  oauth_account:
+    context: user_management
+    description: Linked OAuth provider account
+    fields:
+      id: { type: uuid }
+      user_id: { type: uuid, fk: user }
+      provider: { type: string, values: [google, github, apple, facebook] }
+      provider_account_id: { type: string }
+    constraints:
+      - unique(provider, provider_account_id)
+
+  totp_secret:
+    context: user_management
+    description: Two-factor authentication TOTP secret (encrypted at rest)
+    fields:
+      user_id: { type: uuid, fk: user, unique: true }
+      encrypted_secret: { type: string }
+      is_verified: { type: boolean }
+      recovery_codes: { type: string, nullable: true }
+
+# --- Relationships ---
+relationships:
+  # Hadith scholarship
+  - name: TRANSMITTED_TO
+    from: narrator
+    to: narrator
+    attributes: [hadith_id, chain_id, position_in_chain, transmission_method]
+    description: Direct transmission link in an isnad chain
+
+  - name: NARRATED
+    from: narrator
+    to: hadith
+    description: Narrator appears in hadith's isnad
+
+  - name: APPEARS_IN
+    from: hadith
+    to: collection
+    attributes: [book_number, chapter_number, hadith_number_in_book]
+    description: Hadith included in a collection
+
+  - name: PARALLEL_OF
+    from: hadith
+    to: hadith
+    attributes: [similarity_score, variant_type, cross_sect]
+    description: Textual parallel between hadiths (possibly cross-sectarian)
+
+  - name: STUDIED_UNDER
+    from: narrator
+    to: narrator
+    attributes: [period_ah, location_id, source]
+    description: Student-teacher relationship
+
+  - name: ACTIVE_DURING
+    from: narrator
+    to: historical_event
+    description: Narrator was active during this historical period
+
+  - name: BASED_IN
+    from: narrator
+    to: location
+    attributes: [period_ah, role]
+    description: Narrator resided or was active in this location
+
+  # User management
+  - name: HAS_ROLE
+    from: user
+    to: role
+    attributes: [granted_at, granted_by]
+    description: User assigned a role (via user_roles junction)
+
+  - name: HAS_SUBSCRIPTION
+    from: user
+    to: subscription
+    description: User's current subscription
+
+  - name: LINKED_OAUTH
+    from: user
+    to: oauth_account
+    description: User linked to external OAuth provider

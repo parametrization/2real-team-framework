@@ -1,0 +1,57 @@
+# noorinalabs-isnad-ingest-platform — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-isnad-ingest-platform
+status: planned
+description: |
+  Pipeline processing layer (split out from data-acquisition in P2W8).
+  Kafka workers (KRaft mode) in Docker containers process files arriving in B2,
+  moving them through stage prefixes: raw → dedup → enriched → normalized → staged.
+  Final stage loads into Neo4j.
+
+tech_stack:
+  language: Python 3.14
+  message_broker: Kafka (KRaft mode — no ZooKeeper)
+  storage: Backblaze B2 (S3-compatible) — prefix-per-stage
+  local_dev: MinIO (S3-compatible, same code path)
+  runtime: Docker containers, one per worker
+  databases: [Neo4j 5.x, PostgreSQL 16 (pgvector)]
+
+storage_layout:
+  bucket: noorinalabs-pipeline
+  prefixes:
+    - "raw/{source}/{date}/        # written by data-acquisition"
+    - "dedup/{source}/{date}/      # cross-source dedup output"
+    - "enriched/{source}/{date}/   # topic + historical enrichment"
+    - "normalized/{source}/{date}/ # schema-normalized"
+    - "staged/{source}/{date}/     # ready-for-graph-load"
+
+workers:
+  dedup_worker:
+    consumes_topic: pipeline.raw.ready
+    produces_topic: pipeline.dedup.ready
+    output_prefix: dedup/
+  enrich_worker:
+    consumes_topic: pipeline.dedup.ready
+    produces_topic: pipeline.enriched.ready
+    output_prefix: enriched/
+  normalize_worker:
+    consumes_topic: pipeline.enriched.ready
+    produces_topic: pipeline.normalized.ready
+    output_prefix: normalized/
+  graph_load_worker:
+    consumes_topic: pipeline.normalized.ready
+    produces_topic: pipeline.staged.ready
+    output_prefix: staged/
+    sink: neo4j
+
+reset_levels:
+  stage: "Wipe a single B2 stage prefix + downstream Kafka topics"
+  source: "Wipe all stages for one source"
+  full: "Wipe all B2 data + all Kafka topics + Neo4j hadith data + PG hadith metadata. Preserves user/auth/RBAC."
+
+planned_issues:
+  - 105: "infra: Set up Backblaze B2 bucket with stage-based prefix hierarchy"
+  - 106: "infra: Add Kafka (KRaft) to deployment with pipeline topics"
+  - 107: "feat: Create Kafka worker containers for pipeline stages"
+  - 108: "feat: Pipeline reset/obliterate — per-stage, per-source, and full reset"

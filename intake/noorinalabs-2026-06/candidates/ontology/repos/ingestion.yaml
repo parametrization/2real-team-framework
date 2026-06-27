@@ -1,0 +1,110 @@
+# noorinalabs-data-acquisition — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-data-acquisition
+description: Data source acquisition — scrapers, API connectors, downloaders. Output goes to B2 raw/ bucket for pipeline processing.
+tech_stack:
+  language: Python 3.14
+  package_manager: uv
+  data_processing: PyArrow 15+
+  ml_optional: [sentence-transformers, FAISS, camel-tools, torch]
+  databases: [Neo4j 5.x, PostgreSQL 16 (pgvector)]
+
+pipeline_stages:
+  acquire:
+    path: src/acquire/
+    description: Download from external APIs, CSVs, Git repos, Kaggle
+    sources:
+      lk_corpus: "LK Hadith Corpus (6 Sunni books via CSVs)"
+      sanadset: "SanadSet Sunni collection (Kaggle)"
+      thaqalayn: "Shia Al-Kafi (web scrape + GitHub)"
+      fawaz: "Fawaz et al. dataset"
+      sunnah_api: "Sunnah.com REST API"
+      sunnah_scraper: "Sunnah.com web scraper"
+      open_hadith: "OpenHadith repository"
+      muhaddithat: "Biographical/network databases"
+    output: data/raw/
+    pattern: "Idempotent (skip if exists), retry with tenacity, SHA-256 verification"
+
+  parse:
+    path: src/parse/
+    description: "Raw CSV/JSON → PyArrow Parquet (schema-validated)"
+    output: data/staging/
+    output_tables:
+      - "hadiths_{corpus}.parquet"
+      - "narrator_mentions_{corpus}.parquet"
+      - "collections_{corpus}.parquet"
+    pattern: "read_csv_robust with encoding fallback, Snappy compression"
+
+  resolve:
+    path: src/resolve/
+    description: Entity resolution — NER consolidation, disambiguation, dedup
+    sub_stages:
+      ner: { output: narrator_mentions_resolved.parquet, description: "Consolidate mentions across corpora" }
+      disambiguate:
+        output: [narrators_canonical.parquet, ambiguous_narrators.parquet]
+        stages:
+          - "Stage 1: Exact name match"
+          - "Stage 2: Fuzzy match (rapidfuzz, threshold 80%)"
+          - "Stage 3: Temporal match (death-birth within 15-80 years)"
+          - "Stage 4: Geographic match"
+          - "Stage 5: Cross-reference (external IDs)"
+        optimization: "Prefix-based blocking (2-char), batch 50K"
+      dedup:
+        output: parallel_links.parquet
+        method: "sentence-transformer embeddings + FAISS"
+        tiers: { verbatim: ">=0.90", close_paraphrase: ">=0.80", thematic: "<0.80" }
+
+  load:
+    path: src/graph/
+    description: "Parquet → Neo4j (MERGE nodes, CREATE edges)"
+    batch_size: 1000
+    node_types: [Narrator, Hadith, Chain, Collection, Grading, HistoricalEvent, Location]
+    edge_types: [TRANSMITTED_TO, NARRATED, APPEARS_IN, PARALLEL_OF, STUDIED_UNDER, ACTIVE_DURING]
+    pattern: "MERGE on ID key, explicit SET (no += for Phase 4 safety)"
+
+  enrich:
+    path: src/enrich/
+    description: Graph metrics, topic classification, historical linking
+    sub_stages:
+      metrics: { description: "Neo4j GDS — PageRank, betweenness centrality, Louvain communities" }
+      topics: { description: "Transformer model — 14 topic labels", labels: [theology, jurisprudence, dreams/visions, end_times, "..."] }
+      historical: { description: "Link narrators to historical events by lifespan" }
+
+data_models:
+  staging_schemas:
+    HADITH_SCHEMA: { key_fields: [source_id, source_corpus, collection_name, matn_ar, grade, sect] }
+    NARRATOR_MENTION_SCHEMA: { key_fields: [mention_id, source_hadith_id, position_in_chain, name_ar] }
+    NARRATOR_BIO_SCHEMA: { key_fields: [bio_id, source, name_ar, birth_year_ah, death_year_ah, trustworthiness] }
+    COLLECTION_SCHEMA: { key_fields: [collection_id, name_en, sect, source_corpus] }
+    NETWORK_EDGE_SCHEMA: { key_fields: [from_narrator_name, to_narrator_name, source] }
+
+  resolution_schemas:
+    NARRATOR_MENTIONS_RESOLVED: { key_fields: [mention_id, canonical_narrator_id, confidence] }
+    NARRATORS_CANONICAL: { key_fields: [canonical_id, name_ar, aliases, mention_count] }
+    AMBIGUOUS_NARRATORS: { key_fields: [mention_id, "candidate_{1,2,3}_{id,name,score,stage}"] }
+    PARALLEL_LINKS: { key_fields: [hadith_id_a, hadith_id_b, similarity_score, variant_type, cross_sect] }
+
+local_patterns:
+  frozen_models: "Pydantic v2 with ConfigDict(frozen=True)"
+  manifest_checksums: "data/manifest.json tracks MD5 of all Parquet files for incremental loading"
+  audit_trail: "data/audit/{timestamp}.json per pipeline stage"
+  validation_modes: "Strictness.STRICT (halt) vs Strictness.WARN (continue)"
+  arabic_normalization: "Diacritic removal, alif normalization via src/utils/arabic.py"
+
+cli_commands:
+  - { command: "isnad-ingest acquire", description: "Phase 1a — download all sources" }
+  - { command: "isnad-ingest parse", description: "Phase 1b — parse to Parquet" }
+  - { command: "isnad-ingest resolve", description: "Phase 2 — entity resolution" }
+  - { command: "isnad-ingest load", description: "Phase 3 — load into Neo4j", flags: [--skip-validation, --nodes-only, --incremental] }
+  - { command: "isnad-ingest enrich", description: "Phase 4 — graph enrichment", flags: [--only, --skip, --incremental] }
+  - { command: "isnad-ingest validate", description: "Post-load validation queries" }
+  - { command: "isnad-ingest validate-staging", description: "Parquet schema validation", flags: [--strict, --output-json, --drift-tolerance] }
+  - { command: "isnad-ingest pipeline", description: "Full end-to-end run" }
+
+build_commands:
+  setup: "make setup (uv sync --group ml)"
+  test: "make test"
+  lint: "make lint"
+  typecheck: "make typecheck"
+  check: "make check"

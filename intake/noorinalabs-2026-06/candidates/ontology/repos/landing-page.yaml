@@ -1,0 +1,107 @@
+# noorinalabs-landing-page — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-landing-page
+description: Organization landing page — static site (Astro + Tailwind)
+tech_stack:
+  framework: Astro 6.1
+  language: TypeScript
+  build_tool: Vite (via Astro)
+  styling: Tailwind CSS 4.2 + design system tokens
+  content: MDX with Zod schema validation
+  deployment: Docker (multi-stage Node → Nginx Alpine)
+
+modules:
+  pages:
+    path: src/pages/
+    entries:
+      - { route: /, file: index.astro, description: "Hero, mission, problem, capabilities, partnership, contact" }
+      - { route: /about, file: about.astro, collection: pages }
+      - { route: /projects/isnad-graph, file: projects/isnad-graph.astro, collection: projects }
+
+  layouts:
+    path: src/layouts/
+    hierarchy:
+      BaseLayout: { description: "HTML shell, meta tags, OG, favicon, skip-to-content" }
+      PageLayout: { extends: BaseLayout, description: "Header nav, main content, footer" }
+      ProjectLayout: { extends: PageLayout, description: "Hero, feature grid, MDX body" }
+
+  components:
+    SEO: { path: src/components/SEO.astro, description: "JSON-LD schemas — Organization, WebSite, custom per-page" }
+
+  content_collections:
+    projects: { path: src/content/projects/, schema: "title, description, ogImage, features[], cta, publishDate, draft" }
+    pages: { path: src/content/pages/, schema: "title, description, ogImage, publishDate, draft" }
+
+  styles:
+    global: { path: src/styles/global.css, description: "Tailwind import + custom color theme" }
+    color_palette:
+      navy: { range: "50-950", primary: "#4157b1" }
+      gold: { range: "50-900", primary: "#d4a22e" }
+      neutral: { range: "50-900" }
+
+pages:
+  home_sections:
+    - hero: "Title, subtitle, 4 value pillars, dual CTAs"
+    - guiding_principle: "Mission statement blockquote"
+    - problem: "5 fundamental questions, 3 statistics (1.9B users, 14+ centuries, 0 tools)"
+    - capabilities: "5 capability cards (responsive grid)"
+    - why_now: "3 cards (tools matured, data available, appetite growing)"
+    - partnership: "3 partnership types (Research, Institutional, Grant)"
+    - contact: "CTA to info@noorinalabs.com"
+
+  navigation:
+    header: [Home (/), About (/about), Projects (/#projects)]
+    footer:
+      projects: [Isnad Graph (https://isnad-graph.noorinalabs.com), About the Isnad Graph (/projects/isnad-graph)]
+      organization: [About (/about), GitHub (https://github.com/noorinalabs)]
+
+local_patterns:
+  static_generation: "All pages pre-rendered at build time (no SSR)"
+  content_as_code: "No CMS — MDX + Git versioning"
+  seo: "JSON-LD structured data (Organization, WebSite, SoftwareApplication)"
+  accessibility: "Axe Core Playwright checks, WCAG 2.2 AA"
+  responsive: "Mobile-first breakpoints at 640px, 768px, 1024px"
+  design_system: "@noorinalabs/design-system CSS tokens imported in BaseLayout"
+
+build_commands:
+  dev: "npm run dev (port 4321)"
+  build: "npm run build → dist/"
+  test: "npm run test"
+  e2e: "npm run test:e2e"
+  lint: "npm run lint"
+  typecheck: "npx astro check"
+
+ci:
+  deploy_workflow:
+    workflow: .github/workflows/deploy.yml
+    pr: "landing-page#71 (Kofi)"
+    issue: "#68"
+    status: merged
+    description: "Image-tag Contract v6 replica. Emits 4 tags on push to main: sha-<short>, latest, stg-<short>, stg-latest. No notify-deploy step — landing-page deploy flows through deploy/promote.yml registry retag, not push-time dispatch (intentional architectural divergence from isnad-graph/user-service per Cédric's review note)."
+  node_20_upgrade:
+    pr: "landing-page#91 (P3W8)"
+    workflows_touched: [.github/workflows/deploy.yml, .github/workflows/ci.yml]
+    description: "Bump GitHub Actions to Node 20-compatible majors per parent#309 audit (actions/checkout@v6, etc)."
+
+dispatch_contracts_sent:
+  # Cross-link: services.yaml § cross_repo_dispatch_contracts[name=deploy-landing-page]
+  # ASYMMETRIC — listener accepts the event-type but no sender wires it.
+  - name: deploy-landing-page
+    event_type: deploy-noorinalabs-landing-page
+    status: NO_SENDER
+    listener: "noorinalabs-deploy/.github/workflows/deploy-stg.yml (types: [..., deploy-noorinalabs-landing-page])"
+    rationale: "Landing-page intentionally omits a notify-deploy job per Contract v6 (#71, Kofi). Production rollout flows through deploy/promote.yml registry retag, not push-time dispatch. The deploy-stg.yml listener still declares the event-type — either landing-page grows a sender, or the listener drops the type. Tracked in deploy#285."
+
+local_hooks:
+  pattern: "dispatcher-style — local settings.json delegates to parent canonical hooks"
+  settings_align_pr: "landing-page#90 (P3W8)"
+  description: "settings.json matchers aligned with parent canonical (PostToolUse/Edit/Write/Stop coverage). Per feedback_dispatcher_child_no_local_fixtures.md memory: local repo hosts dispatcher entries only; canonical hook implementations live in noorinalabs-main/.claude/hooks/."
+
+decisions:
+  adr_001_astro_build_output_hook_coverage:
+    file: docs/adr/0001-astro-build-output-hook-coverage.md
+    pr: "landing-page#89 (P3W8)"
+    decision: "DEFER — do not author Astro-build-output hook coverage at this time"
+    rationale: "P3W7 audit gap closed via deliberate defer. Astro build outputs are static artifacts; existing parent hooks cover the editing surfaces. No active runtime gate needed."
+    revisit_trigger: "Reconsider if Astro pipeline starts emitting non-static artifacts (SSR, ISR, etc.) or if a hook gap surfaces in production."
