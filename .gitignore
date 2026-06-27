@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/_verify/
+
+# Node
+node_modules/
+node/coverage/
+
+# Editor / OS
+.DS_Store

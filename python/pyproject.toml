@@ -69,6 +69,7 @@ include = [
 "../templates" = "templates"
 "../presets" = "presets"
 "../skills" = "skills"
+"../framework" = "framework"
 
 [tool.ruff]
 line-length = 100

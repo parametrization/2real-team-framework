@@ -20,7 +20,9 @@ class BundleSharedDataHook(BuildHookInterface):
 
     PLUGIN_NAME = "bundle-shared-data"
 
-    _DIRS = ("templates", "presets", "skills")
+    # "framework" carries the config-driven runtime (install/ + assets/ + config/)
+    # that `2real-team init --with-hooks` installs via framework/install/bootstrap.py.
+    _DIRS = ("templates", "presets", "skills", "framework")
 
     def initialize(self, version: str, build_data: dict) -> None:  # noqa: ARG002
         root = Path(self.root)
