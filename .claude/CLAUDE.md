@@ -48,3 +48,13 @@ When a deployments branch is merged into `main`, create a GitHub Release tagged 
 - **GitHub Actions** — CI/CD pipelines, automated tests, linting, deployment
 - These are the **core orchestration layer** — do not introduce alternative tools for these concerns
 - **Branching strategy:** Feature branches named `{FirstInitial}.{LastName}/{IIII}-{issue-name}` merged to deployments branch via PR
+
+## Project Memory
+
+Project memory is version-controlled in the repo at `.claude/memory/` (transferable on pull,
+zero per-machine setup). The always-loaded index below imports one line per memory; the topic
+files in `.claude/memory/*.md` are read on demand. To record a memory, create/edit
+`.claude/memory/<kebab-slug>.md` with frontmatter, add a pointer line to `MEMORY.md`, link
+related memories with `[[slug]]`, and commit it.
+
+@.claude/memory/MEMORY.md
