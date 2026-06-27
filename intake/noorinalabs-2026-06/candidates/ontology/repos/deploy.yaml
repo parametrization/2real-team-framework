@@ -1,0 +1,239 @@
+# noorinalabs-deploy — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-deploy
+description: Deployment orchestration — Terraform, Docker Compose, CI/CD workflows, observability
+
+terraform_modules:
+  hetzner:
+    path: terraform/hetzner/
+    layout: per-env
+    # Per ADR 0001 (deploy#82, P2W10): envs/{stg,prod}/ root modules each call shared modules/hetzner-vps/.
+    # Working directory IS the env selector (no Terraform workspaces).
+    shared_module:
+      path: terraform/hetzner/modules/hetzner-vps/
+      provider: hetznercloud/hcloud ~> 1.49
+      resource_naming: "noorinalabs-${var.env}[-suffix]"  # server, firewall, ssh-key all use ${env}
+      labels: { project: noorinalabs, environment: "${var.env}" }
+    envs:
+      stg:
+        path: terraform/hetzner/envs/stg/
+        server: { name: noorinalabs-stg, type: CPX21, location: ash, image: ubuntu-24.04 }
+        state_key: hetzner/stg.tfstate
+      prod:
+        path: terraform/hetzner/envs/prod/
+        server: { name: noorinalabs-prod, type: CPX41, location: ash, image: ubuntu-24.04 }
+        state_key: hetzner/prod.tfstate
+    state_backend: { type: s3, bucket: noorinalabs-terraform-state, endpoint: backblaze-b2, region: us-east-005, encryption_at_rest: SSE-B2 }
+    firewall_rules: [SSH/22, HTTP/80, HTTPS/443]
+    outputs_per_env: [env, server_name, server_ip, server_ipv6, ssh_target, labels, server_status]
+    notes:
+      - "Pre-wave-10 root at terraform/hetzner/ used single state key hetzner/terraform.tfstate — migrated to hetzner/prod.tfstate."
+      - "Hand-made isnad-graph-prod VPS (outside Terraform) remains live until deploy#86 decommission."
+    adr: docs/adr/0001-tf-hetzner-per-env-state-strategy.md
+
+  cloudflare:
+    path: terraform/cloudflare/
+    provider: cloudflare/cloudflare ~> 4.43
+    resources:
+      zone_settings: { ssl: strict, min_tls: "1.2", always_https: true, automatic_https_rewrites: "on" }
+      dns_records:
+        - { name: "@", type: A, target: var.vps_ipv4_address, proxied: false }
+        - { name: www, type: CNAME, target: noorinalabs.com, proxied: false }
+      subdomains:
+        variable: "var.subdomains (map of name → proxied_bool)"
+        default: { isnad-graph: false }
+        # Per-service stg subdomains (e.g., stg.isnad-graph, stg.landing) added via deploy#83 / PR #157.
+        open_pr: "deploy#157 (P2W10) — stg + per-service subdomains across both envs"
+
+docker_services:
+  compose_file: compose/docker-compose.prod.yml
+  networks:
+    backend: { internal: true, description: "Databases, API, observability" }
+    frontend: { internal: false, description: "Public-facing via Caddy" }
+    user-backend: { internal: true, description: "User service + dedicated DBs" }
+
+  application:
+    api: { image: "ghcr.io/noorinalabs/noorinalabs-isnad-graph", port: 8000, memory: 2G, cpus: 2.0 }
+    frontend: { image: "ghcr.io/noorinalabs/noorinalabs-isnad-graph-frontend", port: 80, memory: 512M }
+    landing: { image: "ghcr.io/noorinalabs/noorinalabs-landing-page", port: 80, memory: 256M }
+    user-service: { image: "ghcr.io/noorinalabs/noorinalabs-user-service", port: 8000, memory: 1G }
+    caddy: { image: "caddy:2-alpine", ports: [80, 443], config: caddy/Caddyfile }
+
+  databases:
+    neo4j: { image: "neo4j:5-community", ports: [7474, 7687], memory: 8G, plugins: [apoc, gds] }
+    postgres: { image: "pgvector/pgvector:pg16", port: 5432, memory: 4G }
+    redis: { image: "redis:7-alpine", port: 6379, memory: 1G }
+    user-postgres: { image: "postgres:16-alpine", port: 5433, memory: 2G }
+    user-redis: { image: "redis:7-alpine", port: 6380, memory: 512M }
+
+  observability:
+    prometheus: { image: "prom/prometheus:v3.4.0", port: 9090, retention: 30d }
+    grafana: { image: "grafana/grafana:11.6.0", port: 3000, path: /grafana }
+    loki: { image: "grafana/loki:2.9.10", port: 3100, retention: 7d }
+    promtail: { image: "grafana/promtail:3.4.1", scrape: docker_socket }
+    alertmanager: { image: "prom/alertmanager:v0.28.1", port: 9093 }
+    node-exporter: { image: "prom/node-exporter:v1.9.1", port: 9100 }
+    postgres-exporter: { image: "quay.io/prometheuscommunity/postgres-exporter:v0.16.0", port: 9187 }
+    user-postgres-exporter: { image: "quay.io/prometheuscommunity/postgres-exporter:v0.16.0", port: 9187 }
+
+  messaging:
+    kafka: { image: "bitnamilegacy/kafka:3.8.0", mode: KRaft, listeners: [INTERNAL/9092, CONTROLLER/9093], user: "1001:0", topics_init: kafka-init }
+    kafka-init: { image: "bitnamilegacy/kafka:3.8.0", purpose: "one-shot topic creation via init-topics.sh" }
+    kafka-ui: { image: "provectuslabs/kafka-ui:v0.7.2", port: "127.0.0.1:8085", auth: basic, readonly: true }
+
+workflows:
+  deploy_isnad_graph: { trigger: workflow_dispatch, target: [api, frontend], health_check: 120s, note: "Legacy single-VPS path. Was repository_dispatch listener pre-W10; now workflow_dispatch-only (manual rollback). Decom tracked in deploy#86." }
+  deploy_landing: { trigger: workflow_dispatch, target: [landing], health_check: 60s, note: "Legacy single-VPS path. Manual-only rollback to legacy VPS; decom tracked in deploy#86." }
+  deploy_stg: { trigger: "repository_dispatch + workflow_dispatch", target: "stg fan-in for isnad-graph + user-service + landing-page", note: "Active listener — see dispatch_contracts_received below." }
+  deploy_all: { trigger: workflow_dispatch, target: all, health_check: 120s }
+  verify_deploy: { trigger: workflow_run, checks: [HTTPS, health, TLS] }
+  terraform:
+    trigger: "pull_request + push to main (terraform/**)"
+    jobs:
+      fmt: "terraform fmt -check -recursive"
+      validate: "matrix over [modules/hetzner-vps, envs/stg, envs/prod, cloudflare, backblaze] — -backend=false"
+      plan: "matrix over [stg, prod] — PR only — comments plan on PR"
+      apply: "matrix over [stg, prod] with max-parallel=1 — push to main only — stg before prod"
+      lock_guard: "scripts/check_tf_apply_locking.py — asserts every apply job carries a terraform-apply-* concurrency group (cancel-in-progress:false). Regression guard per ADR 0005 / #334."
+    environments: { stg: staging, prod: production }
+    locking_mechanism: "gh-actions-concurrency-group"  # ADR 0005 (#334): per-root per-env `concurrency: {group: terraform-apply-<root>-<env>, cancel-in-progress: false}` on apply jobs serializes concurrent applies to the same B2 state file (B2 has no native lock). Workstation-apply bypasses it — see docs/runbooks/terraform-workstation-apply.md.
+    locking_adr: docs/adr/0005-terraform-state-locking-on-b2-backend.md
+    locking_smoke: ".github/workflows/terraform-lock-smoke.yml + terraform/_lock-smoke/ (null_resource serialization proof)"
+  integration_tests:
+    trigger: "pull_request + push to main + workflow_dispatch"
+    purpose: "cross-repo integration suite (#49)"
+    sibling_ref_resolution: "wave-aware — resolve user-service + isnad-graph refs to same wave branch when PR base = deployments/* (with main fallback). Added in #159 (Aisha, P2W10)."
+    run_modes:
+      hermetic: "Full local docker-compose stack; builds user-service and isnad-graph-api from sibling checkouts. PR-CI default."
+      remote: "Skip stack-up; point HTTP fixtures at env-supplied stg URLs (ISNAD_BASE_URL, USER_SERVICE_BASE_URL). DB/Redis-direct fixtures auto-skip. Hard refusal at startup if ENVIRONMENT=prod/production (defaults to stg). Per-test refactors for stg test-user creds tracked in #178."
+    pull_retry: "Per-image bounded retry-with-backoff (3 attempts, 1/2s) before `compose up --build` — closes #214 (single-image Docker Hub timeout hard-failed entire run pre-fix). JSON-parse-by-shape (`image` && !`build`) avoids short-form `*/*` filter misses."
+  compose_validate:
+    workflow: .github/workflows/compose-validate.yml
+    triggers: "pull_request + push to main (paths: compose/**, infra/**, scripts/**, .github/workflows/**)"
+    jobs:
+      compose_config: "Materialize .env from .env.example with CI placeholders, then `docker compose config --quiet`"
+      shellcheck: "Lint shell scripts under infra/ + scripts/"
+      passlist_drift:
+        pr: "deploy#97"
+        description: "Catch drift between compose's :?-required vars and deploy-stg/deploy-prod `env_keys` passlists at PR-review time. Pre-fix, drift was detected only at compose-up time (PR #95 surfaced 6 missing vars post-merge). Fails CI on missing; warns on extras (passlist vars compose doesn't reference)."
+        workflow_written_vars: [IMAGE_TAG, BASE_DOMAIN, USER_SERVICE_IMAGE_TAG, LANDING_IMAGE_TAG]
+  rollback: { trigger: workflow_dispatch, inputs: [image_tag, service] }
+  # Promotion pathway (P2W10, section A — all merged):
+  promote: { pr: "deploy#155 (Aisha)", issue: "#84", status: merged, description: "stg auto-deploy + prod manual-approval promotion (Contract v6 image-tag retag)" }
+  deploy_stg: { pr: "deploy#155 (Aisha)", issue: "#84", status: merged, trigger: "repository_dispatch from service repos (deploy-noorinalabs-{isnad-graph,user-service,landing-page})" }
+  deploy_prod:
+    pr: "deploy#155 (Aisha, base); deploy#251 (break-glass)"
+    issue: "#84 (base); #251 (break-glass)"
+    status: merged
+    trigger: "workflow_dispatch (fired by promote.yml after retag + manual approval in production GH Environment)"
+    per_service_tag_inputs: [api_frontend_tag, user_service_tag, landing_tag]
+    tag_shape_default: "prod-* (validated per-service before deploy step)"
+    break_glass:
+      input: allow_stg_tags
+      requires: break_glass_reason
+      effect: "Accept stg-* shape tags directly (skip the prod-* shape check) for DR scenarios where promote.yml retag path is blocked (e.g., GHCR cross-repo write 403). Surfaced 2026-05-02 emergency restore."
+      jobs:
+        validate_break_glass_reason: "Runs first; fails-fast when allow_stg_tags=true but break_glass_reason is empty"
+        audit_allow_stg_tags: "Runs in parallel with deploy (does NOT gate); records bypass via composite action `./.github/actions/break-glass-audit` — appends to pinned audit-log issue (label `break-glass-audit-log`), emits Prometheus textfile-collector metric, BreakGlassUsed Alertmanager rule"
+      runbook: docs/runbooks/break-glass.md
+  alembic_pre_deploy_gate:
+    workflow: .github/workflows/db-migrate.yml
+    pr: "deploy#153 (Lucas)"
+    issue: "#85"
+    status: merged
+    description: "Reusable workflow_call. Per-env GH Environment mapping. Heads-count assertion on `0040` + `alembic upgrade head` (singular). Job output `migrated=true|false` set runner-side after SSH step (not inside ssh-action — see #153 review B1)."
+    runbook: docs/runbooks/user-service-alembic.md
+    callers_pending: "promote.yml not yet `uses:`-wires this workflow — tracked in deploy#160 (W11)"
+    observability_followup: "Prometheus alert was deferred — textfile-collector emission tracked in deploy#161 (W11)"
+  image_tag_invariants:
+    workflow: .github/workflows/image-tag-invariants.yml
+    pr: "deploy#155 (Aisha, bundled)"
+    issue: "#84"
+    status: merged
+    description: "Smoke test asserting Contract v6 invariants — exactly 4 publish-side tags (sha-<short>, latest, stg-<short>, stg-latest) + exactly 2 promote-side tags (prod-<short>, prod-latest) per image."
+    invariant_script: integration-tests/scripts/check_tag_invariants.py
+
+dispatch_contracts_received:
+  # Cross-link: services.yaml § cross_repo_dispatch_contracts. The literal event_type
+  # strings ARE the contract — sender/listener mismatch returns 204 silently (#162).
+  # Active listener is deploy-stg.yml; deploy-isnad-graph.yml + deploy-landing-page.yml
+  # are workflow_dispatch-only (legacy single-VPS rollback path).
+  - listener_workflow: .github/workflows/deploy-stg.yml
+    types: [deploy-noorinalabs-isnad-graph, deploy-noorinalabs-user-service, deploy-noorinalabs-landing-page]
+    senders:
+      - { name: deploy-isnad-graph, event_type: deploy-noorinalabs-isnad-graph, sender_repo: noorinalabs-isnad-graph, sender_workflow: .github/workflows/ghcr-publish.yml, sender_job: notify-deploy }
+      - { name: deploy-user-service, event_type: deploy-noorinalabs-user-service, sender_repo: noorinalabs-user-service, sender_workflow: .github/workflows/ghcr-publish.yml, sender_job: notify-deploy }
+      - { name: deploy-landing-page, event_type: deploy-noorinalabs-landing-page, sender_repo: NO_SENDER, note: "Asymmetric — listener accepts but no sender wires. Tracked in deploy#285. See services.yaml § cross_repo_dispatch_contracts[name=deploy-landing-page]." }
+    discrimination: "Listener jobs gate on `github.event.action` to identify the source service (e.g., the alembic-stg job runs only when action == 'deploy-noorinalabs-user-service')."
+    notes:
+      - "#162 origin: literal event-type drifted across the repo rename in isnad-graph#548ba9f; the contract is now recorded in services.yaml so a future rename has a single source-of-truth to grep for."
+
+environments:
+  staging:
+    vps: { provider: Hetzner, spec: "CPX21 (3 vCPU, 4GB)", location: Ashburn, name: noorinalabs-stg }
+    domains: "isnad.stg.noorinalabs.com, auth.stg.noorinalabs.com, stg.noorinalabs.com (landing) — per merged #157"
+    tls: "Caddy auto-provisioned Let's Encrypt"
+    deploy_user: deploy
+    deploy_method: "SSH via appleboy/ssh-action"
+    state_key: hetzner/stg.tfstate
+  production:
+    vps: { provider: Hetzner, spec: "CPX41 (8 vCPU, 16GB)", location: Ashburn, name: noorinalabs-prod }
+    domains: [noorinalabs.com, www.noorinalabs.com, isnad-graph.noorinalabs.com]
+    tls: "Caddy auto-provisioned Let's Encrypt"
+    deploy_user: deploy
+    deploy_method: "SSH via appleboy/ssh-action"
+    state_key: hetzner/prod.tfstate
+    note: "Currently-live prod runs on hand-made isnad-graph-prod VPS outside Terraform (decommission tracked in deploy#86)."
+
+local_patterns:
+  rolling_update: "docker compose up -d --force-recreate + health poll"
+  image_fallback: "GHCR-only for app services (api, frontend, landing, user-service); no local-build fallback. Infra services use upstream images directly."
+  env_injection: "GitHub Actions writes .env on VPS via SSH"
+  read_only_containers: "All app containers use read_only + tmpfs"
+  network_isolation: "Backend networks are internal (not exposed)"
+
+scripts:
+  bootstrap_vps: scripts/bootstrap-vps.sh
+  verify_deployment: scripts/verify_deployment.sh
+  backup: scripts/backup.sh
+  restore: scripts/restore.sh
+
+backup_service_state:
+  status: "BROKEN — zero successful backups, ever (B2 bucket isnad-graph-backups empty as of 2026-04-24)"
+  diagnosis_2026-04-24: |
+    Three bugs stacked in the installed isnad-backup.{service,timer} on noorinalabs-1box-prod;
+    repo copy at /opt/noorinalabs-deploy/systemd/ is identical to installed copy (no fix has been
+    authored anywhere — original deploy#121 'stale path' framing was incomplete).
+    Bug A: ReadWritePaths=/tmp/isnad-backups + PrivateTmp=yes — host path missing → status=226/NAMESPACE
+            before ExecStart. This has been the live failure since at least 2026-04-23.
+    Bug B: WorkingDirectory + EnvironmentFile point at /opt/noorinalabs-isnad-graph/ (deploy moved
+            to /opt/noorinalabs-deploy/ between W7 and W9).
+    Bug C: COMPOSE_FILE default 'docker-compose.prod.yml' resolved against stale WorkingDirectory.
+  scope_owner: "deploy#121 (rewritten 2026-04-24, labels: bug, priority-high, infrastructure, p2-wave-10)"
+  cutover_gate: "Per main#212 option C: new prod box gets one successful end-to-end backup (dump → compress → B2 upload → retention prune) within 24h of first compose-up before DNS-flip."
+  reusable_logic: "scripts/backup.sh design (rclone+B2 native creds, 7-daily/4-weekly retention, sha256sum, mktemp+trap) is sound — only path bindings + COMPOSE_FILE default need updating."
+
+cloud_init_ssh_key_gap:
+  surfaced: 2026-04-24
+  evidence: "Stg (provisioned via deploy#82 TF) had zero authorized_keys for either root or deploy. Required Hetzner password-reset + manual key paste for first access. Cloning artifacts (root-owned /home/deploy with deploy-owned subdirs) suggest stg was cloned from prod template rather than cloud-init'd fresh."
+  followup: "Pending issue (not yet filed): deploy#82 followup — inject owner pubkey into Hetzner cloud-init user-data so future TF-provisioned boxes are SSH-accessible from day 1. Cluster with deploy#118 cloud-init baseline."
+
+integration_tests:
+  path: integration-tests/
+  compose: integration-tests/docker-compose.test.yml
+  scripts:
+    generate_test_secrets: integration-tests/scripts/generate_test_secrets.sh
+    check_tag_invariants: "integration-tests/scripts/check_tag_invariants.py — Contract v6 four-publish-tags + two-promote-tags assertion (deploy#155 bundled)"
+  workflow: .github/workflows/integration-tests.yml
+  user_service_alembic: "Now uses `alembic upgrade head` (singular) per US wave-10 0040_merge_multi_heads.py landed (deploy#159)"
+  notes:
+    - "Sibling-repo refs are wave-aware (resolves user-service + isnad-graph to same wave branch when PR base = deployments/*, falls back to main). Added 2026-04-24 in deploy#159."
+
+runbooks:
+  user_service_alembic: docs/runbooks/user-service-alembic.md  # added in deploy#153 (Lucas, P2W10)
+
+# P4W4 (#426): db-migrate.yml runs user-service admin-bootstrap (scripts/bootstrap_admin.py)
+# post-`alembic upgrade head`, gate-isolated (set +e, never flips `migrated` output),
+# no-op-safe on fresh OAuth-only envs, idempotent. DB URL passed via -e (not argv, CWE-214).
+# Shared by deploy-stg.yml + promote.yml (prod gate).

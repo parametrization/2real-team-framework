@@ -1,0 +1,377 @@
+# Noorina Labs — Service Map
+# Cross-repo service topology, APIs, data stores, and integration points.
+# Updated by /ontology-rebuild. Manual edits require checksums.json update.
+
+version: 1
+
+# --- Services ---
+services:
+  isnad-graph-api:
+    repo: noorinalabs-isnad-graph
+    type: backend
+    framework: FastAPI
+    language: Python 3.14
+    port: 8000
+    image: ghcr.io/noorinalabs/noorinalabs-isnad-graph
+    base_url: https://isnad-graph.noorinalabs.com/api
+    auth: JWT (RS256 via user-service JWKS)
+    rate_limit: 120 req/min per IP
+    health_endpoint: /health
+    api_prefix: /api/v1
+    routes:
+      narrators: { path: /narrators, methods: [GET] }
+      narrator_detail: { path: "/narrators/{id}", methods: [GET] }
+      hadiths: { path: /hadiths, methods: [GET] }
+      hadith_detail: { path: "/hadiths/{id}", methods: [GET] }
+      hadith_facets: { path: /hadiths/facets, methods: [GET] }
+      collections: { path: /collections, methods: [GET] }
+      collection_detail: { path: "/collections/{id}", methods: [GET] }
+      graph_chains: { path: "/graph/narrator/{id}/chains", methods: [GET] }
+      graph_network: { path: "/graph/narrator/{id}/network", methods: [GET] }
+      graph_shortest_path: { path: /graph/shortest-path, methods: [GET] }
+      graph_subgraph: { path: /graph/subgraph, methods: [GET] }
+      search: { path: /search, methods: [GET] }
+      parallels: { path: /parallels, methods: [GET] }
+      parallel_detail: { path: "/parallels/{id}", methods: [GET] }
+      timeline: { path: /timeline, methods: [GET] }
+      timeline_range: { path: /timeline/range, methods: [GET] }
+      admin_health: { path: /admin/health, methods: [GET], auth: admin }
+      admin_stats: { path: /admin/stats, methods: [GET], auth: admin }
+      admin_analytics: { path: /admin/analytics/usage, methods: [GET], auth: admin }
+      admin_moderation: { path: /admin/moderation, methods: [GET, PATCH], auth: admin }
+
+  isnad-graph-frontend:
+    repo: noorinalabs-isnad-graph
+    type: frontend
+    framework: React 19
+    language: TypeScript 5.9
+    build_tool: Vite 6.4
+    port: 80
+    image: ghcr.io/noorinalabs/noorinalabs-isnad-graph-frontend
+    base_url: https://isnad-graph.noorinalabs.com
+    state_management: TanStack Query + Context API
+    visualization: D3 + react-force-graph-2d
+    design_system: "@noorinalabs/design-system"
+    pages:
+      public: [/login, /auth/callback/:provider, /pricing, /verify]
+      protected: [/, /narrators, /hadiths, /collections, /search, /timeline, /compare, /graph, /profile]
+      admin: [/admin, /admin/users, /admin/health, /admin/stats, /admin/analytics, /admin/moderation, /admin/reports, /admin/config, /admin/audit]
+
+  user-service:
+    repo: noorinalabs-user-service
+    type: backend
+    framework: FastAPI
+    language: Python 3.12+
+    port: 8000
+    image: ghcr.io/noorinalabs/noorinalabs-user-service
+    auth: RS256 JWT (self-issued)
+    health_endpoint: /health
+    jwks_endpoint: /.well-known/jwks.json
+    api_prefix: /api/v1
+    routes:
+      token_issue: { path: /auth/token, methods: [POST] }
+      token_refresh: { path: /auth/token/refresh, methods: [POST] }
+      token_revoke: { path: /auth/token/revoke, methods: [POST] }
+      token_validate: { path: /auth/token/validate, methods: [GET] }
+      oauth_login: { path: "/auth/oauth/{provider}/login", methods: [GET] }
+      oauth_callback: { path: "/auth/oauth/{provider}/callback", methods: [POST] }
+      user_me: { path: /api/v1/users/me, methods: [GET, PATCH] }
+      user_detail: { path: "/api/v1/users/{id}", methods: [GET], auth: admin }
+      user_list: { path: /api/v1/users, methods: [GET], auth: admin }
+      roles: { path: /api/v1/roles, methods: [GET] }
+      sessions: { path: /api/v1/sessions, methods: [GET, POST, DELETE] }
+      verification: { path: /api/v1/verification, methods: [POST, GET] }
+      subscriptions: { path: /api/v1/subscriptions, methods: [GET, POST, DELETE] }
+      trial: { path: /api/v1/subscriptions/trial, methods: [POST] }
+      totp: { path: /api/v1/2fa, methods: [GET, POST] }
+
+  landing-page:
+    repo: noorinalabs-landing-page
+    type: frontend
+    framework: Astro 6.1
+    language: TypeScript
+    build_tool: Vite (via Astro)
+    port: 80
+    image: ghcr.io/noorinalabs/noorinalabs-landing-page
+    base_url: https://noorinalabs.com
+    design_system: "@noorinalabs/design-system@^0.0.2"
+    pages:
+      - { route: /, source: index.astro }
+      - { route: /about, source: about.astro, collection: pages }
+      - { route: /projects/isnad-graph, source: projects/isnad-graph.astro, collection: projects }
+
+  data-acquisition:
+    repo: noorinalabs-data-acquisition
+    type: data_pipeline_acquire_stage
+    language: Python 3.14
+    cli_command: isnad-ingest
+    output_target: "B2 noorinalabs-pipeline/raw/{source}/{date}/"
+    stages:
+      acquire: { description: "Download from APIs, CSVs, Git repos, Kaggle. Output → B2 raw/." }
+    note: "Processing stages (parse/resolve/enrich/load) will migrate to isnad-ingest-platform per P2W8 split."
+
+  isnad-ingest-platform:
+    repo: noorinalabs-isnad-ingest-platform
+    type: data_pipeline_processing
+    status: planned (P2W8)
+    language: Python 3.14
+    runtime: Kafka workers (KRaft mode, no ZooKeeper) in Docker containers
+    storage_root: "B2 noorinalabs-pipeline/ — prefixes raw → dedup → enriched → normalized → staged"
+    local_dev: MinIO (S3-compatible, same code path as B2)
+    workers:
+      dedup: { description: "Cross-source dedup → enriched/" }
+      enrich: { description: "Topic classification, historical linking" }
+      normalize: { description: "Schema normalization → normalized/" }
+      graph_load: { description: "Load into Neo4j" }
+    reset_levels: [stage, source, full]
+
+  design-system:
+    repo: noorinalabs-design-system
+    type: library
+    framework: React 18-19
+    language: TypeScript 5.9
+    build_tool: Vite 6.4
+    package: "@noorinalabs/design-system"
+    exports:
+      components: [Button, Badge, Input, Card, Dialog, Select, Table, Tabs, Tooltip, Toast, DropdownMenu]
+      icons: [NarratorsIcon, HadithsIcon, CollectionsIcon, SearchIcon, TimelineIcon, CompareIcon, GraphExplorerIcon, AdminIcon, SignOutIcon]
+      illustrations: [NoResultsIllustration, EmptyGraphIllustration, NoDataIllustration, GeometricBorder, OctagonalFrame, PageHeaderAccent]
+      tokens: [colors (OKLCH), typography, spacing, shadows, z-index, motion, border-radii]
+    consumers: [isnad-graph-frontend, landing-page]
+
+  caddy-reverse-proxy:
+    repo: noorinalabs-deploy
+    type: reverse_proxy
+    image: caddy:2-alpine
+    ports: [80, 443]
+    tls: Let's Encrypt (auto-provisioned)
+    routing:
+      noorinalabs.com: landing-page:80
+      www.noorinalabs.com: redirect → noorinalabs.com
+      isnad-graph.noorinalabs.com:
+        /auth/*: user-service:8000
+        /.well-known/jwks.json: user-service:8000
+        /api/v1/users*: user-service:8000
+        /api/v1/sessions*: user-service:8000
+        /api/v1/subscriptions*: user-service:8000
+        /api/v1/verification*: user-service:8000
+        /api/v1/roles*: user-service:8000
+        /api/v1/2fa*: user-service:8000
+        /api/*: isnad-graph-api:8000
+        /health: isnad-graph-api:8000
+        /metrics: respond 403 (blocked — Prometheus scrapes via Docker network)
+        /grafana/*: grafana:3000
+        /*: isnad-graph-frontend:80
+
+# --- Data stores ---
+data_stores:
+  neo4j:
+    type: graph_database
+    image: neo4j:5-community
+    plugins: [APOC, Graph Data Science 2.13.8]
+    consumers: [isnad-graph-api, ingestion-pipeline]
+    node_labels: [Narrator, Hadith, Chain, Collection, Grading, HistoricalEvent, Location]
+    relationship_types: [TRANSMITTED_TO, NARRATED, APPEARS_IN, PARALLEL_OF, STUDIED_UNDER, ACTIVE_DURING, BASED_IN]
+    resources: { memory_limit: 8G, heap_max: 4G, pagecache: 2G }
+
+  postgres-isnad:
+    type: relational_database
+    image: pgvector/pgvector:pg16
+    port: 5432
+    extensions: [pgvector]
+    consumers: [isnad-graph-api]
+    description: Relational metadata and vector embeddings for semantic search
+
+  postgres-user:
+    type: relational_database
+    image: postgres:16-alpine
+    port: 5433
+    consumers: [user-service]
+    tables: [users, roles, user_roles, sessions, verification_tokens, oauth_accounts, subscriptions, totp_secrets]
+
+  redis-isnad:
+    type: cache
+    image: redis:7-alpine
+    port: 6379
+    consumers: [isnad-graph-api]
+    purpose: [session_store, api_cache, rate_limiting]
+
+  redis-user:
+    type: cache
+    image: redis:7-alpine
+    port: 6380
+    consumers: [user-service]
+    purpose: [session_state, rate_limiting, verification_tracking]
+
+# --- Deploy runtime topology (compose-derived ground truth) ---
+# The `services:` block above is the SEMANTIC app model (logical names, APIs).
+# This section is the LITERAL container roster + network split, derived from the
+# deploy compose at origin HEAD, so the semantic model and the running stack do
+# not silently drift (#783). Re-derive via /ontology-rebuild when compose changes.
+deploy_runtime_topology:
+  source:
+    repo: noorinalabs-deploy
+    path: compose/docker-compose.prod.yml
+    ref: 273f2201e54e82ca2bf9527c9a092c45bb988ec5
+  service_count: 30
+  networks:
+    backend:      { driver: bridge, internal: true,  purpose: "internal mesh — DBs, app, observability, kafka (25 attachments)" }
+    frontend:     { driver: bridge, internal: false, purpose: "caddy-facing edge — api, frontend, landing, blackbox probes" }
+    user-backend: { driver: bridge, internal: true,  purpose: "user-service ↔ user-postgres / user-redis isolation" }
+    egress:       { driver: bridge, internal: false, purpose: "outbound-only — alertmanager notify, embed model pulls, ingest workers" }
+  long_running:   # restart: unless-stopped (26)
+    [neo4j, postgres, redis, api, frontend, landing, caddy, user-service, user-postgres,
+     user-redis, prometheus, alertmanager, grafana, loki, alloy, node-exporter,
+     postgres-exporter, user-postgres-exporter, blackbox-exporter, kafka, kafka-exporter,
+     kafka-ui, dedup-worker, enrich-worker, normalize-worker, graph-load-worker]
+  init_one_shot:  # restart: "no" — run once then exit (3)
+    kafka-init:           { image: apache/kafka:3.9.2,  purpose: "create kafka topics before workers connect" }
+    user-service-migrate: { image: "ghcr.io/noorinalabs/noorinalabs-user-service:${USER_SERVICE_IMAGE_TAG:-latest}", network: user-backend, purpose: "alembic migrations before user-service starts" }
+    loki-runtime-init:    { image: busybox:1.37,        purpose: "prepare loki runtime dirs/permissions" }
+  optional_profiles:  # not started by default (1)
+    isnad-graph-embed: { profile: embed, image: "${EMBED_IMAGE:-ghcr.io/noorinalabs/noorinalabs-isnad-graph-embed:stg-latest}", networks: [backend, egress], purpose: "on-demand semantic-search re-embed job" }
+
+# --- Cross-repo repository_dispatch contracts ---
+# Each entry pairs a sender workflow (`peter-evans/repository-dispatch` step) with the
+# listener workflow whose `on.repository_dispatch.types` accepts the literal `event_type`
+# string. The literal string is the contract — GitHub returns 204 to unmatched dispatches,
+# so a sender/listener mismatch fails silently until a deploy is missed (#162 lesson).
+# Resolution: every contract here MUST be validated against both workflow files at HEAD —
+# any mismatch is a bug surface, file separately (this section documents, doesn't fix).
+cross_repo_dispatch_contracts:
+  - name: deploy-isnad-graph
+    event_type: deploy-noorinalabs-isnad-graph
+    sender:
+      repo: noorinalabs-isnad-graph
+      workflow: .github/workflows/ghcr-publish.yml
+      job: notify-deploy
+      action: peter-evans/repository-dispatch@v3
+      target_repo: noorinalabs/noorinalabs-deploy
+      auth: DEPLOY_REPO_PAT secret
+      client_payload: { repo: noorinalabs-isnad-graph, sha: github.sha, ref: github.ref_name, actor: github.actor }
+    listener:
+      repo: noorinalabs-deploy
+      workflow: .github/workflows/deploy-stg.yml
+      types: [deploy-noorinalabs-isnad-graph, deploy-noorinalabs-user-service, deploy-noorinalabs-landing-page]
+    gates: ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "needs: build-and-push success"]
+    notes:
+      - "Originally listened on deploy/.github/workflows/deploy-isnad-graph.yml (legacy single-VPS) — that workflow is now workflow_dispatch-only (manual rollback path, decom tracked in deploy#86). Active stg fan-in is deploy-stg.yml."
+      - "Rename from deploy-isnad-graph → deploy-noorinalabs-isnad-graph happened in isnad-graph#548ba9f; #162 fixed the sender mismatch and authored this ontology record."
+
+  - name: deploy-user-service
+    event_type: deploy-noorinalabs-user-service
+    sender:
+      repo: noorinalabs-user-service
+      workflow: .github/workflows/ghcr-publish.yml
+      job: notify-deploy
+      action: peter-evans/repository-dispatch@v3
+      target_repo: noorinalabs/noorinalabs-deploy
+      auth: DEPLOY_REPO_PAT secret
+      client_payload: { repo: noorinalabs-user-service, sha: github.sha, ref: github.ref_name, actor: github.actor }
+    listener:
+      repo: noorinalabs-deploy
+      workflow: .github/workflows/deploy-stg.yml
+      types: [deploy-noorinalabs-isnad-graph, deploy-noorinalabs-user-service, deploy-noorinalabs-landing-page]
+    gates: ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "needs: build-and-push success"]
+    notes:
+      - "DEPLOY_REPO_PAT secret not yet provisioned in user-service — tracked in user-service#84 (P3 carry-forward). Until provisioned, the dispatch step fails at runtime; deploy-stg.yml workflow_dispatch is the operator fallback."
+      - "Listener path discriminates `github.event.action == 'deploy-noorinalabs-user-service'` to run the user-service-only alembic pre-deploy gate (deploy-stg.yml § alembic-stg)."
+
+  - name: deploy-landing-page
+    event_type: deploy-noorinalabs-landing-page
+    sender:
+      status: NO_SENDER
+      note: "No workflow in noorinalabs-landing-page dispatches this event-type. Landing-page#71 (Contract v6) intentionally omits a notify-deploy job — landing-page deploy flows through deploy/promote.yml registry retag, not push-time dispatch (per landing-page RUNBOOK.md § 4 and ontology/repos/landing-page.yaml § ci.deploy_workflow). Listener accepts the event-type but no sender wires it."
+    listener:
+      repo: noorinalabs-deploy
+      workflow: .github/workflows/deploy-stg.yml
+      types: [deploy-noorinalabs-isnad-graph, deploy-noorinalabs-user-service, deploy-noorinalabs-landing-page]
+    gates: ["n/a — no active sender"]
+    notes:
+      - "Asymmetric contract: listener-only. Either landing-page should grow a notify-deploy job mirroring isnad-graph/user-service, OR the deploy-stg.yml listener should drop the deploy-noorinalabs-landing-page type. Tracked in deploy#285."
+
+# --- Integration points ---
+integrations:
+  - name: jwt_validation
+    from: isnad-graph-api
+    to: user-service
+    mechanism: "JWKS fetch from /.well-known/jwks.json"
+    description: isnad-graph validates JWTs by fetching user-service public keys
+
+  - name: oauth_flow
+    from: isnad-graph-frontend
+    to: user-service
+    mechanism: "HTTP redirect → OAuth provider → callback to user-service"
+    providers: [google, github, apple, facebook]
+
+  - name: design_system_consumption
+    from: [isnad-graph-frontend, landing-page]
+    to: design-system
+    mechanism: "npm package @noorinalabs/design-system"
+
+  - name: ingestion_to_graph
+    from: ingestion-pipeline
+    to: neo4j
+    mechanism: "Cypher MERGE/CREATE via neo4j Python driver (batch 1000)"
+
+  - name: caddy_routing
+    from: caddy-reverse-proxy
+    to: [isnad-graph-api, isnad-graph-frontend, user-service, landing-page]
+    mechanism: "Reverse proxy with path-based routing"
+
+# --- Infrastructure ---
+infrastructure:
+  compute:
+    provider: Hetzner Cloud
+    location: Ashburn (ash)
+    os: Ubuntu 24.04
+    # P2W10: split into per-env (stg + prod). System hostnames realigned to Hetzner names 2026-04-24
+    # (stg was 'noorinalabs-isnad-graph-prod' — clear evidence stg was cloned from prod template, not cloud-init'd fresh).
+    # Currently-live production runs the full 20-container stack on noorinalabs-1box-prod (the originally
+    # hand-made VPS — title in deploy#86 is misleading, it's the whole prod stack, not just isnad-graph).
+    # W10 plan: option C cutover — TF-clean rebuild of new prod box, restore minimal data (admin user only
+    # per main#212 owner direction), DNS-flip, decommission old prod (#86 retitle pending).
+    servers:
+      stg:  { hetzner_name: noorinalabs-1box-stg,  system_hostname: noorinalabs-1box-stg,  ipv4: 87.99.137.225, type: CPX21, specs: { vcpu: 3, ram_gb: 4 }, state_key: hetzner/stg.tfstate,  notes: "Cloned from prod template — same package set incl. openssh-server + fail2ban. deploy#82 provisioned VPSes via TF but did NOT inject cloud-init SSH keys (real gap, 2026-04-24); first-access required Hetzner password reset + manual key paste. Cloning artifacts: /home/deploy was root-owned with deploy-owned subdirs (chown -R recovered 2026-04-24); old system hostname was 'noorinalabs-isnad-graph-prod' (renamed). Option C cutover plan retires this clone and rebuilds via clean cloud-init." }
+      prod: { hetzner_name: noorinalabs-1box-prod, system_hostname: noorinalabs-1box-prod, ipv4: 87.99.134.161, type: CPX41, specs: { vcpu: 8, ram_gb: 16 }, state_key: hetzner/prod.tfstate, notes: "Full stack: caddy + landing + isnad-graph (api+frontend) + user-service + neo4j + 2x postgres + 2x redis + kafka (apache/kafka:3.9.2) + kafka-ui + prometheus + grafana + loki + alloy + alertmanager + 2x postgres-exporter + node-exporter + blackbox-exporter + kafka-exporter. Full compose-derived roster (30 services incl. init/one-shot + embed profile, 4 networks) in deploy_runtime_topology below." }
+
+  dns:
+    provider: Cloudflare
+    zone: noorinalabs.com
+    ssl: strict
+    min_tls: "1.2"
+    proxied: false (DNS only — TLS terminated at Caddy)
+    subdomains_variable: "var.subdomains map; stg subdomains being added via deploy PR #157"
+
+  state_backend:
+    type: Backblaze B2 (S3-compatible)
+    bucket: noorinalabs-terraform-state
+    encryption_at_rest: SSE-B2  # enabled 2026-04-30 per noorinalabs-deploy#172
+    used_by: [terraform/hetzner, terraform/cloudflare]
+
+  container_registry:
+    type: GitHub Container Registry (GHCR)
+    images:
+      - ghcr.io/noorinalabs/noorinalabs-isnad-graph
+      - ghcr.io/noorinalabs/noorinalabs-isnad-graph-frontend
+      - ghcr.io/noorinalabs/noorinalabs-landing-page
+      - ghcr.io/noorinalabs/noorinalabs-user-service
+
+  observability:
+    metrics: { tool: Prometheus v3.4.0, retention: 30d }
+    dashboards: { tool: Grafana 11.6.0, path: /grafana }
+    logs: { tool: Loki 2.9.10, shipper: Grafana Alloy v1.16.1, retention: 7d }  # alloy replaced promtail in the live stack (#783)
+    alerting: { tool: Alertmanager v0.28.1 }
+    exporters: [node-exporter v1.9.1, postgres-exporter v0.16.0, user-postgres-exporter v0.16.0, blackbox-exporter v0.25.0, kafka-exporter v1.9.0]
+
+  ci_cd:
+    platform: GitHub Actions
+    deploy_method: SSH to VPS via appleboy/ssh-action
+    terraform: hashicorp/setup-terraform@v3
+    workflows:
+      deploy_isnad_graph: { trigger: repository_dispatch, target: [api, frontend] }
+      deploy_landing: { trigger: workflow_dispatch, target: [landing] }
+      deploy_all: { trigger: workflow_dispatch, target: all }
+      verify_deploy: { trigger: workflow_run, checks: [https, health, tls] }
+      terraform: { trigger: "push to main (terraform/**)", actions: [validate, plan, apply] }
+      rollback: { trigger: workflow_dispatch, inputs: [image_tag, service] }

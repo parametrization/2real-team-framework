@@ -1,0 +1,88 @@
+# noorinalabs-design-system — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-design-system
+description: "Shared design system — OKLCH tokens, Radix components, domain icons, brand assets"
+brand_name: Qalam
+tech_stack:
+  language: TypeScript 5.9
+  framework: React 18-19 (peer dependency)
+  build_tool: Vite 6.4 (library mode)
+  styling: Tailwind CSS 4.2
+  component_primitives: Radix UI
+  variant_system: CVA (class-variance-authority)
+  testing: Vitest + Testing Library
+  docs: Storybook 8.6
+
+package:
+  name: "@noorinalabs/design-system"
+  version: "0.0.2"
+  exports:
+    default: { types: dist/index.d.ts, import: dist/index.js, require: dist/index.cjs }
+    components: { pattern: "./components/*" }
+    tokens: { import: dist/tokens/index.js }
+    styles: dist/styles.css
+
+tokens:
+  color_space: OKLCH
+  color_categories:
+    semantic: [primary (sienna), secondary, muted, accent, destructive (vermillion), success (verdigris), warning (ochre), info (lapis)]
+    surface: [background (parchment), foreground (ink), card (vellum), popover, border, input, ring]
+    domain_hadith_grading: [sahih, hasan, daif, mawdu]
+    domain_sect: [sunni, shia]
+    domain_narrator_tier: [thiqah, saduq, daif-narrator, matruk, kadhdhab]
+  dark_mode: "Separate token set with lightness adjustments"
+  typography:
+    families:
+      arabic: "'Noto Naskh Arabic', serif"
+      heading: "'IBM Plex Serif', Georgia, serif"
+      body: "'IBM Plex Sans', Inter, system-ui, sans-serif"
+      mono: "'IBM Plex Mono', ui-monospace, monospace"
+    scale: "1.25 modular (xs 0.75rem → 4xl 2.25rem)"
+    arabic_multiplier: "1.125x body size, 2x line height"
+    bidi: "CSS logical properties (ps-3, pe-3, text-start)"
+  spacing: "4px base scale (0.25rem increments)"
+  shadows: "5-level scale (xs → xl), separate dark mode values"
+  motion: "4 durations (100ms → 500ms), 4 easing curves"
+  z_index: "8-level scale (base 0 → tooltip 700)"
+
+components:
+  Button: { variants: [default, destructive, outline, secondary, ghost, link], sizes: [default, sm, lg, icon] }
+  Badge: { variants: [default, secondary, destructive, outline, sunni, shia, sahih] }
+  Input: { features: [BiDi support via logical properties] }
+  Card: { compound: [Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter] }
+  Dialog: { compound: [Dialog, DialogTrigger, DialogClose, DialogPortal, DialogOverlay, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription], primitive: "@radix-ui/react-dialog" }
+  Select: { compound: [Select, SelectTrigger, SelectContent, SelectItem, SelectValue, SelectGroup, SelectLabel, SelectSeparator], primitive: "@radix-ui/react-select" }
+  Tabs: { compound: [Tabs, TabsList, TabsTrigger, TabsContent], primitive: "@radix-ui/react-tabs" }
+  Table: { compound: [Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption] }
+
+icons:
+  functional: [NarratorsIcon, HadithsIcon, CollectionsIcon, SearchIcon, TimelineIcon, CompareIcon, GraphExplorerIcon, AdminIcon, SignOutIcon]
+  illustrations: [NoResultsIllustration, EmptyGraphIllustration, NoDataIllustration, EmptyState]
+  decorative: [GeometricBorder, OctagonalFrame, PageHeaderAccent]
+  base: { size: 24x24, stroke: 1.5px, color: currentColor }
+
+brand_assets:
+  location: docs/brand/
+  documents:
+    - color-palette.md (WCAG 2.2 AA contrast, CVD verification)
+    - typography.md (Arabic diacritics handling, mixed layout patterns)
+    - iconography.md
+    - accessibility.md (WCAG 2.2 AA strategy)
+    - components.md
+
+local_patterns:
+  oklch_color_space: "Perceptually uniform — better dark mode, accessibility"
+  css_custom_properties: "All tokens as CSS vars + TypeScript constants"
+  radix_primitives: "Unstyled accessible components as foundation"
+  cva_variants: "Type-safe variant composition without conditional logic"
+  logical_properties: "Full BiDi/RTL support"
+  barrel_exports: "All components/icons/tokens from package root"
+
+build_commands:
+  dev: "npm run dev (Storybook on port 6006)"
+  build: "npm run build → dist/"
+  test: "npm run test"
+  lint: "npm run lint"
+  typecheck: "npm run typecheck"
+  check: "npm run check (lint + typecheck + test)"

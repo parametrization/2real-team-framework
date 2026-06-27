@@ -1,0 +1,120 @@
+# noorinalabs-user-service — Repo Ontology
+# Updated by /ontology-rebuild.
+
+repo: noorinalabs-user-service
+description: User/auth/RBAC service — JWT issuance, OAuth, sessions, subscriptions, 2FA
+tech_stack:
+  language: Python 3.12+
+  framework: FastAPI 0.115+
+  package_manager: uv
+  orm: SQLAlchemy 2.0 (async)
+  migrations: Alembic
+  databases: [PostgreSQL 16, Redis 5.2+]
+
+modules:
+  routers:
+    path: src/app/routers/
+    description: FastAPI route modules
+    sub_modules:
+      auth: { description: "Token issue via authorization code (Redis-backed, 60s TTL), refresh/revoke, OAuth login/callback, JWKS" }
+      users: { description: "User CRUD — me, list, detail, soft-delete" }
+      roles: { description: "Role listing, assignment, removal" }
+      sessions: { description: "Session create/list/revoke/revoke-all" }
+      verification: { description: "Email verification send/confirm/status" }
+      subscriptions: { description: "Subscription CRUD, trial start, webhook" }
+      totp: { description: "2FA setup/verify/disable/status" }
+      well_known: { description: "JWKS endpoint" }
+      health: { description: "Health probe" }
+
+  services:
+    path: src/app/services/
+    description: Business logic layer
+    sub_modules:
+      user: { description: "CRUD, profile, find_or_create_oauth_user" }
+      token: { description: "JWT create/decode/refresh, JWKS generation" }
+      session: { description: "Session lifecycle with Redis" }
+      rbac: { description: "Role hierarchy, assignment, minimum-role checks" }
+      subscription: { description: "Subscription CRUD, trial logic, expiry detection" }
+      oauth: { description: "Provider implementations — Google, GitHub, Apple (JWKS-verified id_token), Facebook (PKCE)" }
+      verification: { description: "Token creation, email sending, rate limiting" }
+      totp: { description: "TOTP setup/verify/disable, recovery codes" }
+      keys: { description: "RSA key management, auto-generates dev keypair" }
+
+  models:
+    path: src/app/models/
+    description: SQLAlchemy ORM models
+    tables: [users, roles, user_roles, sessions, verification_tokens, oauth_accounts, subscriptions, totp_secrets]
+
+  schemas:
+    path: src/app/schemas/
+    description: Pydantic v2 request/response schemas
+
+  middleware:
+    path: src/app/middleware/
+    sub_modules:
+      cors: { description: "CORS from CORS_ORIGINS setting" }
+      security: { description: "X-Content-Type-Options, X-Frame-Options, HSTS, XSS" }
+
+  dependencies:
+    path: src/app/dependencies.py
+    description: "FastAPI DI — get_current_user (JWT), require_admin, require_role factory"
+
+api_surface:
+  jwt:
+    algorithm: RS256
+    access_token_ttl: 15 minutes
+    refresh_token_ttl: 30 days
+    claims: [sub (user_id), email, roles, subscription_status, iat, exp, type]
+  oauth_providers: [google, github, apple, facebook]
+  role_hierarchy: { admin: 40, researcher: 30, reader: 20, trial: 10 }
+
+data_models:
+  migrations:
+    - { id: "0001", description: "Initial schema — users, roles, sessions, oauth, subscriptions" }
+    - { id: "0003", description: "Add session last_active column" }
+    - { id: "0010", description: "Verification tokens indexes" }
+    - { id: "0020", description: "Subscription trial unique constraint" }
+    - { id: "0030", description: "TOTP secrets table" }
+    - { id: "0040", description: "Merge multi-heads — collapses 0003/0020/0030 into single head (no-op merge migration, P2W10 #63)" }
+  migration_policy: "Single head after 0040 — `alembic upgrade head` (singular) works. deploy integration tests revert `heads`→`head` after US#63 merge."
+
+local_patterns:
+  async_all: "Fully async — asyncpg, async Redis, aiosmtplib"
+  token_rotation: "Refresh tokens rotated on use, stored as SHA256 hash"
+  totp_encryption: "Secrets encrypted with Fernet key at rest"
+  trial_constraint: "PostgreSQL partial unique index ensures one active trial per user"
+  rate_limiting: "3 verification emails per hour per user"
+
+build_commands:
+  dev: "uvicorn src.app.main:create_app --factory --reload --port 8001"
+  test: "make test"
+  lint: "make lint"
+  typecheck: "make typecheck"
+  check: "make check"
+  migrate: "make migrate"
+  migrate_new: "make migrate-new"
+
+ci:
+  ghcr_publish:
+    workflow: .github/workflows/ghcr-publish.yml
+    pr: "user-service#83 (Mateo, Contract v6) + user-service#87 (Mateo, PR-trigger Trivy fix, merged 2026-04-30)"
+    issue: "#64, #61 (closed via #87)"
+    status: merged
+    description: "Image-tag Contract v6 replica of isnad-graph commit b8931847. Emits 4 tags on push to main: sha-<short>, latest, stg-<short>, stg-latest. PR triggers added 2026-04-30 (#87) — single-arch amd64 build with Trivy scan, no GHCR push."
+    pr_trigger: "On PR (paths: workflow / Dockerfile / src/**), build single-arch amd64 + load locally + Trivy scan by sha-<short> tag. No registry login on PR. Push events build multi-arch + push."
+    trivy_security: "Idris CR Q2 — Resolve-Trivy-image-reference and Summary steps bind GHA expressions (github.event_name, steps.meta.outputs.tags, etc.) to env vars to close shell script-injection sink. Both PR and push paths block on CRITICAL/HIGH (exit-code: 1, ignore-unfixed: true)."
+    notify_deploy: "Fires repository_dispatch event-type=deploy-noorinalabs-user-service to noorinalabs-deploy with payload {repo,sha,ref,actor}. Requires DEPLOY_REPO_PAT secret (NOT yet provisioned — tracked in user-service#84, P3 carry-forward)."
+
+dispatch_contracts_sent:
+  # Cross-link: services.yaml § cross_repo_dispatch_contracts[name=deploy-user-service]
+  - name: deploy-user-service
+    event_type: deploy-noorinalabs-user-service
+    sender_workflow: .github/workflows/ghcr-publish.yml
+    sender_job: notify-deploy
+    sender_action: peter-evans/repository-dispatch@v3
+    target: noorinalabs/noorinalabs-deploy → .github/workflows/deploy-stg.yml
+    payload_keys: [repo, sha, ref, actor]
+    gates: ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "needs: build-and-push success"]
+    notes:
+      - "DEPLOY_REPO_PAT secret pending (user-service#84). Until provisioned, this dispatch fails at runtime and deploy-stg.yml workflow_dispatch is the operator fallback."
+      - "Listener (deploy-stg.yml) uses `github.event.action == 'deploy-noorinalabs-user-service'` to gate the user-service-only alembic pre-deploy step. Renaming this event_type without updating that conditional would silently skip the alembic gate."
