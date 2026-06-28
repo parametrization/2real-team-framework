@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """PostToolUse dispatcher: single in-process entry point for advisory hooks.
 
-Runs every configured PostToolUse check (``hooks.post_bash``) in-process. Unlike
+Runs every configured PostToolUse check in-process: ``hooks.post_bash`` for Bash tool
+calls, ``hooks.post_file`` for file-mutating tools (Edit/Write/MultiEdit/NotebookEdit).
+Unlike
 the PreToolUse dispatcher, PostToolUse hooks are ADVISORY: the tool has already
 run, so this dispatcher NEVER blocks — it aggregates ``systemMessage`` advisories
 and always exits 0. A hook that raises is swallowed (fail-open).
@@ -30,10 +32,15 @@ def main() -> None:
     except (json.JSONDecodeError, EOFError):
         sys.exit(0)
 
-    if input_data.get("tool_name", "") != "Bash":
+    tool_name = input_data.get("tool_name", "")
+    if tool_name == "Bash":
+        cfg_key = "hooks.post_bash"
+    elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        cfg_key = "hooks.post_file"
+    else:
         sys.exit(0)
 
-    modules = config(input_data).get("hooks.post_bash", [])
+    modules = config(input_data).get(cfg_key, [])
     messages: list[str] = []
 
     for module_name in modules:

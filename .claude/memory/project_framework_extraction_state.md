@@ -32,27 +32,29 @@ across all jobs (python 3.10–3.13 + framework 3.10–3.13 + node 18/20/22) as 
   repo's flat `.claude/skills/<name>.md` files were converted to `<name>/SKILL.md` (Claude Code
   only discovers the dir layout). Added generic, config-driven, fail-open `session-start` +
   `handoff` skills (framework/assets/skills/ install payload + active in `.claude/skills/`).
+- **Ontology system ported (2026-06-27, PR on branch `framework/ontology-system`):** the
+  two-layer model genericised — `lib/ontology_gen/` structural generator + cross-repo
+  aggregator with **automatic child-git-repo discovery** (`discover_repos` scans the parent's
+  immediate subdirs for `.git`), `hooks/ontology_tracker.py` (config-aware, INERT unless an
+  ontology dir exists), a new `hooks.post_file` PostToolUse dispatch path (Edit/Write/MultiEdit),
+  and `/ontology-librarian` + `/ontology-rebuild` skills. Bootstrap now copies `lib/` recursively
+  (subpackages + `__init__.py`). 47 framework tests. See `framework/recipes/ONTOLOGY_SYSTEM.md`.
 
 **Deferred — the pickup queue** (also in `framework/README.md` § "Next"). Owner directive
 2026-06-27: port the FULL orchestration suite generically — nothing is fundamentally
 project-coupled, it's config-decouplable:
-1. **Ontology system, applied to meta+child-git-repo subfolders** — the two-layer model
-   (hand-curated semantic overlay + generated structural index via `ontology_gen` + the
-   cross-repo aggregator), plus the librarian skills (`/ontology-librarian`, `/ontology-rebuild`)
-   and the change-tracker PostToolUse hook. Each child git-repo gets its own structural layer;
-   the meta aggregates. Config knobs: `paths.ontology`, `project.model`.
-2. **Full wave/phase lifecycle skill chain** (genericise on the `lifecycle.py` engine):
+1. **Full wave/phase lifecycle skill chain** (genericise on the `lifecycle.py` engine):
    `phase-review` → `wave-scope` → `wave-kickoff` → `wave-wrapup` → `wave-retro`, plus
    `board-audit`. The valuable end-to-end process: theme → scope → kickoff → implement →
    wrapup → retro. Coupling to decouple via config: GitHub Projects v2 field-sync (`board.*`),
    the state-file schema (already generic in `lifecycle.py`), repo-name lists (`project.model`
    + child discovery), reviewer counts (`policy.reviewers_required`).
-3. **Review-gate tranche**: port `validate_pr_review` (~1189-line N-reviewer/TechDebt gate) +
+2. **Review-gate tranche**: port `validate_pr_review` (~1189-line N-reviewer/TechDebt gate) +
    the `pr_review_state` oracle that reuses it + `validate_review_comment_format`.
-4. `validate_branch_freshness`; mid-wave reachability `gh` wrapper around
+3. `validate_branch_freshness`; mid-wave reachability `gh` wrapper around
    `lifecycle.classify_reachability`.
-5. **Node CLI runtime install** — node `init` subprocesses `python3` the bundled bootstrap.
-6. Optional LLM persona personalities (`python/src/real_team/personas.py`).
+4. **Node CLI runtime install** — node `init` subprocesses `python3` the bundled bootstrap.
+5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
 
 **Architecture overview:** [[reference_config_driven_architecture]].
 **Commit/PR mechanics for this repo:** [[feedback_framework_commit_pr_mechanics]].

@@ -76,8 +76,15 @@ framework/
       upsert_status_keys.py         # text-level JSON upsert (compact-shape-preserving)
       trust_signals.py              # TEAM: mechanical per-engineer trust scoring
       lifecycle.py                  # TEAM: wave/iteration state machine (allocator + transitions + merge model)
+      ontology_gen/                 # ONTOLOGY: structural code-graph generator + cross-repo aggregator
+    hooks/ (ontology, cont.)
+      ontology_tracker.py           # ONTOLOGY: PostToolUse change-tracker (semantic-overlay checksums)
     skills/
       wave-lifecycle/SKILL.md       # the generic config-driven orchestration skill
+      session-start/SKILL.md        # SESSION: first-action orientation (memory/team/handoff/git/CI/lifecycle/ontology)
+      handoff/SKILL.md              # SESSION: write a durable pickup note to project memory
+      ontology-librarian/SKILL.md   # ONTOLOGY: read-only two-layer staleness + lookup
+      ontology-rebuild/SKILL.md     # ONTOLOGY: reconcile the semantic overlay from code
     settings.template.json          # the dispatcher wiring the bootstrap merges
   install/
     bootstrap.py                    # deterministic installer (new or existing repo)
@@ -163,20 +170,28 @@ dispatcher wiring — not templates alone.
 
 ## What's covered vs. what's next
 
-**Working, tested end-to-end (`tests/`, 39 passing):** the config keystone, the
-loader/logger/parsers, both dispatchers, 10 hooks (4 safety + 2 SCM + 3 CI + 1
-identity), 4 libs (CI oracle, status upsert, trust scoring, lifecycle state
-machine), the deterministic bootstrapper (also installing a skills tree), the
-repo-introspecting roster generator with per-child union rosters (single-repo +
-meta+children + the generated-roster→identity-gate loop), and the
-`wave-lifecycle` orchestration skill driving `lifecycle.py` + `trust_signals.py`.
+**Working, tested end-to-end (`tests/`, 47 passing):** the config keystone, the
+loader/logger/parsers, both dispatchers (Bash + file-tool), 11 hooks (4 safety +
+2 SCM + 3 CI + 1 identity + 1 ontology change-tracker), 4 libs + the
+`ontology_gen` structural generator/aggregator, the deterministic bootstrapper
+(installing the hook set, a recursive `lib/` incl. subpackages, and a skills
+tree), the repo-introspecting roster generator with per-child union rosters
+(single-repo + meta+children + the generated-roster→identity-gate loop), and the
+skills: `wave-lifecycle` (driving `lifecycle.py` + `trust_signals.py`),
+`session-start` + `handoff` (config-driven session lifecycle), and
+`ontology-librarian` + `ontology-rebuild` (the two-layer ontology, applied to
+meta+child git-repo subfolders — per-repo structural index + cross-repo
+aggregation, plus the hand-curated semantic overlay tracked by the change-tracker
+hook).
 
-**Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the review-gate tranche
-(`validate_pr_review` — the 1189-line N-reviewer/TechDebt gate — + the
-`pr_review_state` oracle that reuses it, + `validate_review_comment_format`),
-`validate_branch_freshness`, a mid-wave reachability gh wrapper around
-`lifecycle.classify_reachability`, optional LLM persona personalities (wire in
-`python/src/real_team/personas.py`), and the **node CLI** runtime install (the
+**Next (see `intake/.../GENERICISATION-BACKLOG.md`):** the full wave/phase
+lifecycle skill chain (`phase-review` → `wave-scope` → `wave-kickoff` →
+`wave-wrapup` → `wave-retro` + `board-audit`, on the `lifecycle.py` engine); the
+review-gate tranche (`validate_pr_review` — the ~1189-line N-reviewer/TechDebt
+gate — + the `pr_review_state` oracle that reuses it, + `validate_review_comment_format`);
+`validate_branch_freshness`; a mid-wave reachability gh wrapper around
+`lifecycle.classify_reachability`; optional LLM persona personalities (wire in
+`python/src/real_team/personas.py`); and the **node CLI** runtime install (the
 Python `2real-team init` is wired; the node `init` would subprocess `python3`
 the same bundled bootstrap, since the runtime is Python-only). All layers meet at
 the `framework.config.json` contract.

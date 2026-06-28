@@ -82,6 +82,7 @@ def _schema_defaults() -> dict:
                 "validate_pr_ci_status",
             ],
             "post_bash": ["warn_pipe_mask_rc"],
+            "post_file": ["ontology_tracker"],
         },
     }
 
@@ -176,6 +177,22 @@ def _iter_asset_files(subdir: str):
         yield p
 
 
+def _iter_lib_files():
+    """Yield (relative-path, source) for every .py under assets/lib/, recursively.
+
+    Unlike :func:`_iter_asset_files`, this preserves subpackage structure (e.g.
+    ``ontology_gen/aggregate.py``) and KEEPS ``__init__.py`` so installed subpackages
+    remain importable. Skips ``__pycache__`` and ``*_test.py``.
+    """
+    base = _ASSETS / "lib"
+    if not base.is_dir():
+        return
+    for p in sorted(base.rglob("*.py")):
+        if "__pycache__" in p.parts or p.name.endswith("_test.py"):
+            continue
+        yield p.relative_to(base), p
+
+
 def _iter_skill_files():
     """Yield (relative-path, source) for every file under assets/skills/."""
     base = _ASSETS / "skills"
@@ -201,10 +218,13 @@ def install_assets(target_claude: Path, *, force: bool, dry_run: bool) -> dict[s
         shutil.copy2(src, dest)
         report["copied"].append(rel)
 
-    for subdir in ("hooks", "lib"):
-        dest_dir = target_claude / subdir
-        for src in _iter_asset_files(subdir):
-            _emit(dest_dir / src.name, f"{subdir}/{src.name}", src)
+    # hooks/ is a flat tree of modules.
+    for src in _iter_asset_files("hooks"):
+        _emit(target_claude / "hooks" / src.name, f"hooks/{src.name}", src)
+
+    # lib/ may contain subpackages (e.g. ontology_gen/) → copy recursively, preserving paths.
+    for relpath, src in _iter_lib_files():
+        _emit(target_claude / "lib" / relpath, f"lib/{relpath}", src)
 
     # Skills are a nested markdown tree (skills/<name>/SKILL.md) → .claude/skills/.
     for relpath, src in _iter_skill_files():

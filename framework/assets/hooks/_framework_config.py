@@ -89,6 +89,7 @@ _DEFAULTS: dict[str, Any] = {
             "block_squash_wave_merge",
         ],
         "post_bash": ["warn_pipe_mask_rc"],
+        "post_file": ["ontology_tracker"],
     },
 }
 
