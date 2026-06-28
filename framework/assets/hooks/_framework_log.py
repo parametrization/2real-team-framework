@@ -16,9 +16,11 @@ Stdlib only. Never raises — a logging failure must never fail the hook.
 Test-mode suppression
 =====================
 
-When ``ENVIRONMENT=test`` or ``FRAMEWORK_HOOK_TEST_MODE=1`` is set, writes are
-skipped, so a hook test-suite exercising matchers against synthetic fixtures
-does not pollute the real events log.
+When ``ENVIRONMENT=test`` or ``FRAMEWORK_HOOK_TEST_MODE=1`` is set, or the code is
+running under pytest (``PYTEST_CURRENT_TEST`` present), writes are skipped — so a
+hook test-suite exercising matchers against synthetic fixtures (which may resolve
+config to the real repo root when a test omits an isolated ``cwd``) does not
+pollute the real events log.
 """
 
 from __future__ import annotations
@@ -43,6 +45,10 @@ def _is_test_mode() -> bool:
     if os.environ.get("ENVIRONMENT", "") == "test":
         return True
     if os.environ.get("FRAMEWORK_HOOK_TEST_MODE", "") == "1":
+        return True
+    # pytest sets PYTEST_CURRENT_TEST while a test is running. Suppress here too, so a
+    # test that fires a hook without an isolated cwd can't write the real events log.
+    if "PYTEST_CURRENT_TEST" in os.environ:
         return True
     return False
 
