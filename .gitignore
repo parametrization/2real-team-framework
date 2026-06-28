@@ -1,16 +1,38 @@
-# Python
+# ---- Python ----
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
+*.egg
+.eggs/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-build/
-dist/_verify/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
 
-# Node
+# ---- Node / JS / TS ----
 node_modules/
-node/coverage/
+*.tgz
+.npm/
+.pnpm-store/
+*.tsbuildinfo
 
-# Editor / OS
+# ---- Build output ----
+build/
+dist/
+
+# ---- Test / coverage output ----
+coverage/
+
+# ---- Editor / OS ----
 .DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
