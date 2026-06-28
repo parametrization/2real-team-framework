@@ -145,6 +145,12 @@
           "items": { "type": "string" },
           "default": ["warn_pipe_mask_rc"],
           "description": "Ordered PostToolUse/Bash checks. Advisory only — never block."
+        },
+        "post_file": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["ontology_tracker"],
+          "description": "Ordered PostToolUse checks for file-mutating tools (Edit/Write/MultiEdit/NotebookEdit). Advisory only — never block."
         }
       }
     }
