@@ -21,6 +21,7 @@ sys.path.insert(0, str(_FRAMEWORK_ROOT / "assets" / "hooks"))
 
 from ontology_gen.aggregate import aggregate, discover_repos  # noqa: E402
 from ontology_gen.generate import generate  # noqa: E402
+from ontology_gen.refresh import is_stale, refresh  # noqa: E402
 
 
 def _git_init(path: Path) -> None:
@@ -74,6 +75,49 @@ def test_generate_import_edge_resolves(tmp_path: Path) -> None:
     doc = json.loads((tmp_path / "out" / "code-graph.json").read_text())
     edges = {(e["src"], e["dst"], e["type"]) for e in doc["edges"]}
     assert ("a.py", "b.py", "imports") in edges
+
+
+# --------------------------------------------------------------- refresh (staleness)
+
+
+def test_refresh_regenerates_when_index_missing(tmp_path: Path) -> None:
+    _git_init(tmp_path)
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    result = refresh(tmp_path, ontology_path="ontology")
+    assert result["regenerated"] is True
+    assert result["files"] == 1
+    assert (tmp_path / "ontology" / "structural" / "code-graph.json").is_file()
+
+
+def test_refresh_skips_when_fresh(tmp_path: Path) -> None:
+    _git_init(tmp_path)
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    generate(tmp_path, tmp_path / "ontology" / "structural", tmp_path.name)
+    result = refresh(tmp_path, ontology_path="ontology")
+    assert result == {"regenerated": False, "status": "fresh"}
+
+
+def test_refresh_force_regenerates_even_when_fresh(tmp_path: Path) -> None:
+    _git_init(tmp_path)
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    generate(tmp_path, tmp_path / "ontology" / "structural", tmp_path.name)
+    result = refresh(tmp_path, ontology_path="ontology", force=True)
+    assert result["regenerated"] is True
+
+
+def test_is_stale_true_when_source_newer(tmp_path: Path) -> None:
+    import os
+
+    _git_init(tmp_path)
+    src = tmp_path / "a.py"
+    src.write_text("def f():\n    return 1\n")
+    out = tmp_path / "ontology" / "structural"
+    generate(tmp_path, out, tmp_path.name)
+    assert is_stale(tmp_path, out) is False
+    # Bump the source mtime past the index → stale.
+    future = (out / "code-graph.json").stat().st_mtime + 100
+    os.utime(src, (future, future))
+    assert is_stale(tmp_path, out) is True
 
 
 # --------------------------------------------------------------- aggregator
@@ -186,6 +230,39 @@ def test_tracker_skips_worktree_and_wrong_tool(tmp_path: Path) -> None:
     overlay.write_text("a: 1\n")
     bash = {"tool_name": "Bash", "tool_input": {"command": "echo hi"}, "cwd": str(root)}
     assert ot.check(bash) is None
+
+
+# --------------------------------------------------------- ontology_refresh hook
+
+
+def _session(root: Path) -> dict:
+    return {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(root)}
+
+
+def test_ontology_refresh_inert_without_ontology(tmp_path: Path) -> None:
+    import ontology_refresh as orf
+    from _framework_config import clear_cache
+
+    clear_cache()
+    root = _repo_with_config(tmp_path, with_ontology=False)
+    (root / "a.py").write_text("def f():\n    return 1\n")
+    assert orf.check(_session(root)) is None
+    assert not (root / "ontology" / "structural").exists()
+
+
+def test_ontology_refresh_regenerates_with_ontology(tmp_path: Path) -> None:
+    import ontology_refresh as orf
+    from _framework_config import clear_cache
+
+    clear_cache()
+    root = _repo_with_config(tmp_path, with_ontology=True)
+    (root / "a.py").write_text("def f():\n    return 1\n")
+    result = orf.check(_session(root))
+    assert result is not None and "structural index refreshed" in result["systemMessage"]
+    assert (root / "ontology" / "structural" / "code-graph.json").is_file()
+    # Second call: index now fresh → nothing to say.
+    clear_cache()
+    assert orf.check(_session(root)) is None
 
 
 if __name__ == "__main__":

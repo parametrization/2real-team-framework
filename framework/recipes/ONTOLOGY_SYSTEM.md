@@ -29,6 +29,18 @@ project's ontology machinery.
   default** — does nothing unless an ontology dir (or `checksums.json`) exists, so it's safe to
   wire everywhere. Skips the generated `structural/` layer, `checksums.json` itself, worktree
   copies, and out-of-tree files. Advisory; never blocks.
+- **`lib/ontology_gen/refresh.py`** — `refresh(root, …)` regenerates `structural/` **only when
+  stale** (a source file newer than `code-graph.json`); deterministic, so a regen is byte-stable
+  when nothing changed. For `meta-and-children` it also re-aggregates the cross-repo graph.
+- **`hooks/ontology_refresh.py` + `hooks/start_dispatcher.py`** — a **SessionStart** hook that
+  keeps the structural layer current automatically. `start_dispatcher` runs the config list
+  `hooks.session_start` (default `["ontology_refresh"]`); the refresh hook is **inert unless an
+  ontology dir exists** and never blocks session start. Wired by the bootstrapper's
+  `SessionStart` matcher-less block.
+- **`assets/ontology/` (seed overlay template)** — generic `domain.yaml` / `services.yaml` /
+  `conventions.md` / `README.md`. `bootstrap.py --with-ontology` lays these into
+  `<ontology>/` (skip-if-exists), which also *activates* the two ontology hooks (both inert
+  until the dir exists).
 - **`/ontology-librarian`** — read-only staleness (both layers) + lookup.
 - **`/ontology-rebuild`** — reconcile the semantic overlay from code; sets `last_resolved`.
 
@@ -57,8 +69,10 @@ PYTHONPATH=.claude/lib python3 -m ontology_gen.aggregate . --repo api=svc-api --
   wire its extensions into `generate._SUPPORTED` + `_extract_one`.
 - **Different child discovery:** pass an explicit `repos={name: subdir}` to `aggregate()` (or
   `--repo` on the CLI) instead of the default `.git`-presence scan.
-- **Lifecycle integration:** call the generator from `/session-start` (staleness → regenerate)
-  and at wave wrapup, mirroring the source project's Step-3b / Step-12b hooks.
+- **Lifecycle integration:** the `ontology_refresh` SessionStart hook already regenerates on
+  staleness at every session start. `/session-start` also reports ontology health, and wave
+  wrapup can call `ontology_gen.refresh.refresh(root, force=True)` to guarantee a fresh index
+  before review. Add more SessionStart behaviours by appending to `hooks.session_start`.
 
 ## Tests
 

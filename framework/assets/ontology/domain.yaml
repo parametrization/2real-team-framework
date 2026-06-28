@@ -1,0 +1,20 @@
+# Semantic overlay — DOMAIN entities (hand-curated).
+#
+# The nouns of your problem domain and how they relate. Capture meaning the code can't state
+# on its own: what an entity IS, its identity, key relationships, invariants. Keep it concise —
+# this is a map, not a spec. Replace the example below with your project's real entities.
+#
+# Tracked by checksums.json (edit -> dirty -> /ontology-rebuild reconciles vs code).
+
+version: 1
+
+entities:
+  - name: ExampleEntity
+    summary: One-line description of what this entity represents in the domain.
+    identity: What uniquely identifies an instance (e.g. an id field, a natural key).
+    relationships:
+      - "belongs to: AnotherEntity"
+      - "has many: ChildEntity"
+    invariants:
+      - "A rule that must always hold for this entity."
+    code: path/to/where/it/lives.py   # optional pointer into the structural layer

@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Staleness-guarded regeneration of the structural ontology layer.
+
+``refresh(repo_root, ...)`` regenerates ``<ontology>/structural/`` only when the committed
+index is stale — missing, or a discovered source file is newer than ``code-graph.json`` — so
+callers (the SessionStart hook, ``/session-start``, wave wrapup) can keep the structural layer
+current cheaply. The generator is deterministic, so when nothing changed a regeneration
+produces byte-identical output: a refresh is always safe even if the guard is bypassed
+(``force=True``).
+
+For a ``meta-and-children`` project it also re-aggregates the cross-repo graph from whatever
+per-repo indices are present (absent ones skipped). The hand-curated SEMANTIC OVERLAY is never
+touched here — that is the ontology_tracker's + ``/ontology-rebuild``'s job.
+
+Stdlib only; no network. Pairs with :mod:`ontology_gen.generate` (the generator) and
+:mod:`ontology_gen.aggregate` (the cross-repo roll-up).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from .generate import discover, generate
+
+_STRUCTURAL_SUBDIR = "structural"
+_INDEX_NAME = "code-graph.json"
+
+
+def is_stale(repo_root: Path, out_dir: Path) -> bool:
+    """True if the structural index is missing or older than any discovered source file.
+
+    Cheap: stats discovered source files (no parsing) and compares against the index mtime.
+    A fresh checkout where the committed index post-dates its sources reads as fresh; any
+    later source edit reads as stale. Unreadable files are skipped (never block on them).
+    """
+    index = out_dir / _INDEX_NAME
+    try:
+        index_mtime = index.stat().st_mtime
+    except OSError:
+        return True
+    for rel in discover(repo_root):
+        try:
+            if (repo_root / rel).stat().st_mtime > index_mtime:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def refresh(
+    repo_root: Path | str,
+    *,
+    ontology_path: str = "ontology",
+    repo_name: str | None = None,
+    model: str = "single-repo",
+    force: bool = False,
+) -> dict:
+    """Regenerate the structural index if stale (or ``force``). Returns a status dict.
+
+    Keys: ``regenerated`` (bool), ``status`` (``"fresh"`` | ``"regenerated"``), and on
+    regeneration the ``files``/``nodes``/``edges`` counts. For ``meta-and-children`` an
+    ``aggregate`` sub-dict carries the cross-repo roll-up counts (best-effort; omitted on
+    failure). Never raises for ordinary I/O — callers (hooks) stay fail-open.
+    """
+    repo_root = Path(repo_root)
+    out_dir = repo_root / ontology_path / _STRUCTURAL_SUBDIR
+    if not force and not is_stale(repo_root, out_dir):
+        return {"regenerated": False, "status": "fresh"}
+
+    counts = generate(repo_root, out_dir, repo_name or repo_root.name)
+    result: dict = {"regenerated": True, "status": "regenerated", **counts}
+
+    if model == "meta-and-children":
+        try:
+            from .aggregate import DEFAULT_OUT, write_aggregate
+
+            nodes, edges, statuses = write_aggregate(repo_root, repo_root / DEFAULT_OUT)
+            result["aggregate"] = {
+                "nodes": nodes,
+                "edges": edges,
+                "repos": sum(1 for s in statuses if s.present),
+            }
+        except Exception:
+            pass  # aggregation is best-effort; the per-repo index already refreshed.
+    return result

@@ -107,6 +107,11 @@ fi
 When the librarian skill is installed, prefer invoking `/ontology-librarian` here for the real
 two-layer staleness check (semantic overlay + structural index).
 
+> The **`ontology_refresh` SessionStart hook** (wired in `settings.json` when installed) already
+> regenerates the *structural* layer on staleness before this skill runs, so the structural index
+> is current by the time you read it. This step's job is to surface the report (and flag a dirty
+> *semantic overlay*, which the hook never touches — that's `/ontology-rebuild`'s job).
+
 ### Step 7 — Charter / feedback freshness
 
 ```bash
