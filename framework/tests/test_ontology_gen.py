@@ -232,6 +232,22 @@ def test_tracker_skips_worktree_and_wrong_tool(tmp_path: Path) -> None:
     assert ot.check(bash) is None
 
 
+def test_tracker_skips_non_overlay_source_file(tmp_path: Path) -> None:
+    import ontology_tracker as ot
+
+    root = _repo_with_config(tmp_path, with_ontology=True)
+    src = root / "src" / "app.py"
+    src.parent.mkdir(parents=True)
+    src.write_text("x = 1\n")
+    # A source edit outside the overlay must NOT be tracked (only the semantic overlay is).
+    assert ot.check(_edit(src, root)) is None
+    assert not (root / "ontology" / "checksums.json").exists()
+    # An overlay edit IS still tracked.
+    overlay = root / "ontology" / "domain.yaml"
+    overlay.write_text("entities: []\n")
+    assert ot.check(_edit(overlay, root)) == {"action": "tracked", "path": "ontology/domain.yaml"}
+
+
 # --------------------------------------------------------- ontology_refresh hook
 
 

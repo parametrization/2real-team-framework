@@ -31,7 +31,9 @@ dist/
 coverage/
 
 # ---- Framework runtime output ----
-.claude/framework/         # events.jsonl observability log (paths.events_log)
+# .claude/framework/ holds the events.jsonl observability log (paths.events_log).
+# NOTE: gitignore has no inline comments — keep patterns on their own lines.
+.claude/framework/
 .claude/settings.local.json
 
 # ---- Editor / OS ----
