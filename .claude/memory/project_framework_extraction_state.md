@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — PR #41, what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.3.1, what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,10 +11,14 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Active work:** PR #41, branch `framework/foundation-config-hooks-bootstrap`
-(GitHub `parametrization/2real-team-framework`, default branch `main`). OPEN, CI green
-across all jobs (python 3.10–3.13 + framework 3.10–3.13 + node 18/20/22) as of last push
-`9e09628`. Verify live state with `gh pr view 41` before assuming.
+**Current baseline (2026-06-28): no active work in flight.** The foundation (PR #41) shipped
+long ago; the project is **released at v0.3.1** on both registries. Both Python and Node
+packages publish via **OIDC trusted publishing** — no long-lived tokens (PR #57 switched the
+workflows; trusted publishers are configured on PyPI and npmjs.com for
+`parametrization/2real-team-framework` + the respective `publish-*.yml` workflow). v0.3.0 had
+failed to publish (PyPI trusted-publisher unconfigured; `NPM_TOKEN` expired end of May 2026);
+v0.3.1 (PR #58) republished cleanly via OIDC with provenance/attestations. Repo now holds
+**zero** Actions secrets. Verify live state with `gh release list` / `gh pr list` before assuming.
 
 **Built + tested end-to-end** (framework tests 39 passing, python tests 103 passing):
 - The config keystone (`framework/config/framework.config.schema.json`) + loader/logger/parsers.
