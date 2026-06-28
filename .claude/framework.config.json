@@ -7,9 +7,41 @@
   "scm": {
     "provider": "github",
     "owner": "parametrization",
-    "default_branch": "main"
+    "default_branch": "main",
+    "allow_force": false
+  },
+  "shell": "zsh",
+  "identity": {
+    "enforce": true,
+    "email_pattern": "{First}.{Last}@gmail.com",
+    "roster_source": ".claude/team/roster.json",
+    "allow_emails": ["parametrization@gmail.com"]
+  },
+  "policy": {
+    "reviewers_required": 1,
+    "merge_model": "direct-to-main"
+  },
+  "ci": {
+    "merge_requires_green": true,
+    "tooling": ["ruff", "pytest"]
   },
   "paths": {
     "ontology": "ontology"
+  },
+  "hooks": {
+    "pre_bash": [
+      "validate_commit_identity",
+      "block_no_verify",
+      "block_git_config",
+      "no_worktree_self_delete",
+      "warn_zsh_wordsplit",
+      "validate_labels",
+      "validate_workflow_paths_coverage",
+      "validate_pr_ci_status",
+      "block_squash_wave_merge"
+    ],
+    "post_bash": ["warn_pipe_mask_rc"],
+    "post_file": ["ontology_tracker"],
+    "session_start": ["ontology_refresh"]
   }
 }

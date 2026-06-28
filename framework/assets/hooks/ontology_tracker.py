@@ -82,16 +82,15 @@ def _should_skip(file_path: str, onto_dir: Path, root: Path) -> bool:
         resolved = Path(file_path).resolve()
     except (OSError, RuntimeError):
         return True
-    # Skip the generated structural layer (regenerated wholesale, not hand-resolved).
-    try:
-        resolved.relative_to((onto_dir / "structural").resolve())
-        return True
-    except ValueError:
-        pass
     # Out-of-tree files cannot be this repo's ontology source.
     try:
-        resolved.relative_to(root.resolve())
+        rel_parts = resolved.relative_to(root.resolve()).parts
     except ValueError:
+        return True
+    # Track ONLY the hand-curated SEMANTIC OVERLAY: a file under a dir named like the ontology
+    # dir (covers a child's overlay in the meta+children model too), excluding the generated
+    # structural/ layer. Source code and other repo files are NOT the overlay — not tracked.
+    if onto_dir.name not in rel_parts or "structural" in rel_parts:
         return True
     return False
 
