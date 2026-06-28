@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "files": {
+    "ontology/domain.yaml": {
+      "last_tracked": "49ae57024246c68f1531a77d6339ca9f1cf9febc6dcb5f7ba90327b0b6f60048",
+      "last_resolved": "49ae57024246c68f1531a77d6339ca9f1cf9febc6dcb5f7ba90327b0b6f60048",
+      "tracked_at": "2026-06-28T03:08:32.466220+00:00",
+      "resolved_at": "2026-06-28T03:08:32.466220+00:00"
+    },
+    "ontology/services.yaml": {
+      "last_tracked": "7fd779029b9438f8a1d2ca454ea83e95543f9c3292ac55993f7886fa43f2db46",
+      "last_resolved": "7fd779029b9438f8a1d2ca454ea83e95543f9c3292ac55993f7886fa43f2db46",
+      "tracked_at": "2026-06-28T03:08:32.466220+00:00",
+      "resolved_at": "2026-06-28T03:08:32.466220+00:00"
+    },
+    "ontology/conventions.md": {
+      "last_tracked": "c24b79ecba9c5023ffd3c835dc315fb1b1c3cf5567a681800805e1d78cbfb422",
+      "last_resolved": "c24b79ecba9c5023ffd3c835dc315fb1b1c3cf5567a681800805e1d78cbfb422",
+      "tracked_at": "2026-06-28T03:08:32.466220+00:00",
+      "resolved_at": "2026-06-28T03:08:32.466220+00:00"
+    }
+  }
+}

@@ -151,6 +151,12 @@
           "items": { "type": "string" },
           "default": ["ontology_tracker"],
           "description": "Ordered PostToolUse checks for file-mutating tools (Edit/Write/MultiEdit/NotebookEdit). Advisory only — never block."
+        },
+        "session_start": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["ontology_refresh"],
+          "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present)."
         }
       }
     }

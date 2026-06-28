@@ -83,6 +83,7 @@ def _schema_defaults() -> dict:
             ],
             "post_bash": ["warn_pipe_mask_rc"],
             "post_file": ["ontology_tracker"],
+            "session_start": ["ontology_refresh"],
         },
     }
 
@@ -244,16 +245,25 @@ def write_config(target_claude: Path, cfg: dict, *, force: bool, dry_run: bool) 
     return "written"
 
 
-def _hook_already_wired(matcher_blocks: list, command_substr: str) -> bool:
-    for block in matcher_blocks:
-        for hook in block.get("hooks", []):
-            if command_substr in hook.get("command", ""):
-                return True
-    return False
+def _script_id(command: str) -> str:
+    """Stable identity for a hook command = its ``.py`` script basename (else the command).
+
+    Lets the merge recognise an already-wired hook regardless of the ``$CLAUDE_PROJECT_DIR``
+    prefix or quoting, so re-running bootstrap is idempotent for every event (Pre/Post/Session).
+    """
+    for token in command.replace('"', " ").split():
+        if token.endswith(".py"):
+            return Path(token).name
+    return command.strip()
 
 
 def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
-    """Idempotently merge the dispatcher wiring into <target>/.claude/settings.json."""
+    """Idempotently merge the template hook wiring into <target>/.claude/settings.json.
+
+    Generic over events (PreToolUse / PostToolUse / SessionStart / …): blocks match by
+    ``matcher`` (which may be absent — e.g. SessionStart), and each template hook is added only
+    if no existing hook in that block already references the same script. Re-running is a no-op.
+    """
     template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
     dest = target_claude / "settings.json"
     existing: dict = {}
@@ -268,19 +278,20 @@ def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
     for event, blocks in template["hooks"].items():
         existing["hooks"].setdefault(event, [])
         for tmpl_block in blocks:
-            matcher = tmpl_block["matcher"]
-            # find an existing block with the same matcher
+            matcher = tmpl_block.get("matcher")  # absent for matcher-less events (SessionStart)
             same = [b for b in existing["hooks"][event] if b.get("matcher") == matcher]
             if not same:
                 existing["hooks"][event].append(json.loads(json.dumps(tmpl_block)))
                 changed = True
                 continue
-            # matcher exists — add our dispatcher only if not already wired
             block = same[0]
             block.setdefault("hooks", [])
-            if not _hook_already_wired([block], "dispatcher.py" if event == "PreToolUse" else "post_dispatcher.py"):
-                block["hooks"].append(json.loads(json.dumps(tmpl_block["hooks"][0])))
-                changed = True
+            wired = {_script_id(h.get("command", "")) for h in block["hooks"]}
+            for tmpl_hook in tmpl_block.get("hooks", []):
+                if _script_id(tmpl_hook.get("command", "")) not in wired:
+                    block["hooks"].append(json.loads(json.dumps(tmpl_hook)))
+                    wired.add(_script_id(tmpl_hook.get("command", "")))
+                    changed = True
 
     if not changed:
         return "already wired"
@@ -289,6 +300,41 @@ def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
     target_claude.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
     return "updated"
+
+
+def _iter_overlay_files():
+    """Yield (relative-path, source) for every file under assets/ontology/ (the seed overlay)."""
+    base = _ASSETS / "ontology"
+    if not base.is_dir():
+        return
+    for p in sorted(base.rglob("*")):
+        if p.is_file() and "__pycache__" not in p.parts:
+            yield p.relative_to(base), p
+
+
+def install_overlay_template(
+    target_root: Path, ontology_rel: str, *, force: bool, dry_run: bool
+) -> dict[str, list[str]]:
+    """Lay down the seed semantic-overlay template into <target>/<ontology_rel>/. Idempotent.
+
+    Skip-if-exists by default so a consumer's hand-curated overlay is never clobbered. Creating
+    the ontology dir also activates the ontology_refresh / ontology_tracker hooks (both are
+    inert until an ontology dir exists).
+    """
+    report: dict[str, list[str]] = {"copied": [], "skipped": [], "would_copy": []}
+    for relpath, src in _iter_overlay_files():
+        dest = target_root / ontology_rel / relpath
+        rel = f"{ontology_rel}/{relpath}"
+        if dest.exists() and not force:
+            report["skipped"].append(rel)
+            continue
+        if dry_run:
+            report["would_copy"].append(rel)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        report["copied"].append(rel)
+    return report
 
 
 # ---------------------------------------------------------------- main
@@ -308,6 +354,7 @@ def main() -> int:
     ap.add_argument("--no-team", action="store_true", help="Skip roster generation (install hooks only)")
     ap.add_argument("--team-size", type=int, help="Target headcount for the generated roster")
     ap.add_argument("--no-enforce-identity", action="store_true", help="Generate the roster but do NOT enable the commit-identity gate")
+    ap.add_argument("--with-ontology", action="store_true", help="Lay down the seed semantic-overlay template (activates the ontology hooks)")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
     args = ap.parse_args()
@@ -384,6 +431,11 @@ def main() -> int:
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
     settings_status = merge_settings(target_claude, dry_run=args.dry_run)
 
+    overlay = None
+    if args.with_ontology:
+        ontology_rel = cfg.get("paths", {}).get("ontology", "ontology")
+        overlay = install_overlay_template(target, ontology_rel, force=args.force, dry_run=args.dry_run)
+
     roster_status = "skipped (--no-team)"
     if team_enabled and roster_plan is not None:
         rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
@@ -402,6 +454,9 @@ def main() -> int:
         print(f"skipped (exists):  {len(assets['skipped'])} (use --force to overwrite)")
     print(f"framework.config:  {cfg_status}")
     print(f"settings.json:     {settings_status}")
+    if overlay is not None:
+        laid = overlay["would_copy"] if args.dry_run else overlay["copied"]
+        print(f"ontology overlay:  {len(laid)} file(s) {'would be laid' if args.dry_run else 'laid'}; {len(overlay['skipped'])} skipped")
     print(f"team roster:       {roster_status}")
     if team_enabled and roster_plan is not None and not args.no_enforce_identity:
         print("identity gate:     ENABLED (commits must use -c user.name/-c user.email from the roster)")

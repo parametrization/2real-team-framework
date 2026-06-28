@@ -1,0 +1,20 @@
+# Semantic overlay — SERVICES / components (hand-curated).
+#
+# The runnable/importable parts of the system and their responsibilities. For each: what it's
+# for, its entry point, what it depends on, and what it owns. This is the "boxes and arrows"
+# layer the structural index can't infer (responsibility & intent). Replace the example.
+#
+# Tracked by checksums.json (edit -> dirty -> /ontology-rebuild reconciles vs code).
+
+version: 1
+
+services:
+  - name: example-service
+    summary: One-line description of what this component does and why it exists.
+    entrypoint: path/to/entry.py        # CLI module, server main, package, etc.
+    responsibilities:
+      - "The single thing this component is responsible for."
+    depends_on:
+      - other-service
+    owns:
+      - ExampleEntity                    # domain entities this component is the source of truth for

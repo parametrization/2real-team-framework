@@ -1,0 +1,87 @@
+# Semantic overlay — SERVICES / components of the 2real-team-framework.
+#
+# The runnable/importable parts and their responsibilities. The framework SOURCE lives under
+# framework/assets/ (the deployable template) and framework/install/; a consumer repo receives
+# copies under .claude/. Hand-curated; tracked by checksums.json.
+
+version: 1
+
+services:
+  - name: bootstrap
+    summary: Deterministic installer — lays hooks/lib/skills into a target .claude/, writes framework.config.json, merges settings.json, plans the roster. Works for a NEW or EXISTING repo; idempotent.
+    entrypoint: framework/install/bootstrap.py
+    responsibilities:
+      - "Copy assets (hooks/, lib/, skills/) into <target>/.claude/."
+      - "Write a valid framework.config.json from flags/--config + schema defaults."
+      - "Idempotently wire dispatchers into settings.json (merge_settings, generic over events)."
+      - "--with-ontology: lay the seed overlay template (activates the ontology hooks)."
+    depends_on:
+      - roster_gen
+    owns:
+      - FrameworkConfig
+
+  - name: roster_gen
+    summary: Introspects a repo and plans/writes the simulated Team roster (org roles for meta, lead+domain engineers for a child).
+    entrypoint: framework/install/roster_gen.py
+    owns:
+      - Team
+      - TeamMember
+
+  - name: lifecycle
+    summary: The wave/iteration state machine + CLI — monotonic wave allocation, merge models, reachability classification, state transitions.
+    entrypoint: framework/assets/lib/lifecycle.py
+    owns:
+      - Wave
+      - LifecycleState
+
+  - name: hook-dispatchers
+    summary: The dispatcher seam — one in-process entry per event that runs the configured hook list. PreToolUse blocks; PostToolUse + SessionStart are advisory.
+    entrypoint: framework/assets/hooks/dispatcher.py
+    responsibilities:
+      - "dispatcher.py — pre_bash gates (block_no_verify, block_git_config, identity, CI/label gates…)."
+      - "post_dispatcher.py — post_bash + post_file advisories (warn_pipe_mask_rc, ontology_tracker)."
+      - "start_dispatcher.py — session_start advisories (ontology_refresh)."
+    depends_on:
+      - bootstrap
+    owns:
+      - Hook
+      - Dispatcher
+
+  - name: ontology_gen
+    summary: Zero-dependency structural ontology generator + cross-repo aggregator + staleness-guarded refresher.
+    entrypoint: framework/assets/lib/ontology_gen/
+    responsibilities:
+      - "generate(root,out,name) — discover git-tracked source, extract a code graph, write code-graph.json + llms.txt."
+      - "aggregate(root) — union per-repo indices into a <repo>/-namespaced cross-repo graph."
+      - "refresh(root) — regenerate only when stale (deterministic; meta also re-aggregates)."
+    owns:
+      - Ontology
+
+  - name: ontology-hooks-skills
+    summary: The ontology automation + read/reconcile surface.
+    entrypoint: framework/assets/hooks/ontology_refresh.py
+    responsibilities:
+      - "ontology_refresh (SessionStart) — keep structural/ fresh; inert without an ontology dir."
+      - "ontology_tracker (PostToolUse) — checksum overlay edits."
+      - "/ontology-librarian (read-only, both layers) + /ontology-rebuild (reconcile overlay)."
+    depends_on:
+      - ontology_gen
+      - hook-dispatchers
+    owns:
+      - Checksums
+
+  - name: node-cli
+    summary: The published npm CLI (2real-team) that bootstraps the framework into a repo; bundles the shared framework assets.
+    entrypoint: node/src/
+    depends_on:
+      - bootstrap
+
+  - name: python-package
+    summary: The published Python package (real_team) — `init --with-hooks` subprocesses the bundled bootstrap.
+    entrypoint: python/
+
+  - name: skills-suite
+    summary: The slash-command capabilities deployed to .claude/skills/ (session lifecycle, waves, ontology, planning, retro).
+    entrypoint: framework/assets/skills/
+    owns:
+      - Skill

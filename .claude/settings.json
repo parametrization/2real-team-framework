@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/framework/assets/hooks/start_dispatcher.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

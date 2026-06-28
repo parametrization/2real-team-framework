@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "project": {
+    "name": "2real-team-framework",
+    "model": "single-repo"
+  },
+  "scm": {
+    "provider": "github",
+    "owner": "parametrization",
+    "default_branch": "main"
+  },
+  "paths": {
+    "ontology": "ontology"
+  }
+}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from .generate import build_graph, discover, generate
 from .model import CodeGraph, Edge, FileInfo, Node
+from .refresh import is_stale, refresh
 
 # NOTE: the CLI submodules ``aggregate`` and ``merge_driver`` are intentionally NOT
 # re-exported here. Both are run as ``python3 -m ontology_gen.<submodule>``; importing
@@ -28,4 +29,6 @@ __all__ = [
     "build_graph",
     "discover",
     "generate",
+    "is_stale",
+    "refresh",
 ]

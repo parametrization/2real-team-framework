@@ -68,10 +68,28 @@ def test_install_is_complete_and_idempotent(tmp_path: Path) -> None:
     pre = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert "dispatcher.py" in pre
 
+    # SessionStart auto-regeneration hook is wired (matcher-less block) + installed.
+    assert (claude / "hooks" / "start_dispatcher.py").is_file()
+    assert (claude / "hooks" / "ontology_refresh.py").is_file()
+    session_cmd = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert "start_dispatcher.py" in session_cmd
+
     # Re-run: nothing copied, config not clobbered.
     r2 = _install(tmp_path, "--shell", "zsh")
     assert r2.returncode == 0
     assert "skipped (exists)" in r2.stdout
+    assert "already wired" in r2.stdout  # settings merge is idempotent across all events
+
+
+def test_with_ontology_lays_overlay_template(tmp_path: Path) -> None:
+    r = _install(tmp_path, "--with-ontology")
+    assert r.returncode == 0, r.stderr
+    for name in ("domain.yaml", "services.yaml", "conventions.md", "README.md"):
+        assert (tmp_path / "ontology" / name).is_file(), name
+    # Idempotent: re-run skips the existing overlay.
+    r2 = _install(tmp_path, "--with-ontology")
+    assert r2.returncode == 0
+    assert "ontology overlay:" in r2.stdout
 
 
 def test_no_verify_blocks(tmp_path: Path) -> None:

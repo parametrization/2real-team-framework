@@ -30,6 +30,10 @@ dist/
 # ---- Test / coverage output ----
 coverage/
 
+# ---- Framework runtime output ----
+.claude/framework/         # events.jsonl observability log (paths.events_log)
+.claude/settings.local.json
+
 # ---- Editor / OS ----
 .DS_Store
 Thumbs.db
