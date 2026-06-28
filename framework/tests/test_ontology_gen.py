@@ -48,6 +48,24 @@ def test_generate_emits_artifacts_and_counts(tmp_path: Path) -> None:
     assert "noorinalabs" not in llms and "#855" not in llms
 
 
+def test_generate_skips_committed_vendored_dirs(tmp_path: Path) -> None:
+    _git_init(tmp_path)
+    (tmp_path / "app.py").write_text("def main():\n    return 0\n")
+    # Vendored deps / build output that the repo commits (git-tracked, not gitignored).
+    for vendored in ("node_modules", "dist", "build", "coverage"):
+        d = tmp_path / "node" / vendored / "pkg"
+        d.mkdir(parents=True)
+        (d / "index.js").write_text("module.exports = 1;\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    counts = generate(tmp_path, tmp_path / "out", "demo")
+
+    assert counts["files"] == 1  # only app.py — every vendored/build file skipped
+    llms = (tmp_path / "out" / "llms.txt").read_text()
+    assert "## app.py [python]" in llms
+    assert "node_modules" not in llms and "/dist/" not in llms
+
+
 def test_generate_import_edge_resolves(tmp_path: Path) -> None:
     _git_init(tmp_path)
     (tmp_path / "a.py").write_text("import b\n")
