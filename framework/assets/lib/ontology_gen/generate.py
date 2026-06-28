@@ -5,7 +5,9 @@
 
 1. discover supported source files (git-tracked + untracked-not-ignored when the root
    is a git repo — so generated output reflects the working tree and respects
-   ``.gitignore``; an ``os.walk`` fallback with a default ignore set otherwise),
+   ``.gitignore``; an ``os.walk`` fallback with a default ignore set otherwise).
+   Well-known vendored/build dirs (``node_modules``/``dist``/``build``/``coverage``)
+   are skipped in both modes — even when committed — so they don't flood the index,
 2. dispatch each to its language extractor (a single unparseable file degrades to a
    bare file node instead of aborting the run),
 3. assemble the :class:`CodeGraph` and render ``llms.txt``,
@@ -50,6 +52,10 @@ _IGNORE_DIRS = frozenset(
 )
 # Always skipped even under git discovery (scratch checkouts of other branches).
 _ALWAYS_SKIP_PREFIXES = (".claude/worktrees/",)
+# Vendored deps / build output — skipped in BOTH discovery modes, even when committed.
+# git ls-files trusts tracked files, so repos that commit node_modules/dist/coverage would
+# otherwise flood the index with thousands of vendored/generated files.
+_ALWAYS_SKIP_DIRS = frozenset({"node_modules", "dist", "build", "coverage"})
 
 
 def _git_listed_files(repo_root: Path) -> list[str] | None:
@@ -86,6 +92,9 @@ def discover(repo_root: Path) -> list[str]:
     out: list[str] = []
     for rel in candidates:
         if rel.startswith(_ALWAYS_SKIP_PREFIXES):
+            continue
+        # Exclude vendored/build dirs at any depth, even when git-tracked.
+        if any(part in _ALWAYS_SKIP_DIRS for part in rel.split("/")[:-1]):
             continue
         if rel.endswith(_SUPPORTED):
             out.append(rel)
