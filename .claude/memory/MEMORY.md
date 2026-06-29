@@ -5,7 +5,7 @@ memory: create/edit `<kebab-slug>.md` with frontmatter (`name`, `description`, `
 add a pointer line here, link related memories with `[[slug]]`, and commit it so it travels with
 the branch. Update an existing file rather than duplicating; delete memories that turn out wrong.
 
-- [Framework extraction state](project_framework_extraction_state.md) — baseline: released v0.3.1, OIDC publishing on both registries (zero Actions secrets); what's built (10 hooks/4 libs/bootstrap/roster/skill/CLI), what's deferred (review-gate tranche, branch-freshness, node CLI). Read first.
+- [Framework extraction state](project_framework_extraction_state.md) — baseline: released v0.3.2, OIDC publishing on both registries (zero Actions secrets); what's built (10 hooks/4 libs/bootstrap/roster/skill/CLI), what's deferred (review-gate tranche, branch-freshness, node CLI). Read first.
 - [Config-driven architecture](reference_config_driven_architecture.md) — config→assets→bootstrap→dispatcher; one shared-config object, stdlib-only fail-open, hook contract, `cfg.path.parent.parent` = repo root.
 - [Lifecycle state machine](reference_lifecycle_state_machine.md) — lifecycle.py: monotonic wave allocator, merge models, classify_reachability, transitions + CLI.
 - [Per-child union rosters](reference_per_child_union_rosters.md) — roster_gen partition (meta=org roles, child=lead+domain engineers); identity gate enforces meta∪child via parent-merge.
