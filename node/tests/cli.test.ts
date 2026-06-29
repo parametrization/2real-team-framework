@@ -358,12 +358,46 @@ describe("bootstrap", () => {
     expect(existsSync(join(tmp, ".claude", "team", "feedback_log.md"))).toBe(
       true,
     );
-    expect(existsSync(join(tmp, ".claude", "CLAUDE.md"))).toBe(true);
+    // CLAUDE.md lands at the project root, not under .claude/.
+    expect(existsSync(join(tmp, "CLAUDE.md"))).toBe(true);
+    expect(existsSync(join(tmp, ".claude", "CLAUDE.md"))).toBe(false);
 
     const roster = readdirSync(join(tmp, ".claude", "team", "roster")).filter(
       (f) => f.endsWith(".md"),
     );
     expect(roster.length).toBe(3);
+  });
+
+  it("should back up an existing root CLAUDE.md (non-clobbering)", async () => {
+    writeFileSync(join(tmp, "CLAUDE.md"), "ORIGINAL USER CONTENT");
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "backup-test",
+      target: tmp,
+      interactive: false,
+    });
+    // Original preserved in .bak; framework content now at root CLAUDE.md.
+    expect(readFileSync(join(tmp, "CLAUDE.md.bak"), "utf8")).toBe(
+      "ORIGINAL USER CONTENT",
+    );
+    expect(readFileSync(join(tmp, "CLAUDE.md"), "utf8")).not.toBe(
+      "ORIGINAL USER CONTENT",
+    );
+  });
+
+  it("should not clobber a pre-existing CLAUDE.md.bak", async () => {
+    writeFileSync(join(tmp, "CLAUDE.md"), "CURRENT");
+    writeFileSync(join(tmp, "CLAUDE.md.bak"), "OLDER BACKUP");
+    await bootstrap({
+      preset: "library",
+      teamSize: 3,
+      projectName: "backup2-test",
+      target: tmp,
+      interactive: false,
+    });
+    expect(readFileSync(join(tmp, "CLAUDE.md.bak"), "utf8")).toBe("OLDER BACKUP");
+    expect(readFileSync(join(tmp, "CLAUDE.md.bak.1"), "utf8")).toBe("CURRENT");
   });
 
   it("should create skills", async () => {

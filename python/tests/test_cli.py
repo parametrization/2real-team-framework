@@ -1057,7 +1057,55 @@ class TestBootstrapProject:
         assert any("charter.md" in f for f in created)
         assert any("trust_matrix.md" in f for f in created)
         assert any("feedback_log.md" in f for f in created)
-        assert any("CLAUDE.md" in f for f in created)
+        assert "CLAUDE.md" in created
+
+    def test_claude_md_written_at_project_root(self, tmp_path: Path):
+        """CLAUDE.md lands at the project root, not under .claude/."""
+        preset = get_preset("library")
+        config = TeamConfig(
+            project_name="root-test",
+            preset="library",
+            team_members=generate_team(preset, 3),
+            skills=[],
+        )
+        bootstrap_project(tmp_path, config)
+        assert (tmp_path / "CLAUDE.md").is_file()
+        assert not (tmp_path / ".claude" / "CLAUDE.md").exists()
+
+    def test_existing_claude_md_backed_up(self, tmp_path: Path):
+        """An existing root CLAUDE.md is preserved as .bak (non-clobbering)."""
+        preset = get_preset("library")
+        config = TeamConfig(
+            project_name="backup-test",
+            preset="library",
+            team_members=generate_team(preset, 3),
+            skills=[],
+        )
+        (tmp_path / "CLAUDE.md").write_text("ORIGINAL USER CONTENT")
+        created = bootstrap_project(tmp_path, config)
+
+        backup = tmp_path / "CLAUDE.md.bak"
+        assert backup.is_file()
+        assert backup.read_text() == "ORIGINAL USER CONTENT"
+        # Framework content replaced the root file; original is in the backup.
+        assert (tmp_path / "CLAUDE.md").read_text() != "ORIGINAL USER CONTENT"
+        assert "CLAUDE.md.bak" in created
+
+    def test_existing_backup_not_clobbered(self, tmp_path: Path):
+        """A pre-existing .bak is never overwritten; the next free suffix is used."""
+        preset = get_preset("library")
+        config = TeamConfig(
+            project_name="backup2-test",
+            preset="library",
+            team_members=generate_team(preset, 3),
+            skills=[],
+        )
+        (tmp_path / "CLAUDE.md").write_text("CURRENT")
+        (tmp_path / "CLAUDE.md.bak").write_text("OLDER BACKUP")
+        bootstrap_project(tmp_path, config)
+
+        assert (tmp_path / "CLAUDE.md.bak").read_text() == "OLDER BACKUP"
+        assert (tmp_path / "CLAUDE.md.bak.1").read_text() == "CURRENT"
 
     def test_creates_skills(self, tmp_path: Path):
         preset = get_preset("library")

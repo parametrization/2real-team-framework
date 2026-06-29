@@ -3,7 +3,7 @@
  */
 
 import { readFileSync, mkdirSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import Mustache from "mustache";
@@ -203,6 +203,21 @@ export function loadYamlConfig(configPath: string): YamlConfig {
   return cfg as unknown as YamlConfig;
 }
 
+/**
+ * Return a non-clobbering backup path for `filePath`. Prefers `<name>.bak`; if
+ * that exists, falls back to `<name>.bak.1`, `<name>.bak.2`, … so an existing
+ * backup is never overwritten.
+ */
+function nextBackupPath(filePath: string): string {
+  let backup = `${filePath}.bak`;
+  let counter = 1;
+  while (existsSync(backup)) {
+    backup = `${filePath}.bak.${counter}`;
+    counter += 1;
+  }
+  return backup;
+}
+
 export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   let target = resolve(opts.target);
   let presetName = opts.preset;
@@ -372,10 +387,23 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   writeFileSync(join(teamDir, "feedback_log.md"), feedback);
   created.push(".claude/team/feedback_log.md");
 
-  // CLAUDE.md
+  // CLAUDE.md at the PROJECT ROOT. Claude Code loads the root CLAUDE.md by
+  // convention; a copy under .claude/ is easily missed. The framework writes
+  // only the team section, so if the project already has a root CLAUDE.md we
+  // preserve it as a .bak (non-clobbering) and ask the user to reconcile.
   const claudeMd = renderTemplate("CLAUDE.md.mustache", context);
-  writeFileSync(join(target, ".claude", "CLAUDE.md"), claudeMd);
-  created.push(".claude/CLAUDE.md");
+  const claudePath = join(target, "CLAUDE.md");
+  if (existsSync(claudePath)) {
+    const backupPath = nextBackupPath(claudePath);
+    renameSync(claudePath, backupPath);
+    created.push(basename(backupPath));
+    console.warn(
+      `\nExisting CLAUDE.md preserved as ${basename(backupPath)}. The framework wrote its team ` +
+        `section to CLAUDE.md — reconcile your original content from ${basename(backupPath)} into it.`,
+    );
+  }
+  writeFileSync(claudePath, claudeMd);
+  created.push("CLAUDE.md");
 
   // Skills
   for (const skill of skillsList) {

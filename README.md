@@ -60,6 +60,9 @@ Or specify everything up front:
 This creates the following in your project:
 
 ```
+CLAUDE.md                # Team section, written at the project root
+                         # (an existing CLAUDE.md is preserved as CLAUDE.md.bak
+                         #  for you to reconcile)
 .claude/
   team/
     charter.md           # Team rules, org chart, workflows
@@ -78,7 +81,6 @@ This creates the following in your project:
     close-stale-issues.md
     # with --with-hooks, also: session-start, handoff,
     # wave-lifecycle, ontology-librarian, ontology-rebuild
-  CLAUDE.md              # Team section for your project's CLAUDE.md
 ```
 
 ## Commands
