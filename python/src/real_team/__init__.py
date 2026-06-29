@@ -1,3 +1,3 @@
 """2real-team-framework — Drop-in AI agent team framework for Claude Code projects."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
