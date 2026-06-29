@@ -76,6 +76,8 @@ This creates the following in your project:
     review-pr.md         # PR review using charter format
     plan-phase.md        # Phase planning skill
     close-stale-issues.md
+    # with --with-hooks, also: session-start, handoff,
+    # wave-lifecycle, ontology-librarian, ontology-rebuild
   CLAUDE.md              # Team section for your project's CLAUDE.md
 ```
 
@@ -185,7 +187,12 @@ All presets include 6 skills: `retro`, `wave-start`, `wave-end`, `review-pr`, `p
 
 ## Skills
 
-Skills are Claude Code slash commands installed in `.claude/skills/`. After bootstrapping:
+Skills are Claude Code slash commands installed in `.claude/skills/`. The framework ships two
+tiers.
+
+### Team-workflow skills
+
+Templated per project and installed by every preset (the 6 listed in [Presets](#presets)):
 
 - `/retro` — Run a wave retrospective (collect PRs, issues, CI failures, write report)
 - `/wave-start` — Initialize a new deployments branch and clean worktrees
@@ -193,6 +200,23 @@ Skills are Claude Code slash commands installed in `.claude/skills/`. After boot
 - `/review-pr <number>` — Review a PR using the charter's structured format
 - `/plan-phase <number>` — Decompose a phase into issues with acceptance criteria
 - `/close-stale-issues` — Audit and close issues resolved by merged PRs
+
+### Runtime skills
+
+Config-driven and fail-open, installed alongside the hooks/libs runtime with
+`2real-team init --with-hooks`. They read `.claude/framework.config.json` and skip cleanly when
+a subsystem isn't present:
+
+- `/session-start` — Run first in every session: loads memory, confirms the team, reads the
+  last handoff, and reports git/PR/CI + lifecycle + ontology status in one table
+- `/handoff` — Write a session handoff note to project memory (git state, open PRs/issues,
+  lifecycle/wave status, and the context the next session needs to resume)
+- `/wave-lifecycle` — Drive one wave through its full lifecycle (allocate → start → scope →
+  kickoff → work → wrapup → retro) on the deterministic `lifecycle.py` engine
+- `/ontology-librarian [query]` — Read-only ontology reference: checks staleness of both the
+  hand-curated semantic overlay and the generated structural index, and retrieves context
+- `/ontology-rebuild [scope]` — Reconcile the semantic overlay: scan dirty checksums, update
+  ontology files and auto-updatable docs from code, mark resolved
 
 ## How it works with Claude Code
 
