@@ -23,6 +23,12 @@ runtime) so the PyPI/npm long-description metadata — baked per release — cov
 skills installed by `--with-hooks`. Repo holds **zero** Actions secrets. Verify live state with
 `gh release list` / `gh pr list` before assuming.
 
+**`main` is ahead of the released `v0.3.2` tag (unreleased):** the bootstrap now writes
+`CLAUDE.md` to the **project root** (not `.claude/CLAUDE.md`), backing up any existing root
+`CLAUDE.md` to `CLAUDE.md.bak` (non-clobbering) and warning the user to reconcile — issue #60 /
+PR #61, in both Python and Node bootstraps. This repo dogfoods it: its own `CLAUDE.md` now lives
+at the root (PR #63). User chose "let it ride" — registries stay at 0.3.2 until the next release.
+
 **Built + tested end-to-end** (framework tests 39 passing, python tests 103 passing):
 - The config keystone (`framework/config/framework.config.schema.json`) + loader/logger/parsers.
 - Both dispatchers (PreToolUse/PostToolUse) reading `hooks.pre_bash`/`hooks.post_bash`.
