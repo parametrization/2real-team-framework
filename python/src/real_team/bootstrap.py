@@ -152,6 +152,20 @@ def _assign_reports_to(members: list[TeamMember]) -> None:
             member.reports_to = tech_lead.name if tech_lead else (manager.name if manager else "")
 
 
+def _next_backup_path(path: Path) -> Path:
+    """Return a non-clobbering backup path for ``path``.
+
+    Prefers ``<name>.bak``; if that already exists, falls back to ``<name>.bak.1``,
+    ``<name>.bak.2``, … so an existing backup is never overwritten.
+    """
+    backup = path.with_name(path.name + ".bak")
+    counter = 1
+    while backup.exists():
+        backup = path.with_name(f"{path.name}.bak.{counter}")
+        counter += 1
+    return backup
+
+
 def bootstrap_project(
     target_dir: Path,
     config: TeamConfig,
@@ -201,9 +215,21 @@ def bootstrap_project(
     feedback_path.write_text(feedback)
     created_files.append(str(feedback_path.relative_to(target_dir)))
 
-    # Render CLAUDE.md
+    # Render CLAUDE.md at the PROJECT ROOT. Claude Code loads the root CLAUDE.md
+    # by convention; a copy under .claude/ is easily missed. The framework writes
+    # only the team section, so if the project already has a root CLAUDE.md we
+    # preserve it as a .bak (non-clobbering) and ask the user to reconcile.
     claude_md = render_template("CLAUDE.md.mustache", context)
-    claude_path = target_dir / ".claude" / "CLAUDE.md"
+    claude_path = target_dir / "CLAUDE.md"
+    if claude_path.exists():
+        backup_path = _next_backup_path(claude_path)
+        claude_path.rename(backup_path)
+        created_files.append(str(backup_path.relative_to(target_dir)))
+        console.print(
+            f"\n[yellow]Existing CLAUDE.md preserved as {backup_path.name}.[/yellow] "
+            "The framework wrote its team section to CLAUDE.md — reconcile your original "
+            f"content from {backup_path.name} into it."
+        )
     claude_path.write_text(claude_md)
     created_files.append(str(claude_path.relative_to(target_dir)))
 

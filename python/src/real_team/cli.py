@@ -178,7 +178,7 @@ def init(
     console.print("Next steps:")
     console.print("  1. Review .claude/team/charter.md")
     console.print("  2. Customize roster cards in .claude/team/roster/")
-    console.print("  3. Add team section to your CLAUDE.md")
+    console.print("  3. Review root CLAUDE.md (any prior CLAUDE.md was kept as .bak)")
     if with_hooks:
         console.print(
             "  4. Review .claude/framework.config.json + restart Claude Code so hooks load."
