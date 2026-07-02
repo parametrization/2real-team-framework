@@ -335,6 +335,12 @@ To switch modes, re-run the bootstrapper with the new `--pre-push` value. An exi
 (`.bak.1`, `.bak.2`, … — never overwriting an earlier backup) with a warning. Targets without
 a `.git` directory are skipped with a notice.
 
+Git hooks live under `.git/` and are **not committed artifacts** — they do not travel with a
+clone, fork, or new worktree. The installed mode is recorded in the committed install
+snapshot (`.claude/install.config.json`, key `pre_push.mode`); each fresh clone lays the hook
+locally by re-running the installer (`python3 framework/install/bootstrap.py .` — or just
+`… . --pre-push noop` to lay only the hook mode recorded for this repo).
+
 ## How it works with Claude Code
 
 1. **Bootstrap:** Run `2real-team init` in your project
