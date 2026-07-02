@@ -302,6 +302,88 @@ def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
     return "updated"
 
 
+def _charter_context(cfg: dict) -> dict[str, str]:
+    """Build the ``{{key}}`` substitution map for the modular charter template.
+
+    Supported keys (all derived from the built config; stdlib-only, no template
+    engine — plain ``{{key}}`` string substitution):
+
+    ==========================  =============================  ===========================
+    Placeholder                 Config source                  Default
+    ==========================  =============================  ===========================
+    {{project_name}}            project.name                   "this project"
+    {{owner}}                   scm.owner                      "<owner>"
+    {{default_branch}}          scm.default_branch             "main"
+    {{feature_branch_scheme}}   branch.feature                 "{initials}/{issue}-{slug}"
+    {{integration_branch_scheme}}  branch.integration          "deployments/wave-{wave}"
+    {{merge_model}}             policy.merge_model             "wave-branch"
+    {{reviewers_required}}      policy.reviewers_required      2
+    {{email_pattern}}           identity.email_pattern         "team+{First}.{Last}@example.com"
+    {{tech_debt_label}}         labels.tech_debt               "tech-debt"
+    {{team_dir}}                paths.team                     ".claude/team"
+    ==========================  =============================  ===========================
+
+    Note: single-brace tokens (e.g. ``{initials}``) are part of the *content*
+    (branch-scheme notation), not placeholders — only double-brace keys substitute.
+    """
+
+    def _get(dotted: str, default):
+        node = cfg
+        for part in dotted.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return default
+            node = node[part]
+        return node if node not in (None, "") else default
+
+    return {
+        "project_name": str(_get("project.name", "this project")),
+        "owner": str(_get("scm.owner", "<owner>")),
+        "default_branch": str(_get("scm.default_branch", "main")),
+        "feature_branch_scheme": str(_get("branch.feature", "{initials}/{issue}-{slug}")),
+        "integration_branch_scheme": str(_get("branch.integration", "deployments/wave-{wave}")),
+        "merge_model": str(_get("policy.merge_model", "wave-branch")),
+        "reviewers_required": str(_get("policy.reviewers_required", 2)),
+        "email_pattern": str(_get("identity.email_pattern", "team+{First}.{Last}@example.com")),
+        "tech_debt_label": str(_get("labels.tech_debt", "tech-debt")),
+        "team_dir": str(_get("paths.team", ".claude/team")),
+    }
+
+
+def _iter_charter_files():
+    """Yield every .md file under assets/team/charter/ (the modular charter template)."""
+    base = _ASSETS / "team" / "charter"
+    if not base.is_dir():
+        return
+    yield from sorted(base.glob("*.md"))
+
+
+def install_charter(target_claude: Path, cfg: dict, *, force: bool, dry_run: bool) -> dict[str, list[str]]:
+    """Render the modular charter into <target>/.claude/team/charter/. Idempotent.
+
+    Substitutes the ``{{key}}`` placeholders documented in :func:`_charter_context`
+    with config-derived values. Skip-if-exists by default so a consumer's
+    hand-evolved charter is never clobbered; ``--force`` refreshes from the template.
+    """
+    report: dict[str, list[str]] = {"written": [], "skipped": [], "would_write": []}
+    context = _charter_context(cfg)
+    for src in _iter_charter_files():
+        dest = target_claude / "team" / "charter" / src.name
+        rel = f"team/charter/{src.name}"
+        if dest.exists() and not force:
+            report["skipped"].append(rel)
+            continue
+        if dry_run:
+            report["would_write"].append(rel)
+            continue
+        text = src.read_text(encoding="utf-8")
+        for key, value in context.items():
+            text = text.replace("{{" + key + "}}", value)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+        report["written"].append(rel)
+    return report
+
+
 def _iter_overlay_files():
     """Yield (relative-path, source) for every file under assets/ontology/ (the seed overlay)."""
     base = _ASSETS / "ontology"
@@ -430,6 +512,7 @@ def main() -> int:
     assets = install_assets(target_claude, force=args.force, dry_run=args.dry_run)
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
     settings_status = merge_settings(target_claude, dry_run=args.dry_run)
+    charter = install_charter(target_claude, cfg, force=args.force, dry_run=args.dry_run)
 
     overlay = None
     if args.with_ontology:
@@ -454,6 +537,12 @@ def main() -> int:
         print(f"skipped (exists):  {len(assets['skipped'])} (use --force to overwrite)")
     print(f"framework.config:  {cfg_status}")
     print(f"settings.json:     {settings_status}")
+    charter_laid = charter["would_write"] if args.dry_run else charter["written"]
+    print(
+        f"team charter:      {len(charter_laid)} file(s) "
+        f"{'would be written' if args.dry_run else 'written'}; "
+        f"{len(charter['skipped'])} skipped"
+    )
     if overlay is not None:
         laid = overlay["would_copy"] if args.dry_run else overlay["copied"]
         print(f"ontology overlay:  {len(laid)} file(s) {'would be laid' if args.dry_run else 'laid'}; {len(overlay['skipped'])} skipped")
