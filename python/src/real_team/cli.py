@@ -9,7 +9,13 @@ from rich.console import Console
 from rich.table import Table
 
 from .bootstrap import bootstrap_project, generate_team, make_email
-from .models import TeamConfig, YamlConfig
+from .models import (
+    InstallConfig,
+    TeamConfig,
+    YamlConfig,
+    _read_yaml_mapping,
+    is_unified_config,
+)
 from .presets import get_preset, list_presets
 
 app = typer.Typer(name="2real-team", help="AI agent team framework for Claude Code projects")
@@ -22,10 +28,19 @@ def init(
         None, help="Project preset (fullstack-monorepo, data-pipeline, library)"
     ),
     team_size: int = typer.Option(None, help="Override default team size"),
-    config: str = typer.Option(None, help="Path to config YAML file"),
+    config: str = typer.Option(
+        None,
+        help="Path to a YAML config file — either the unified install config "
+        "(see `init --help` key reference) or the legacy flat team config",
+    ),
     project_name: str = typer.Option(None, help="Project name"),
     target: str = typer.Option(".", help="Target directory"),
     interactive: bool = typer.Option(True, help="Interactive mode"),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Guarantee zero prompts; the config (flags > YAML > defaults) answers everything",
+    ),
     git_email_prefix: str = typer.Option(
         "", help="Email prefix (e.g., 'myorg' -> myorg+First.Last@gmail.com)"
     ),
@@ -41,32 +56,73 @@ def init(
         None, help="Default merge model: wave-branch | direct-to-main"
     ),
     with_ontology: bool = typer.Option(
-        True,
+        None,
         "--with-ontology/--no-ontology",
         help=(
             "Seed the ontology semantic-overlay template and generate the structural index "
-            "(ontology/structural/) at install time (requires --with-hooks)"
+            "(ontology/structural/) at install time (requires --with-hooks). "
+            "Unset, it follows the install config's ontology.enabled (default: on)"
         ),
     ),
 ) -> None:
-    """Bootstrap a new project with the team framework."""
-    target_path = Path(target).resolve()
+    """Bootstrap a new project with the team framework.
 
+    --config accepts either YAML schema (auto-detected):
+
+    UNIFIED install config (shared with framework/install/bootstrap.py;
+    precedence: CLI flags > YAML > shipped defaults):
+    version (1) | repo.expect fresh|existing|any | project.name |
+    project.model standalone|meta|child | scm.provider github | scm.owner |
+    ci.provider github-actions | ticketing.provider github-issues |
+    pre_push.mode noop|enforce|none | ontology.enabled bool |
+    team.enabled bool | team.preset | team.size |
+    children [{path, flavor: product|infra}]
+
+    LEGACY flat team config: preset (required) | project_name | team_size |
+    git_email_prefix | target | skills | members.
+
+    With --non-interactive (or any --config) there are zero prompts.
+    """
+    target_path = Path(target).resolve()
+    if non_interactive:
+        interactive = False
+
+    yaml_cfg: YamlConfig | None = None
+    install_cfg: InstallConfig | None = None
     if config:
         try:
-            yaml_cfg = YamlConfig.from_yaml(config)
+            raw = _read_yaml_mapping(config)
+            if is_unified_config(raw):
+                install_cfg = InstallConfig.from_yaml(config)
+            else:
+                yaml_cfg = YamlConfig.from_yaml(config)
         except (FileNotFoundError, ValueError) as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(1) from exc
 
-        preset = yaml_cfg.preset
-        team_size = yaml_cfg.team_size or team_size
-        project_name = yaml_cfg.project_name or project_name
-        git_email_prefix = yaml_cfg.git_email_prefix or git_email_prefix
-        if yaml_cfg.target != ".":
-            target_path = Path(yaml_cfg.target).resolve()
-        # Config mode is fully non-interactive
+        # Config mode is fully non-interactive.
         interactive = False
+        if install_cfg is not None:
+            # Unified schema: CLI flags win over the YAML.
+            preset = preset or install_cfg.team.preset
+            team_size = team_size or install_cfg.team.size
+            project_name = project_name or install_cfg.project.name
+            owner = owner or install_cfg.scm.owner
+        else:
+            assert yaml_cfg is not None
+            preset = yaml_cfg.preset
+            team_size = yaml_cfg.team_size or team_size
+            project_name = yaml_cfg.project_name or project_name
+            git_email_prefix = yaml_cfg.git_email_prefix or git_email_prefix
+            if yaml_cfg.target != ".":
+                target_path = Path(yaml_cfg.target).resolve()
+
+    team_enabled = install_cfg.team.enabled if install_cfg is not None else True
+    if not team_enabled:
+        _install_runtime_only(
+            target_path, with_hooks, owner, merge_model, config, with_ontology
+        )
+        return
 
     if not preset and interactive:
         available = list_presets()
@@ -99,13 +155,13 @@ def init(
     console.print(f"\n[bold]Generating team for [cyan]{project_name}[/cyan]...[/bold]")
     # Determine skills list — config overrides preset defaults
     skills = preset_config.skills
-    if config and yaml_cfg.skills is not None:
+    if yaml_cfg is not None and yaml_cfg.skills is not None:
         skills = yaml_cfg.skills
 
     members = generate_team(preset_config, team_size)
 
-    # Apply per-member overrides from YAML config
-    if config and yaml_cfg.members:
+    # Apply per-member overrides from YAML config (legacy schema only)
+    if yaml_cfg is not None and yaml_cfg.members:
         for i, override in enumerate(yaml_cfg.members):
             if i >= len(members):
                 break
@@ -159,29 +215,16 @@ def init(
     # Install the config-driven framework runtime (hooks/lib/skills/config +
     # dispatcher wiring) on top of the mustache team scaffolding.
     if with_hooks:
-        from .framework_install import install_framework
-
-        proc = install_framework(
+        _run_framework_install(
             target_path,
             owner=owner or git_email_prefix or None,
             merge_model=merge_model,
+            install_config=config if install_cfg is not None else None,
             with_ontology=with_ontology,
         )
-        if proc is None:
-            console.print(
-                "\n[yellow]Framework runtime not installed:[/yellow] bundled assets not found "
-                "(re-run from a source checkout, or use the standalone framework installer)."
-            )
-        elif proc.returncode != 0:
-            console.print(
-                "\n[yellow]Framework runtime install reported an issue "
-                f"(exit {proc.returncode}):[/yellow]"
-            )
-            console.print(f"[dim]{(proc.stderr or proc.stdout).strip()[:500]}[/dim]")
-        else:
-            console.print(
-                "\n[green]Installed the framework runtime[/green] (hooks/lib/skills/config)."
-            )
+        # The bridge passes --no-team (this CLI scaffolded the roster itself),
+        # so correct the recorded install snapshot to reflect the real outcome.
+        _sync_install_snapshot(target_path, preset=preset, team_size=len(members))
 
     console.print(f"\n[bold green]Team framework bootstrapped for '{project_name}'![/bold green]")
     console.print("Next steps:")
@@ -192,6 +235,82 @@ def init(
         console.print(
             "  4. Review .claude/framework.config.json + restart Claude Code so hooks load."
         )
+
+
+def _run_framework_install(
+    target_path: Path,
+    *,
+    owner: str | None,
+    merge_model: str | None,
+    install_config: str | None,
+    with_ontology: bool | None = None,
+) -> None:
+    """Invoke the framework bootstrapper and report the outcome."""
+    from .framework_install import install_framework
+
+    proc = install_framework(
+        target_path,
+        owner=owner,
+        merge_model=merge_model,
+        install_config=install_config,
+        with_ontology=with_ontology,
+    )
+    if proc is None:
+        console.print(
+            "\n[yellow]Framework runtime not installed:[/yellow] bundled assets not found "
+            "(re-run from a source checkout, or use the standalone framework installer)."
+        )
+    elif proc.returncode != 0:
+        console.print(
+            "\n[yellow]Framework runtime install reported an issue "
+            f"(exit {proc.returncode}):[/yellow]"
+        )
+        console.print(f"[dim]{(proc.stderr or proc.stdout).strip()[:500]}[/dim]")
+    else:
+        console.print(
+            "\n[green]Installed the framework runtime[/green] (hooks/lib/skills/config)."
+        )
+
+
+def _sync_install_snapshot(target_path: Path, *, preset: str | None, team_size: int) -> None:
+    """Record the team the CLI actually scaffolded in .claude/install.config.json."""
+    import json
+
+    snapshot_path = target_path / ".claude" / "install.config.json"
+    if not snapshot_path.is_file():
+        return
+    try:
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    team = snapshot.setdefault("team", {})
+    team["enabled"] = True
+    team["preset"] = preset
+    team["size"] = team_size
+    snapshot_path.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+
+
+def _install_runtime_only(
+    target_path: Path,
+    with_hooks: bool,
+    owner: str | None,
+    merge_model: str | None,
+    config: str | None,
+    with_ontology: bool | None = None,
+) -> None:
+    """Config said ``team.enabled: false`` — skip team scaffolding entirely."""
+    console.print("[dim]team.enabled is false — skipping team scaffolding.[/dim]")
+    if with_hooks:
+        _run_framework_install(
+            target_path,
+            owner=owner,
+            merge_model=merge_model,
+            install_config=config,
+            with_ontology=with_ontology,
+        )
+        console.print("\n[bold green]Framework runtime installed (no team layer).[/bold green]")
+    else:
+        console.print("[yellow]Nothing to do:[/yellow] team disabled and --no-hooks given.")
 
 
 @app.command()

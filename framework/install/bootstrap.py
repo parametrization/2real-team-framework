@@ -9,13 +9,23 @@ changes nothing. Interactive prompts are an opt-in convenience, never required.
 
 Stdlib only (no deps), so it runs anywhere ``python3`` does.
 
+Install-time decisions are driven by the unified YAML install config
+(``--install-config``; shipped defaults at ``config/install.config.default.yaml``)
+with precedence CLI flags > user YAML > shipped defaults. ``--non-interactive``
+guarantees zero prompts on every path. The resolved install config is recorded
+at ``<target>/.claude/install.config.json``; the RUNTIME config the hooks read
+remains ``<target>/.claude/framework.config.json``.
+
 Usage
 =====
 
   # Deterministic (no prompts) — minimal:
   python3 bootstrap.py /path/to/repo --owner my-org
 
-  # From a prepared config file (recommended for reproducible installs):
+  # Fully declarative, zero prompts (recommended for automation):
+  python3 bootstrap.py /path/to/repo --install-config my.install.yaml --non-interactive
+
+  # From a prepared RUNTIME config seed (JSON, framework.config.json shape):
   python3 bootstrap.py /path/to/repo --config my.framework.config.json
 
   # Preview without writing anything:
@@ -27,8 +37,10 @@ Usage
 Flags
 =====
   target                 Target repo root (default: current directory).
-  --config PATH          JSON config to seed from (overlaid on schema defaults).
-  --owner NAME           scm.owner (GitHub org/user). Overlays --config.
+  --install-config PATH  Unified YAML install config (see --help for the keys).
+  --non-interactive      Never prompt; the install config answers everything.
+  --config PATH          JSON RUNTIME-config seed (framework.config.json shape).
+  --owner NAME           scm.owner (GitHub org/user). Overlays the configs.
   --project-name NAME    project.name.
   --model {single-repo,meta-and-children}
   --shell {bash,zsh}
@@ -36,10 +48,11 @@ Flags
   --merge-model {wave-branch,direct-to-main}
   --no-permissions       Skip installing the curated permissions.allow allowlist.
   --interactive          Prompt for missing required fields (scm.owner) if a TTY.
+  --with-ontology / --no-ontology   Override ontology.enabled from the config.
   --force                Overwrite existing hook/lib files and framework.config.json.
   --dry-run              Print the plan; write nothing.
 
-Exit codes: 0 ok / dry-run, 1 on a hard error (e.g. assets missing).
+Exit codes: 0 ok / dry-run, 1 on a hard error (e.g. assets missing, invalid config).
 """
 
 from __future__ import annotations
@@ -51,6 +64,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import install_config  # noqa: E402  (sibling module in install/)
 import roster_gen  # noqa: E402  (sibling module in install/)
 
 # framework/install/bootstrap.py  ->  framework/
@@ -107,7 +121,53 @@ def _set_path(cfg: dict, dotted: str, value) -> None:
     node[parts[-1]] = value
 
 
-def build_config(args: argparse.Namespace) -> dict:
+def resolve_install_config(args: argparse.Namespace) -> tuple[dict, set[str]]:
+    """Resolve the unified install config: flags > user YAML > shipped defaults.
+
+    Returns ``(install_cfg, user_keys)``; ``user_keys`` are the dotted paths the
+    operator explicitly decided (via YAML or flag) — used for precedence into the
+    runtime config and for prompt-skipping. Raises SystemExit on invalid input.
+    """
+    try:
+        inst, user_keys = install_config.load(args.install_config)
+    except install_config.InstallConfigError as e:
+        raise SystemExit(f"ERROR: {e}")
+
+    # CLI flags are the highest-precedence layer of the install config.
+    flag_map = {
+        "scm.owner": args.owner,
+        "project.name": args.project_name,
+        "team.size": args.team_size,
+    }
+    if args.model:  # runtime enum -> install enum
+        flag_map["project.model"] = install_config.INSTALL_MODEL_MAP[args.model]
+    if args.no_team:
+        flag_map["team.enabled"] = False
+    if args.no_ontology:
+        flag_map["ontology.enabled"] = False
+    elif args.with_ontology:
+        flag_map["ontology.enabled"] = True
+    for dotted, value in flag_map.items():
+        if value is not None:
+            install_config.set_key(inst, dotted, value)
+            user_keys.add(dotted)
+
+    problems, warnings = install_config.validate(inst)
+    for w in warnings:
+        print(f"install-config warn: {w}")
+    if problems:
+        for p in problems:
+            print(f"install-config problem: {p}", file=sys.stderr)
+        raise SystemExit("ERROR: refusing to install with an invalid install config.")
+    return inst, user_keys
+
+
+def build_config(args: argparse.Namespace, inst: dict, user_keys: set[str]) -> dict:
+    """Build the RUNTIME config (framework.config.json shape).
+
+    Layering: schema defaults < ``--config`` JSON seed < install-config overlay
+    (which already has the CLI flags folded in, so flags beat both files).
+    """
     cfg = _schema_defaults()
     if args.config:
         try:
@@ -118,13 +178,9 @@ def build_config(args: argparse.Namespace) -> dict:
             raise SystemExit("ERROR: --config must be a JSON object")
         cfg = _deep_merge(cfg, loaded)
 
-    # Individual flags overlay the config file.
-    if args.owner:
-        _set_path(cfg, "scm.owner", args.owner)
-    if args.project_name:
-        _set_path(cfg, "project.name", args.project_name)
-    if args.model:
-        _set_path(cfg, "project.model", args.model)
+    cfg = _deep_merge(cfg, install_config.runtime_overlay(inst, user_keys))
+
+    # Runtime-only flags (no install-config equivalent) overlay everything.
     if args.shell:
         _set_path(cfg, "shell", args.shell)
     if args.reviewers is not None:
@@ -132,12 +188,14 @@ def build_config(args: argparse.Namespace) -> dict:
     if args.merge_model:
         _set_path(cfg, "policy.merge_model", args.merge_model)
 
-    # Interactive fill of still-missing required-ish fields (TTY only).
+    # Interactive fill of still-missing required-ish fields (TTY only; the
+    # config is always consulted first, --non-interactive never reaches here).
     if args.interactive and sys.stdin.isatty():
         if not cfg.get("scm", {}).get("owner"):
             ans = input("GitHub owner (org or user) [leave blank to skip]: ").strip()
             if ans:
                 _set_path(cfg, "scm.owner", ans)
+                install_config.set_key(inst, "scm.owner", ans)
 
     return cfg
 
@@ -243,6 +301,23 @@ def write_config(target_claude: Path, cfg: dict, *, force: bool, dry_run: bool) 
         return "would write"
     target_claude.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    return "written"
+
+
+def write_install_snapshot(target_claude: Path, inst: dict, *, force: bool, dry_run: bool) -> str:
+    """Record the RESOLVED install config at .claude/install.config.json.
+
+    This is the carry-point for install-time decisions whose behaviour lands in
+    later tranches (repo.expect, meta/child models, children, pre_push): one
+    canonical, machine-readable record every downstream consumer reads.
+    """
+    dest = target_claude / install_config.SNAPSHOT_REL
+    if dest.exists() and not force:
+        return "skipped (exists; use --force to overwrite)"
+    if dry_run:
+        return "would write"
+    target_claude.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(inst, indent=2) + "\n", encoding="utf-8")
     return "written"
 
 
@@ -498,20 +573,37 @@ def generate_structural(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Install the 2real framework hooks into a repo.")
+    ap = argparse.ArgumentParser(
+        description="Install the 2real framework hooks into a repo.",
+        epilog=install_config.HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("target", nargs="?", default=".", help="Target repo root (default: cwd)")
-    ap.add_argument("--config", help="JSON config to seed from")
+    ap.add_argument("--install-config", metavar="YAML",
+                    help="Unified YAML install config (see the key reference below). "
+                         "Precedence: CLI flags > this file > shipped defaults.")
+    ap.add_argument("--config", help="JSON RUNTIME-config seed (framework.config.json shape)")
     ap.add_argument("--owner", help="scm.owner (GitHub org/user)")
     ap.add_argument("--project-name", help="project.name")
     ap.add_argument("--model", choices=["single-repo", "meta-and-children"])
     ap.add_argument("--shell", choices=["bash", "zsh"])
     ap.add_argument("--reviewers", type=int)
     ap.add_argument("--merge-model", choices=["wave-branch", "direct-to-main"])
-    ap.add_argument("--interactive", action="store_true", help="Prompt for missing fields + review the proposed team (TTY only)")
+    mode_group = ap.add_mutually_exclusive_group()
+    mode_group.add_argument("--interactive", action="store_true",
+                            help="Prompt for missing fields + review the proposed team (TTY only)")
+    mode_group.add_argument("--non-interactive", action="store_true",
+                            help="Guarantee zero prompts on every path; the install config "
+                                 "(flags > YAML > shipped defaults) answers everything")
     ap.add_argument("--no-team", action="store_true", help="Skip roster generation (install hooks only)")
     ap.add_argument("--team-size", type=int, help="Target headcount for the generated roster")
     ap.add_argument("--no-enforce-identity", action="store_true", help="Generate the roster but do NOT enable the commit-identity gate")
-    ap.add_argument("--with-ontology", action="store_true", help="Lay down the seed semantic-overlay template AND generate the structural index (activates the ontology hooks)")
+    ontology_group = ap.add_mutually_exclusive_group()
+    ontology_group.add_argument("--with-ontology", action="store_true",
+                                help="Lay down the seed semantic-overlay template AND generate the "
+                                     "structural index (ontology.enabled=true; activates the ontology hooks)")
+    ontology_group.add_argument("--no-ontology", action="store_true",
+                                help="Skip the ontology seed + structural index (ontology.enabled=false)")
     ap.add_argument("--no-permissions", action="store_true", help="Do NOT install the curated permissions.allow allowlist into settings.json (hook wiring still merges)")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
@@ -526,13 +618,25 @@ def main() -> int:
     mode = "DRY-RUN" if args.dry_run else "INSTALL"
     print(f"== 2real framework bootstrap ({mode}) ==")
     print(f"target repo:   {target}")
-    if not (target / ".git").exists():
-        print("note:          no .git here — installing anyway (new repo / pre-init).")
 
-    cfg = build_config(args)
+    inst, user_keys = resolve_install_config(args)
+
+    # repo.expect: informational today — detection/enforcement lands with the
+    # meta/child install modes. Mismatches are noted, never fatal.
+    expect = install_config.get_key(inst, "repo.expect", "fresh")
+    has_git = (target / ".git").exists()
+    if not has_git:
+        print("note:          no .git here — installing anyway (new repo / pre-init).")
+    if expect == "existing" and not has_git:
+        print("note:          repo.expect=existing but no .git found — proceeding.")
+    elif expect == "fresh" and has_git:
+        print("note:          repo.expect=fresh but a .git already exists — proceeding.")
+
+    cfg = build_config(args, inst, user_keys)
 
     # --- introspect the repo + plan the roster (the team layer) ---
-    team_enabled = not args.no_team
+    team_enabled = bool(install_config.get_key(inst, "team.enabled", True))
+    team_size = install_config.get_key(inst, "team.size")
     roster_plan = None
     if team_enabled:
         email_pattern = cfg.get("identity", {}).get("email_pattern") or "team+{First}.{Last}@example.com"
@@ -541,21 +645,30 @@ def main() -> int:
             email_pattern=email_pattern,
             declared_model=cfg.get("project", {}).get("model"),
             declared_repos=cfg.get("project", {}).get("repos"),
-            team_size=args.team_size,
+            team_size=team_size,
         )
-        # Record what introspection found back into the config.
+        # Record what introspection found back into the configs.
         cfg.setdefault("project", {})["model"] = roster_plan.intro.model
         if roster_plan.intro.model == "meta-and-children":
             cfg["project"]["repos"] = [r.name for r in roster_plan.intro.repos]
+        if "project.model" not in user_keys:
+            install_config.set_key(
+                inst, "project.model",
+                install_config.INSTALL_MODEL_MAP.get(roster_plan.intro.model, "standalone"),
+            )
 
         print("\n-- repo introspection + proposed team --")
         print(roster_plan.summary())
 
-        if args.interactive and sys.stdin.isatty():
+        # The config is consulted first: an explicit team decision (team.size /
+        # team.enabled via YAML or flag) answers the proceed-prompt.
+        team_answered = bool({"team.size", "team.enabled"} & user_keys)
+        if args.interactive and sys.stdin.isatty() and not team_answered:
             ans = input("\nProceed with this team? [Y]es / [s]ize N / [n]o team: ").strip().lower()
             if ans.startswith("n"):
                 team_enabled = False
                 roster_plan = None
+                install_config.set_key(inst, "team.enabled", False)
             elif ans.startswith("s"):
                 try:
                     size = int(ans.split()[-1])
@@ -564,6 +677,7 @@ def main() -> int:
                                                   declared_repos=cfg.get("project", {}).get("repos"),
                                                   team_size=size)
                     print(roster_plan.summary())
+                    install_config.set_key(inst, "team.size", size)
                 except (ValueError, IndexError):
                     print("  (could not parse size; keeping the proposed team)")
 
@@ -587,21 +701,24 @@ def main() -> int:
 
     assets = install_assets(target_claude, force=args.force, dry_run=args.dry_run)
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
+    snapshot_status = write_install_snapshot(target_claude, inst, force=args.force, dry_run=args.dry_run)
     settings_status = merge_settings(
         target_claude, dry_run=args.dry_run, install_permissions=not args.no_permissions
     )
     charter = install_charter(target_claude, cfg, force=args.force, dry_run=args.dry_run)
 
+    # Ontology (seed overlay + generated structural index) is config-driven:
+    # the RESOLVED ontology.enabled (flags > user YAML > shipped default ON).
     overlay = None
     structural_status = None
-    if args.with_ontology:
+    if install_config.get_key(inst, "ontology.enabled", True):
         ontology_rel = cfg.get("paths", {}).get("ontology", "ontology")
         overlay = install_overlay_template(target, ontology_rel, force=args.force, dry_run=args.dry_run)
         structural_status = generate_structural(
             target, ontology_rel, cfg, force=args.force, dry_run=args.dry_run
         )
 
-    roster_status = "skipped (--no-team)"
+    roster_status = "skipped (team disabled)"
     if team_enabled and roster_plan is not None:
         rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
         n_children = max(0, len(roster_plan.intro.repos) - 1) if roster_plan.intro.model == "meta-and-children" else 0
@@ -618,6 +735,7 @@ def main() -> int:
     if assets["skipped"]:
         print(f"skipped (exists):  {len(assets['skipped'])} (use --force to overwrite)")
     print(f"framework.config:  {cfg_status}")
+    print(f"install snapshot:  {snapshot_status}")
     print(f"settings.json:     {settings_status}")
     charter_laid = charter["would_write"] if args.dry_run else charter["written"]
     print(
@@ -625,6 +743,10 @@ def main() -> int:
         f"{'would be written' if args.dry_run else 'written'}; "
         f"{len(charter['skipped'])} skipped"
     )
+    print(f"pre-push mode:     {install_config.get_key(inst, 'pre_push.mode', 'noop')} (recorded; hook installer is a separate tranche)")
+    children = inst.get("children") or []
+    if children:
+        print(f"children:          {len(children)} recorded ({', '.join(c.get('path', '?') for c in children[:4])}{' …' if len(children) > 4 else ''})")
     if overlay is not None:
         laid = overlay["would_copy"] if args.dry_run else overlay["copied"]
         print(f"ontology overlay:  {len(laid)} file(s) {'would be laid' if args.dry_run else 'laid'}; {len(overlay['skipped'])} skipped")
