@@ -1,10 +1,11 @@
-"""Dual-deploy parity for team skills (issue #85).
+"""Dual-deploy parity for team skills (issues #85, #86).
 
 Every skill that ships in BOTH ``framework/assets/skills/`` (canonical) and this repo's
-``.claude/skills/`` (dogfood) must be byte-identical in the two locations, and the three
-skills ported in #85 (team-reset, wave-audit, wave-start) must be present in both. Asset
-skills are generic framework artifacts, so they must carry no org names or hardcoded
-owners. Stdlib + pytest only.
+``.claude/skills/`` (dogfood) must be byte-identical in the two locations, and the skills
+ported in #85 (team-reset, wave-audit, wave-start) and enriched in #86 (close-stale-issues,
+plan-phase, retro, wave-retro, phase-review) must be present in both. Asset skills are
+generic framework artifacts, so they must carry no org names or hardcoded owners.
+Stdlib + pytest only.
 """
 
 from __future__ import annotations
@@ -19,7 +20,17 @@ _ASSET_SKILLS = _FRAMEWORK_ROOT / "assets" / "skills"
 _DOGFOOD_SKILLS = _REPO_ROOT / ".claude" / "skills"
 
 # Skills that MUST exist in both locations (dual-deploy requirement).
-DUAL_DEPLOY_REQUIRED = ("team-reset", "wave-audit", "wave-start")
+DUAL_DEPLOY_REQUIRED = (
+    "team-reset",
+    "wave-audit",
+    "wave-start",
+    # Lifecycle skills (#86)
+    "close-stale-issues",
+    "plan-phase",
+    "retro",
+    "wave-retro",
+    "phase-review",
+)
 
 # Strings that must never appear in a canonical (assets) skill.
 FORBIDDEN = ("noorinalabs", "parametrization", "2real-team-framework")

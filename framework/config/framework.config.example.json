@@ -37,7 +37,11 @@
     "admin_merge_exceptions": {
       "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
       "emergency": "[EMERGENCY]-prefixed restore work"
-    }
+    },
+    "tech_debt_intake_pct": 20,
+    "tech_debt_exit_ratio_pct": 10,
+    "retro_counter_drift_abs": 2,
+    "retro_counter_drift_pct": 5
   },
   "ci": {
     "merge_requires_green": true,
