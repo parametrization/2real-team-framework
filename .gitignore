@@ -30,6 +30,13 @@ dist/
 # ---- Test / coverage output ----
 coverage/
 
+# ---- npm packaging ----
+# node/framework/ is copied from the repo-root framework/ at prepack time
+# (scripts/copy-shared.js) so the npm tarball bundles the runtime; it is a
+# build artifact, never committed (templates/presets/skills copies ARE tracked).
+node/framework/
+node/*.tgz
+
 # ---- Framework runtime output ----
 # .claude/framework/ holds the events.jsonl observability log (paths.events_log).
 # NOTE: gitignore has no inline comments — keep patterns on their own lines.

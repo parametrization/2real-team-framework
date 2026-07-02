@@ -3,6 +3,23 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+
+// bootstrap() now bridges to the Python framework installer by default
+// (--with-hooks). Mock the bridge so these team-scaffolding tests never
+// spawn a subprocess; the bridge has its own dedicated test files.
+vi.mock("../src/framework-install.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../src/framework-install.js")>();
+  return {
+    ...mod,
+    installFramework: vi.fn(() => ({
+      kind: "ran",
+      status: 0,
+      stdout: "",
+      stderr: "",
+      argv: [],
+    })),
+  };
+});
 import {
   existsSync,
   readFileSync,
