@@ -2,10 +2,15 @@
 # Session Handoff — 2026-07-02 (Phase 3 shipped: v0.4.0 live on both registries)
 
 ## Pickup (next concrete step)
-No active work in flight. **v0.4.0 is released and live** on PyPI + npm (`2real-team-framework`
-0.4.0 on both, verified via registry APIs). `main` tip = `6605da8` (merge of
-`deployments/phase3/wave-1`, PR #97). Next candidates: open tech-debt issues (#74 #75 #77 #82
-#90 #94), the deferred PR/CI review-gate hook tranche, or Phase 4 planning (wave retro first).
+**Close the shipped wave issues** — #64–#70, #73, #85–#88 (12 issues) are still OPEN despite
+being merged to main and released in v0.4.0. PR #97's body did not carry `closes #N` keywords,
+so nothing auto-closed (only #95 was closed, manually by Hiro). Run `/wave-audit` (or close
+each with a comment referencing PR #97 / v0.4.0) — closures are approval-gated, so confirm
+with the user first. After that: tech-debt issues (#74 #75 #77 #82 #90 #94), the deferred
+review-gate hook tranche, or Phase 4 planning (`/wave-retro` then `/plan-phase`).
+
+**v0.4.0 is released and live** on PyPI + npm (`2real-team-framework` 0.4.0 on both, verified
+via registry APIs). `main` tip = `9100ff7` (release merge `6605da8` + this memory commit).
 
 ## What happened this session (Phase 3, waves 1–3)
 - **Wave 1 — installer overhaul** (#64–#70, #73): unified `install.config.yaml` (v1 schema,
@@ -37,14 +42,16 @@ No active work in flight. **v0.4.0 is released and live** on PyPI + npm (`2real-
   closed manually with a reference comment (Hiro did #95).
 
 ## Open threads / blockers
+- **12 shipped wave issues still open** (#64–#70, #73, #85–#88) — see Pickup. Not a code
+  blocker, just tracking drift.
 - Tech-debt issues open for future waves: #74, #75, #77, #82, #90, #94.
 - **User should rotate the 160-byte hex secret** that was in `~/npm_secret_delete_me.txt` (prior
   session) — rotate at its source. Standing reminder.
 - No blockers. All CI green; both registries at 0.4.0.
 
 ## Mechanical state
-- Branch: main @ 6605da8 (clean); `deployments/phase3/wave-1` retained @ 4085a3f
-- Latest release: **v0.4.0** — main == released state
+- Branch: main @ 9100ff7 (clean); `deployments/phase3/wave-1` retained @ 4085a3f
+- Latest release: **v0.4.0** (target 6605da8) — main == released state + memory commit
 - Open PRs: (none)
-- Open issues: tech-debt only (#74 #75 #77 #82 #90 #94)
+- Open issues: 18 — the 12 shipped-but-unclosed wave issues + tech-debt #74 #75 #77 #82 #90 #94
 - Actions secrets: (none — fully OIDC)
