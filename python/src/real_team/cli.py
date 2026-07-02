@@ -40,6 +40,14 @@ def init(
     merge_model: str = typer.Option(
         None, help="Default merge model: wave-branch | direct-to-main"
     ),
+    with_ontology: bool = typer.Option(
+        True,
+        "--with-ontology/--no-ontology",
+        help=(
+            "Seed the ontology semantic-overlay template and generate the structural index "
+            "(ontology/structural/) at install time (requires --with-hooks)"
+        ),
+    ),
 ) -> None:
     """Bootstrap a new project with the team framework."""
     target_path = Path(target).resolve()
@@ -157,6 +165,7 @@ def init(
             target_path,
             owner=owner or git_email_prefix or None,
             merge_model=merge_model,
+            with_ontology=with_ontology,
         )
         if proc is None:
             console.print(

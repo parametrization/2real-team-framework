@@ -478,6 +478,55 @@ class TestInitCommand:
         assert not (tmp_path / ".claude" / "framework.config.json").exists()
         assert not (tmp_path / ".claude" / "hooks").exists()
 
+    def test_init_ontology_installed_by_default(self, tmp_path: Path):
+        """Default-ON: init lays the overlay AND the generated structural index."""
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-default",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--owner", "acme",
+        ])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / "ontology" / "domain.yaml").is_file()
+        structural = tmp_path / "ontology" / "structural"
+        assert (structural / "code-graph.json").is_file()
+        assert (structural / "llms.txt").is_file()
+        graph = json.loads((structural / "code-graph.json").read_text())
+        assert "nodes" in graph and "edges" in graph
+
+    def test_init_no_ontology_skips_ontology(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-off",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--owner", "acme",
+            "--no-ontology",
+        ])
+        assert result.exit_code == 0, result.output
+        # Runtime installed, ontology not.
+        assert (tmp_path / ".claude" / "hooks" / "dispatcher.py").is_file()
+        assert not (tmp_path / "ontology").exists()
+
+    def test_init_no_hooks_skips_ontology_too(self, tmp_path: Path):
+        """Ontology install rides the framework runtime — --no-hooks disables both."""
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-nohooks",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / "ontology").exists()
+
     def test_init_missing_preset_noninteractive(self, tmp_path: Path):
         result = runner.invoke(app, [
             "init",
@@ -656,6 +705,41 @@ class TestInitCommand:
             "--no-interactive",
         ])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# framework_install bridge — flag threading
+# ---------------------------------------------------------------------------
+
+
+class TestFrameworkInstallBridge:
+    def _capture_cmd(self, monkeypatch) -> dict:
+        import subprocess
+
+        import real_team.framework_install as fi
+
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(fi.subprocess, "run", fake_run)
+        return captured
+
+    def test_with_ontology_default_passes_flag(self, monkeypatch, tmp_path: Path):
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path)
+        assert "--with-ontology" in captured["cmd"]
+
+    def test_no_ontology_omits_flag(self, monkeypatch, tmp_path: Path):
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path, with_ontology=False)
+        assert "--with-ontology" not in captured["cmd"]
 
 
 # ---------------------------------------------------------------------------
