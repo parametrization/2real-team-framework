@@ -16,6 +16,18 @@ fill those sections from the session, don't leave them as placeholders.
 > Config-driven + fail-open: reads `paths.*` from `.claude/framework.config.json`; sections for
 > absent subsystems are omitted, not errored.
 
+## Interplay with the `session_handoff` Stop hook
+
+A Stop hook (`hooks.stop: ["session_handoff"]`) auto-writes a mechanical-only handoff to the
+SAME file when a session ends. The contract:
+
+- This skill's note begins with the marker `<!-- handoff: manual — ... -->`. The hook **never
+  overwrites a file containing `handoff: manual`** — a rich hand-written note always wins.
+- The hook also never overwrites any unmarked note written during the current session (or one
+  it cannot date). It freely refreshes only its OWN notes (marked `handoff: auto`).
+- To hand the file back to auto-refresh, delete `handoff.md` (or remove the manual marker
+  line); the hook re-creates it at the next session stop.
+
 ## Instructions
 
 ### Step 1 — Resolve config + gather mechanical state
@@ -51,6 +63,7 @@ concrete command). The shell only seeds the mechanical block; replace the bracke
 
 ```bash
 cat > "$MEM_DIR/handoff.md" <<MD
+<!-- handoff: manual — written by the /handoff skill; the session_handoff auto-hook must not overwrite this file. Delete it (or this line) to re-enable auto-refresh. -->
 # Session Handoff — $NOW
 
 ## Pickup (next concrete step)
