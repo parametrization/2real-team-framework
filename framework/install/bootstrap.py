@@ -34,6 +34,7 @@ Flags
   --shell {bash,zsh}
   --reviewers N          policy.reviewers_required.
   --merge-model {wave-branch,direct-to-main}
+  --no-permissions       Skip installing the curated permissions.allow allowlist.
   --interactive          Prompt for missing required fields (scm.owner) if a TTY.
   --force                Overwrite existing hook/lib files and framework.config.json.
   --dry-run              Print the plan; write nothing.
@@ -257,12 +258,41 @@ def _script_id(command: str) -> str:
     return command.strip()
 
 
-def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
+def _merge_permissions(template: dict, existing: dict) -> bool:
+    """Union the template's ``permissions`` rule lists into ``existing``. Returns True if changed.
+
+    Rule identity is the exact rule string, so user-added rules are preserved untouched and
+    template rules already present (in any position) are never duplicated — re-running is a
+    no-op. Generic over rule lists (``allow`` today; ``deny``/``ask`` would merge the same way).
+    """
+    tmpl_perms = template.get("permissions")
+    if not isinstance(tmpl_perms, dict):
+        return False
+    changed = False
+    perms = existing.setdefault("permissions", {})
+    for key, rules in tmpl_perms.items():
+        if not isinstance(rules, list):
+            continue
+        current = perms.setdefault(key, [])
+        if not isinstance(current, list):
+            continue  # user made it something else — leave their shape alone
+        for rule in rules:
+            if rule not in current:
+                current.append(rule)
+                changed = True
+    return changed
+
+
+def merge_settings(target_claude: Path, *, dry_run: bool, install_permissions: bool = True) -> str:
     """Idempotently merge the template hook wiring into <target>/.claude/settings.json.
 
     Generic over events (PreToolUse / PostToolUse / SessionStart / …): blocks match by
     ``matcher`` (which may be absent — e.g. SessionStart), and each template hook is added only
     if no existing hook in that block already references the same script. Re-running is a no-op.
+
+    Also merges the template's curated ``permissions.allow`` allowlist (union, no duplicates,
+    user-added rules preserved) unless ``install_permissions`` is False, in which case the
+    template's permissions block is not installed and any existing one is left untouched.
     """
     template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
     dest = target_claude / "settings.json"
@@ -292,6 +322,9 @@ def merge_settings(target_claude: Path, *, dry_run: bool) -> str:
                     block["hooks"].append(json.loads(json.dumps(tmpl_hook)))
                     wired.add(_script_id(tmpl_hook.get("command", "")))
                     changed = True
+
+    if install_permissions and _merge_permissions(template, existing):
+        changed = True
 
     if not changed:
         return "already wired"
@@ -479,6 +512,7 @@ def main() -> int:
     ap.add_argument("--team-size", type=int, help="Target headcount for the generated roster")
     ap.add_argument("--no-enforce-identity", action="store_true", help="Generate the roster but do NOT enable the commit-identity gate")
     ap.add_argument("--with-ontology", action="store_true", help="Lay down the seed semantic-overlay template AND generate the structural index (activates the ontology hooks)")
+    ap.add_argument("--no-permissions", action="store_true", help="Do NOT install the curated permissions.allow allowlist into settings.json (hook wiring still merges)")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
     args = ap.parse_args()
@@ -553,7 +587,9 @@ def main() -> int:
 
     assets = install_assets(target_claude, force=args.force, dry_run=args.dry_run)
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
-    settings_status = merge_settings(target_claude, dry_run=args.dry_run)
+    settings_status = merge_settings(
+        target_claude, dry_run=args.dry_run, install_permissions=not args.no_permissions
+    )
     charter = install_charter(target_claude, cfg, force=args.force, dry_run=args.dry_run)
 
     overlay = None
