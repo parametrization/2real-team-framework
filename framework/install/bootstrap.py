@@ -100,6 +100,12 @@ def _schema_defaults() -> dict:
     Mirrors the schema's required+top-level defaults; the loader fills the rest
     at runtime, so the written file only needs to be valid + carry the operator's
     real choices.
+
+    The ``hooks`` lists here MUST match the schema ``default:`` values and the
+    runtime ``_framework_config._DEFAULTS`` exactly — the bootstrapper WRITES
+    this dict into the target's ``framework.config.json``, so a module missing
+    here simply never runs in deployed repos (issue #84). The three copies are
+    kept honest by ``framework/tests/test_defaults_sync.py``.
     """
     return {
         "version": 1,
@@ -120,12 +126,16 @@ def _schema_defaults() -> dict:
                 "block_git_config",
                 "no_worktree_self_delete",
                 "warn_zsh_wordsplit",
+                "validate_labels",
                 "validate_workflow_paths_coverage",
                 "validate_pr_ci_status",
+                "block_squash_wave_merge",
             ],
             "post_bash": ["warn_pipe_mask_rc"],
             "post_file": ["ontology_tracker"],
-            "session_start": ["ontology_refresh"],
+            "session_start": ["ontology_refresh", "session_start"],
+            "agent": [],
+            "stop": ["session_handoff"],
             "pre_push_commands": [],
         },
     }

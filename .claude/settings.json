@@ -21,6 +21,27 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/framework/assets/hooks/dispatcher.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/framework/assets/hooks/stop_dispatcher.py\"",
+            "timeout": 60
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -71,8 +71,25 @@ def test_install_is_complete_and_idempotent(tmp_path: Path) -> None:
     # SessionStart auto-regeneration hook is wired (matcher-less block) + installed.
     assert (claude / "hooks" / "start_dispatcher.py").is_file()
     assert (claude / "hooks" / "ontology_refresh.py").is_file()
+    assert (claude / "hooks" / "session_start.py").is_file()
     session_cmd = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "start_dispatcher.py" in session_cmd
+
+    # Agent dispatch (PreToolUse matcher "Agent") + Stop dispatch are wired + installed.
+    pre_matchers = {b.get("matcher") for b in settings["hooks"]["PreToolUse"]}
+    assert pre_matchers == {"Bash", "Agent"}
+    assert (claude / "hooks" / "stop_dispatcher.py").is_file()
+    assert (claude / "hooks" / "session_handoff.py").is_file()
+    stop_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert "stop_dispatcher.py" in stop_cmd
+
+    # The written runtime config carries the full default module lists (issue #84:
+    # a module missing from the WRITTEN pre_bash never runs in a deployed repo).
+    cfg = json.loads((claude / "framework.config.json").read_text())
+    assert "validate_labels" in cfg["hooks"]["pre_bash"]
+    assert "block_squash_wave_merge" in cfg["hooks"]["pre_bash"]
+    assert cfg["hooks"]["agent"] == []
+    assert cfg["hooks"]["stop"] == ["session_handoff"]
 
     # Re-run: nothing copied, config not clobbered.
     r2 = _install(tmp_path, "--shell", "zsh")

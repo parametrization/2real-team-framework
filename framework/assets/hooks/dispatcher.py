@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse dispatcher: single in-process entry point for Bash hooks.
+"""PreToolUse dispatcher: single in-process entry point for Bash + Agent hooks.
 
 Instead of one subprocess per hook, this runs every configured check in-process
 by importing the module and calling its ``check(input_data) -> dict | None``.
@@ -11,9 +11,12 @@ Each hook module exposes::
         {"decision": "block", "reason": ...}        -> block (exit 2)
         {"decision": "allow", "systemMessage": ...} -> allow + surface a warning
 
-The active module list + order is read from the framework config
-(``hooks.pre_bash``), so enabling/disabling a check is a config edit, not a code
-change. Order matters: cheap/local checks first, network-calling (gh) last.
+The active module list + order is read from the framework config, keyed by the
+tool being gated: ``hooks.pre_bash`` for Bash, ``hooks.agent`` for the Agent
+tool (subagent spawns; wired via the settings ``PreToolUse`` matcher ``Agent``
+— ``Task`` is accepted as the legacy name of the same tool). Enabling/disabling
+a check is a config edit, not a code change. Order matters: cheap/local checks
+first, network-calling (gh) last. First block wins for every routed tool.
 
 Exit codes:
   0 — allow (all passed, or aggregated warnings)
@@ -36,6 +39,14 @@ if str(_HOOKS_DIR) not in sys.path:
 
 from _framework_config import config  # noqa: E402
 
+#: tool_name -> config key holding the ordered module list for that gate.
+#: "Task" is the legacy name of the Agent tool — same gate.
+_TOOL_CONFIG_KEYS = {
+    "Bash": "hooks.pre_bash",
+    "Agent": "hooks.agent",
+    "Task": "hooks.agent",
+}
+
 
 def main() -> None:
     try:
@@ -43,10 +54,11 @@ def main() -> None:
     except (json.JSONDecodeError, EOFError):
         sys.exit(0)
 
-    if input_data.get("tool_name", "") != "Bash":
+    cfg_key = _TOOL_CONFIG_KEYS.get(input_data.get("tool_name", ""))
+    if cfg_key is None:
         sys.exit(0)
 
-    modules = config(input_data).get("hooks.pre_bash", [])
+    modules = config(input_data).get(cfg_key, [])
     warnings: list[str] = []
 
     for module_name in modules:

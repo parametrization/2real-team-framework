@@ -99,7 +99,9 @@ _DEFAULTS: dict[str, Any] = {
         ],
         "post_bash": ["warn_pipe_mask_rc"],
         "post_file": ["ontology_tracker"],
-        "session_start": ["ontology_refresh"],
+        "session_start": ["ontology_refresh", "session_start"],
+        "agent": [],
+        "stop": ["session_handoff"],
         "pre_push_commands": [],
     },
 }
