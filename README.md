@@ -178,9 +178,10 @@ tooling reads one canonical record of the install-time decisions. This is the
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `version` | integer | `1` | Config schema version (must be `1`) |
-| `repo.expect` | `fresh` \| `existing` \| `any` | `fresh` | Expectation about the target repo. Recorded today (a mismatch prints a note); detection/enforcement ships with the meta/child install modes |
+| `repo.expect` | `fresh` \| `existing` \| `any` | `fresh` | Expectation about the target repo — **enforced**. The installer detects the actual state (git repo? commits? non-framework files?) and reports it. Non-interactive installs **refuse** on a mismatch (`any` always proceeds); interactive installs ask for explicit confirmation before touching an existing repo; idempotent re-runs skip the gate. Also available as the `--expect` flag |
 | `project.name` | string \| null | `null` | Display name; `null` falls back to the target directory name |
-| `project.model` | `standalone` \| `meta` \| `child` | `standalone` | Project shape. Maps into the runtime config (`standalone`/`child` → `single-repo`, `meta` → `meta-and-children`) |
+| `project.model` | `standalone` \| `meta` \| `child` | `standalone` | Project shape. Maps into the runtime config (`standalone` → `single-repo`, `meta` → `meta-and-children`, `child` → `child` — first-class, so a child repo is recoverable from its runtime config) |
+| `project.flavor` | `product` \| `infra` | `product` | **Child model only:** this repo's flavor (see the flavor table below) |
 | `scm.provider` | `github` | `github` | SCM host (only GitHub is implemented) |
 | `scm.owner` | string \| null | `null` | GitHub org/user. Replaces the interactive owner prompt; flows into `framework.config.json` |
 | `ci.provider` | `github-actions` | `github-actions` | CI system (only GitHub Actions is implemented) |
@@ -190,7 +191,8 @@ tooling reads one canonical record of the install-time decisions. This is the
 | `team.enabled` | bool | `true` | Generate the team layer (roster, identity gate); `false` installs the runtime only |
 | `team.preset` | string \| null | `null` | Team preset for `2real-team init` (`fullstack-monorepo`, `data-pipeline`, `library`). Replaces the preset prompt |
 | `team.size` | integer \| null | `null` | Target headcount. Replaces the team-size and roster-proceed prompts; `null` lets the preset/introspection decide |
-| `children` | list | `[]` | Child repos for meta/child models: `- path: <rel-path>` with optional `flavor: product\|infra` (default `product`). Parsed, validated, and recorded for the meta/child install modes |
+| `parent.path` | string \| null | `null` | **Child model only (required there):** relative path from this repo to its parent meta-repo (e.g. `..`). Must be relative — portable paths only. The parent must already have the framework installed |
+| `children` | list | `[]` | **Meta model only:** child repos to install — `- path: <rel-path>` with optional `flavor: product\|infra` (default `product`). Non-interactive installs use this list **verbatim** (no detection surprises); interactive installs multi-select from detected subdir git repos |
 
 Unknown keys are warned about and **carried** into the recorded snapshot (forward
 compatibility). Invalid values (bad enums/types) are fatal — the install refuses to proceed.
@@ -199,6 +201,48 @@ With `--non-interactive` there are **zero prompts on any path**: `scm.owner` lef
 produces a warning (not a prompt), and the team is generated exactly as configured.
 `bootstrap.py` stays stdlib-only — it reads the YAML with a bundled minimal parser
 (`framework/install/miniyaml.py`); the Python CLI uses PyYAML.
+
+### Meta-repo and child installs
+
+A **meta** install lays the full framework at the meta root, then a hook-less *child
+layout* into each selected child repo. A **child** install lays only that child layout,
+pointing at an already-bootstrapped parent. Children carry **no hook code** — one copy of
+the hooks lives at the meta root and every child's `.claude/settings.json` invokes the
+parent's dispatchers via **portable** parent-relative commands
+(`python3 "$CLAUDE_PROJECT_DIR/../.claude/hooks/dispatcher.py"` — never machine-absolute
+paths, so the whole tree clones anywhere; the traversal depth is derived from the child's
+configured path).
+
+```yaml
+# meta.install.yaml — run at the META root
+repo: { expect: existing }        # meta roots usually already exist
+project: { model: meta }
+children:
+  - path: api                     # full harness
+  - path: infra/tf                # commit-safety + CI subset
+    flavor: infra
+```
+
+```yaml
+# child.install.yaml — run at the CHILD root (e.g. a child added later)
+project: { model: child, flavor: product }
+parent: { path: .. }              # must already have the framework installed
+```
+
+Each selected child gets: a flavor-appropriate `.claude/settings.json`, its own
+`framework.config.json` (`project.model: child` + `project.parent` + `project.flavor`,
+inheriting `scm`/`identity`/`policy`/`hooks` from the parent config), a scoped
+`.claude/team/` roster subset (`roster.json` + persona cards; trust matrix and feedback
+log stay at the meta), and a child `CLAUDE.md` (an existing one is preserved as
+`CLAUDE.md.bak`). The meta's `framework.config.json` records the children in
+`project.repos`. The commit-identity gate unions each child's roster with the meta roster
+(parent ∪ child), so org leads can commit in any child but one child's engineers cannot
+commit in another.
+
+| Flavor | Wired hook events |
+|--------|-------------------|
+| `product` | The full harness: SessionStart (ontology refresh), pre/post Bash dispatchers, file-edit tracking |
+| `infra` | Commit-safety + CI subset: pre/post **Bash** dispatchers only — no ontology/session extras |
 
 ## AI Persona Generation
 

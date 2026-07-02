@@ -47,6 +47,8 @@ CONFIG_FILENAME = "framework.config.json"
 # framework/config/framework.config.schema.json.
 _DEFAULTS: dict[str, Any] = {
     "version": 1,
+    # model enum: single-repo | meta-and-children | child (child repos carry
+    # project.parent + project.flavor; the DEFAULT stays single-repo).
     "project": {"model": "single-repo"},
     "scm": {"provider": "github", "default_branch": "main", "allow_force": False},
     "branch": {"feature": "{initials}/{issue}-{slug}", "integration": "deployments/wave-{wave}"},

@@ -20,13 +20,22 @@
         "name": { "type": "string", "description": "Display name." },
         "model": {
           "type": "string",
-          "enum": ["single-repo", "meta-and-children"],
+          "enum": ["single-repo", "meta-and-children", "child"],
           "default": "single-repo",
-          "description": "single-repo: one repository. meta-and-children: a parent meta-repo that .gitignores N child repos (the cross-repo orchestration model)."
+          "description": "single-repo: one repository. meta-and-children: a parent meta-repo that .gitignores N child repos (the cross-repo orchestration model). child: one child repo inside a meta-and-children project — it carries NO hook code; its settings.json invokes the parent's installed hooks (see project.parent)."
         },
         "meta_repo": {
           "type": "string",
           "description": "Name of the meta-repo (meta-and-children model only). The repo that holds the shared .claude/ config."
+        },
+        "parent": {
+          "type": "string",
+          "description": "Child model only: PORTABLE relative path from this repo's root to its parent meta-repo (e.g. `..` or `../..`). Never an absolute path — the whole meta tree stays cloneable anywhere."
+        },
+        "flavor": {
+          "type": "string",
+          "enum": ["product", "infra"],
+          "description": "Child model only: which hook events this child wires to the parent's dispatchers. product = the full harness; infra = the commit-safety + CI subset (pre/post Bash only; no ontology/session extras)."
         },
         "repos": {
           "type": "array",

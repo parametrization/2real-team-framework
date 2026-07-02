@@ -14,6 +14,7 @@ Schema (v1) — every key, with the shipped default:
     repo.expect:         fresh | existing | any          (fresh)
     project.name:        str | null                      (null -> target dir name)
     project.model:       standalone | meta | child       (standalone)
+    project.flavor:      product | infra                 (product; child model only)
     scm.provider:        github                          (github)
     scm.owner:           str | null                      (null)
     ci.provider:         github-actions                  (github-actions)
@@ -23,13 +24,15 @@ Schema (v1) — every key, with the shipped default:
     team.enabled:        bool                            (true)
     team.preset:         str | null                      (null)
     team.size:           int | null                      (null)
+    parent.path:         str | null                      (null; REQUIRED for model: child)
     children:            list of {path: str, flavor: product|infra}   ([])
 
-``pre_push.mode`` drives the bootstrapper's pre-push hook installer. Keys
-whose behaviour lands in later issues (``repo.expect`` enforcement,
-``project.model`` meta/child modes, ``children``) are parsed, validated, and
-carried — the resolved config is written to ``.claude/install.config.json`` so
-downstream consumers read one canonical record of the install-time decisions.
+``repo.expect`` (fresh-vs-existing gate), ``project.model: meta`` (per-child
+installs from ``children``), and ``project.model: child`` (a standalone child
+install pointing at ``parent.path``) are enforced by the bootstrapper, and
+``pre_push.mode`` drives its pre-push hook installer. The resolved config is
+written to ``.claude/install.config.json`` so downstream consumers read one
+canonical record of the install-time decisions.
 
 Stdlib only (uses the sibling ``miniyaml`` parser).
 """
@@ -50,20 +53,24 @@ DEFAULTS_PATH = _FRAMEWORK_ROOT / "config" / "install.config.default.yaml"
 #: Where the resolved install config is recorded inside the target repo.
 SNAPSHOT_REL = "install.config.json"
 
+CHILD_FLAVORS = ("product", "infra")
+
 ENUMS: dict[str, tuple[str, ...]] = {
     "repo.expect": ("fresh", "existing", "any"),
     "project.model": ("standalone", "meta", "child"),
+    "project.flavor": CHILD_FLAVORS,
     "scm.provider": ("github",),
     "ci.provider": ("github-actions",),
     "ticketing.provider": ("github-issues",),
     "pre_push.mode": ("noop", "enforce", "none"),
 }
-CHILD_FLAVORS = ("product", "infra")
 
-#: install-config project.model -> runtime framework.config.json project.model
-RUNTIME_MODEL_MAP = {"standalone": "single-repo", "meta": "meta-and-children", "child": "single-repo"}
+#: install-config project.model -> runtime framework.config.json project.model.
+#: ``child`` is FIRST-CLASS in the runtime schema (not folded into single-repo),
+#: so a child repo's runtime config is recoverable as what it is.
+RUNTIME_MODEL_MAP = {"standalone": "single-repo", "meta": "meta-and-children", "child": "child"}
 #: runtime project.model -> install-config project.model (for flag reverse-mapping)
-INSTALL_MODEL_MAP = {"single-repo": "standalone", "meta-and-children": "meta"}
+INSTALL_MODEL_MAP = {"single-repo": "standalone", "meta-and-children": "meta", "child": "child"}
 
 
 class InstallConfigError(ValueError):
@@ -75,13 +82,14 @@ def builtin_defaults() -> dict:
     return {
         "version": 1,
         "repo": {"expect": "fresh"},
-        "project": {"name": None, "model": "standalone"},
+        "project": {"name": None, "model": "standalone", "flavor": "product"},
         "scm": {"provider": "github", "owner": None},
         "ci": {"provider": "github-actions"},
         "ticketing": {"provider": "github-issues"},
         "pre_push": {"mode": "noop"},
         "ontology": {"enabled": True},
         "team": {"enabled": True, "preset": None, "size": None},
+        "parent": {"path": None},
         "children": [],
     }
 
@@ -183,10 +191,27 @@ def validate(cfg: dict) -> tuple[list[str], list[str]]:
     if size is not None and (not isinstance(size, int) or isinstance(size, bool) or size < 1):
         problems.append(f"team.size: must be a positive integer or null (got {size!r})")
 
-    for dotted in ("project.name", "scm.owner", "team.preset"):
+    for dotted in ("project.name", "scm.owner", "team.preset", "parent.path"):
         value = get_key(cfg, dotted)
         if value is not None and not isinstance(value, str):
             problems.append(f"{dotted}: must be a string or null (got {value!r})")
+
+    model = get_key(cfg, "project.model")
+    parent_path = get_key(cfg, "parent.path")
+    if model == "child" and not (isinstance(parent_path, str) and parent_path.strip()):
+        problems.append(
+            "parent.path: required for project.model: child "
+            "(the relative path from this repo to its parent meta-repo, e.g. `..`)"
+        )
+    if isinstance(parent_path, str) and parent_path.startswith(("/", "~")):
+        problems.append(
+            f"parent.path: must be RELATIVE (portable — no machine-specific "
+            f"absolute paths): got {parent_path!r}"
+        )
+    if parent_path and model != "child":
+        warnings.append(
+            f"parent.path: set but project.model is {model!r} — only the child model uses it"
+        )
 
     children = cfg.get("children")
     if children is None:
@@ -202,11 +227,21 @@ def validate(cfg: dict) -> tuple[list[str], list[str]]:
             path = child.get("path")
             if not isinstance(path, str) or not path.strip():
                 problems.append(f"{loc}.path: required non-empty string")
+            elif path.startswith(("/", "~")) or ".." in path.replace("\\", "/").split("/"):
+                problems.append(
+                    f"{loc}.path: must be a relative path INSIDE the meta repo "
+                    f"(portable, no absolutes / `..`): got {path!r}"
+                )
             flavor = child.setdefault("flavor", "product")
             if flavor not in CHILD_FLAVORS:
                 problems.append(f"{loc}.flavor: {flavor!r} is not one of {list(CHILD_FLAVORS)}")
             for extra in sorted(set(child) - {"path", "flavor"}):
                 warnings.append(f"{loc}: unknown key {extra!r} (carried as-is)")
+        if children and get_key(cfg, "project.model") != "meta":
+            warnings.append(
+                "children: listed but project.model is not `meta` — per-child installs "
+                "run only under the meta model (the list is recorded as-is)"
+            )
 
     known_top = set(builtin_defaults())
     for extra in sorted(set(cfg) - known_top):
@@ -240,8 +275,11 @@ HELP_EPILOG = """\
 install config keys (--install-config YAML; precedence: flags > user YAML > shipped defaults):
   version              config schema version (must be 1)
   repo.expect          fresh | existing | any        target-repo expectation (default: fresh)
+                       enforced: non-interactive installs REFUSE on a mismatch (`any` always
+                       proceeds); interactive installs confirm before touching an existing repo
   project.name         str | null                    display name (default: target dir name)
   project.model        standalone | meta | child     project shape (default: standalone)
+  project.flavor       product | infra               THIS repo's flavor (child model; default: product)
   scm.provider         github                        SCM host (default: github)
   scm.owner            str | null                    GitHub org/user (replaces the owner prompt)
   ci.provider          github-actions                CI system (default: github-actions)
@@ -251,7 +289,11 @@ install config keys (--install-config YAML; precedence: flags > user YAML > ship
   team.enabled         bool                          generate the team layer (default: true)
   team.preset          str | null                    team preset (used by `2real-team init`)
   team.size            int | null                    target headcount (replaces the roster prompt)
-  children             [{path, flavor: product|infra}]  child repos (meta/child models)
+  parent.path          str | null                    child model: relative path to the parent
+                       meta-repo (REQUIRED for project.model: child, e.g. `..`)
+  children             [{path, flavor: product|infra}]  meta model: child repos to install
+                       (non-interactive uses this list VERBATIM — no detection surprises;
+                       interactive multi-selects from detected subdir git repos)
 
 Shipped defaults: framework/config/install.config.default.yaml. The resolved
 config is recorded at <target>/.claude/install.config.json. With

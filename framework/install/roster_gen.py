@@ -192,13 +192,16 @@ def introspect(target: Path, *, declared_model: str | None = None,
     """Examine ``target`` and return its model + per-repo stacks.
 
     A declared model/repos from config wins over filesystem detection (so an
-    operator can override). Otherwise: child repos present -> meta-and-children.
+    operator can override). A declared repo LIST is used verbatim — even when
+    empty, it never falls back to detection (no detection surprises for a
+    config-driven meta install). Otherwise: child repos present ->
+    meta-and-children; a declared ``child`` model is single-repo-shaped.
     """
     target = target.resolve()
-    children = detect_child_repos(target)
-    if declared_repos:
-        child_paths = [target / r for r in declared_repos if (target / r).is_dir()]
-        children = child_paths or children
+    if declared_repos is not None:
+        children = [target / r for r in declared_repos if (target / r).is_dir()]
+    else:
+        children = detect_child_repos(target)
 
     model = declared_model or ("meta-and-children" if children else "single-repo")
 
@@ -489,6 +492,10 @@ def write_roster(team_dir: Path, plan_: RosterPlan, *, force: bool, dry_run: boo
     Single-repo: one team dir at ``team_dir`` with the full roster, all cards,
     and the org artifacts (trust_matrix + feedback_log).
 
+    Child: one team dir with the roster + cards but NO org artifacts —
+    trust/feedback are org-wide and live at the parent meta-repo; the identity
+    gate's parent-merge unions this roster with the meta roster.
+
     Meta-and-children: the META roster (org roles + lead + unmatched engineers)
     plus org artifacts and ALL persona cards land at ``team_dir``; each child
     repo gets its own ``<child>/.claude/team/roster.json`` + that child's persona
@@ -499,8 +506,9 @@ def write_roster(team_dir: Path, plan_: RosterPlan, *, force: bool, dry_run: boo
     report: dict = {"written": [], "skipped": [], "would_write": []}
 
     if plan_.intro.model != "meta-and-children" or len(plan_.intro.repos) <= 1:
+        org_for = None if plan_.intro.model == "child" else plan_.personas
         _write_team(team_dir, allowlist=plan_.personas, cards_for=plan_.personas,
-                    org_artifacts_for=plan_.personas, report=report, force=force, dry_run=dry_run)
+                    org_artifacts_for=org_for, report=report, force=force, dry_run=dry_run)
         return report
 
     meta_personas, child_rosters = partition_for_children(plan_.personas, plan_.intro)

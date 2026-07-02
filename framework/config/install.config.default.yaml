@@ -18,10 +18,13 @@ version: 1
 
 repo:
   # What the installer should expect at the target:
-  #   fresh    — a brand-new project (no established repo yet)
-  #   existing — an already-established repository
+  #   fresh    — a brand-new project (no commits, no real files yet)
+  #   existing — an already-established repository (has commits and/or files)
   #   any      — no expectation; install either way
-  # (Fresh-vs-existing detection/enforcement ships with the meta/child install modes.)
+  # ENFORCED: the installer detects the actual state and reports it. A
+  # non-interactive install REFUSES on a mismatch (`any` always proceeds);
+  # an interactive install asks for explicit confirmation before touching an
+  # existing repo. Idempotent re-runs (framework already installed) skip the gate.
   expect: fresh
 
 project:
@@ -29,9 +32,14 @@ project:
   name: null
   # Project shape:
   #   standalone — a single self-contained repository
-  #   meta       — a parent meta-repo orchestrating N child repos
-  #   child      — one child repo inside a meta-repo project
+  #   meta       — a parent meta-repo orchestrating N child repos (see `children:`)
+  #   child      — one child repo inside a meta-repo project (see `parent:`)
   model: standalone
+  # Child-model only: THIS repo's flavor (which hook events its settings.json
+  # wires to the parent's dispatchers):
+  #   product — the full harness (session/ontology + pre/post Bash + file edits)
+  #   infra   — commit-safety + CI subset (pre/post Bash dispatchers only)
+  flavor: product
 
 scm:
   # Source-control host. Only `github` is implemented today.
@@ -70,8 +78,19 @@ team:
   # Target headcount. null -> the preset default / repo introspection decides.
   size: null
 
-# Child repositories (meta/child project models only). Each entry:
-#   - path: relative path (or bare repo name) of the child
+# Parent meta-repo (child model only). REQUIRED when project.model is `child`:
+# the relative path from THIS repo to its parent meta-repo (e.g. `..`). The
+# parent must already have the framework installed (its .claude/hooks are what
+# this child's settings.json invokes).
+parent:
+  path: null
+
+# Child repositories (meta model only). Each entry:
+#   - path: relative path (from the meta root) of the child
 #     flavor: product | infra        (defaults to product)
-# Consumed by the meta/child install modes; parsed and carried today.
+# A non-interactive meta install uses this list VERBATIM (no detection
+# surprises); an interactive install multi-selects from the detected
+# immediate-subdirectory git repos. Each selected child gets a parent-relative
+# .claude/settings.json, a child framework.config.json, a roster subset, and a
+# child CLAUDE.md.
 children: []
