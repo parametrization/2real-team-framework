@@ -190,8 +190,20 @@
         "session_start": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["ontology_refresh"],
-          "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present)."
+          "default": ["ontology_refresh", "session_start"],
+          "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present; session_start only orients when a framework config is found)."
+        },
+        "agent": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Ordered PreToolUse checks for the Agent tool (subagent spawns; settings matcher `Agent`, legacy name `Task`). Same semantics as pre_bash: first block wins. Empty by default — the dispatch seam ships wired so enabling a check is a config edit, not settings surgery."
+        },
+        "stop": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["session_handoff"],
+          "description": "Ordered Stop-event checks (run via stop_dispatcher.py). Advisory only — NEVER block (a block decision is downgraded to a warning). Each must be cheap/no-op when there is nothing to do; session_handoff throttles itself and never overwrites a manual /handoff note."
         },
         "pre_push_commands": {
           "type": "array",

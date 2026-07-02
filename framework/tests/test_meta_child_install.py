@@ -81,8 +81,10 @@ class TestMetaInstall:
         # -- product child: full harness, parent one level up --
         api_settings_text = (meta / "api" / ".claude" / "settings.json").read_text(encoding="utf-8")
         api_settings = json.loads(api_settings_text)
-        assert set(api_settings["hooks"]) == {"SessionStart", "PreToolUse", "PostToolUse"}
+        assert set(api_settings["hooks"]) == {"SessionStart", "PreToolUse", "PostToolUse", "Stop"}
         assert '$CLAUDE_PROJECT_DIR/../.claude/hooks/dispatcher.py' in api_settings_text
+        api_matchers = {b.get("matcher") for b in api_settings["hooks"]["PreToolUse"]}
+        assert api_matchers == {"Bash", "Agent"}  # Agent dispatch reaches product children
         # PORTABLE: no machine-specific absolute path anywhere in a child settings.
         assert str(tmp_path) not in api_settings_text
 
@@ -91,7 +93,7 @@ class TestMetaInstall:
         tf_settings = json.loads(tf_settings_text)
         assert set(tf_settings["hooks"]) == {"PreToolUse", "PostToolUse"}
         matchers = {b.get("matcher") for blocks in tf_settings["hooks"].values() for b in blocks}
-        assert matchers == {"Bash"}  # no SessionStart / file-edit extras
+        assert matchers == {"Bash"}  # no SessionStart / Stop / Agent / file-edit extras
         assert '$CLAUDE_PROJECT_DIR/../../.claude/hooks/dispatcher.py' in tf_settings_text
         assert str(tmp_path) not in tf_settings_text
 
@@ -331,14 +333,20 @@ class TestChildAssets:
         "hooks": {
             "SessionStart": [{"hooks": [
                 {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/start_dispatcher.py"'}]}],
-            "PreToolUse": [{"matcher": "Bash", "hooks": [
-                {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatcher.py"'}]}],
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [
+                    {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatcher.py"'}]},
+                {"matcher": "Agent", "hooks": [
+                    {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatcher.py"'}]},
+            ],
             "PostToolUse": [
                 {"matcher": "Bash", "hooks": [
                     {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/post_dispatcher.py"'}]},
                 {"matcher": "Edit|Write", "hooks": [
                     {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/post_dispatcher.py"'}]},
             ],
+            "Stop": [{"hooks": [
+                {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/stop_dispatcher.py"'}]}],
         },
     }
 
@@ -349,7 +357,7 @@ class TestChildAssets:
 
     def test_product_keeps_all_events_and_rewrites(self) -> None:
         out = child_install.build_child_settings(self._TEMPLATE, "..", "product")
-        assert set(out["hooks"]) == {"SessionStart", "PreToolUse", "PostToolUse"}
+        assert set(out["hooks"]) == {"SessionStart", "PreToolUse", "PostToolUse", "Stop"}
         cmds = [h["command"] for blocks in out["hooks"].values() for b in blocks for h in b["hooks"]]
         assert all("$CLAUDE_PROJECT_DIR/../.claude/hooks/" in c for c in cmds)
         # hook/lib permission rules point at the parent; child-local ones don't move
