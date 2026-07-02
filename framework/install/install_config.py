@@ -29,10 +29,10 @@ Schema (v1) — every key, with the shipped default:
 
 ``repo.expect`` (fresh-vs-existing gate), ``project.model: meta`` (per-child
 installs from ``children``), and ``project.model: child`` (a standalone child
-install pointing at ``parent.path``) are enforced by the bootstrapper.
-``pre_push`` is still parse-and-carry (hook installer is a separate tranche).
-The resolved config is written to ``.claude/install.config.json`` so downstream
-consumers read one canonical record of the install-time decisions.
+install pointing at ``parent.path``) are enforced by the bootstrapper, and
+``pre_push.mode`` drives its pre-push hook installer. The resolved config is
+written to ``.claude/install.config.json`` so downstream consumers read one
+canonical record of the install-time decisions.
 
 Stdlib only (uses the sibling ``miniyaml`` parser).
 """

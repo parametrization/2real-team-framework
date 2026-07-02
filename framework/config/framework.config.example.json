@@ -62,6 +62,7 @@
       "validate_workflow_paths_coverage",
       "validate_pr_ci_status"
     ],
-    "post_bash": ["warn_pipe_mask_rc"]
+    "post_bash": ["warn_pipe_mask_rc"],
+    "pre_push_commands": ["ruff check .", "pytest -q"]
   }
 }

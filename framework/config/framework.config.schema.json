@@ -166,6 +166,12 @@
           "items": { "type": "string" },
           "default": ["ontology_refresh"],
           "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present)."
+        },
+        "pre_push_commands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Shell commands the ENFORCE-mode pre-push git hook runs (in order, from the repo root) before every push; the first nonzero exit blocks the push. Read at push time, so editing this list needs no reinstall. Empty = the enforce hook allows the push (fail-open). Ignored by the default noop hook. Installed via bootstrap.py --pre-push {noop,enforce,none}."
         }
       }
     }

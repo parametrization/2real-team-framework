@@ -56,6 +56,13 @@ Flags
   --reviewers N          policy.reviewers_required.
   --merge-model {wave-branch,direct-to-main}
   --no-permissions       Skip installing the curated permissions.allow allowlist.
+  --pre-push {noop,enforce,none}
+                         Pre-push git hook to install; overrides the
+                         install-config key ``pre_push.mode`` (flag > user
+                         YAML > shipped default noop). noop = an executable,
+                         clearly-commented script that exits 0; enforce runs
+                         hooks.pre_push_commands from framework.config.json
+                         and blocks push on failure; none installs nothing.
   --interactive          Prompt for missing required fields (scm.owner) if a TTY.
   --with-ontology / --no-ontology   Override ontology.enabled from the config.
   --force                Overwrite existing hook/lib files and framework.config.json.
@@ -110,6 +117,7 @@ def _schema_defaults() -> dict:
             "post_bash": ["warn_pipe_mask_rc"],
             "post_file": ["ontology_tracker"],
             "session_start": ["ontology_refresh"],
+            "pre_push_commands": [],
         },
     }
 
@@ -159,6 +167,8 @@ def resolve_install_config(args: argparse.Namespace) -> tuple[dict, set[str]]:
         flag_map["ontology.enabled"] = False
     elif args.with_ontology:
         flag_map["ontology.enabled"] = True
+    if args.pre_push:  # default=None -> only an EXPLICIT flag beats the YAML
+        flag_map["pre_push.mode"] = args.pre_push
     for dotted, value in flag_map.items():
         if value is not None:
             install_config.set_key(inst, dotted, value)
@@ -760,6 +770,7 @@ def install_children(
     members_by_child: dict[str, list],
     *,
     install_permissions: bool,
+    pre_push_mode: str,
     force: bool,
     dry_run: bool,
 ) -> list[tuple[str, str, dict[str, str]]]:
@@ -786,9 +797,10 @@ def install_children(
             meta_name=meta_name, rel=rel, flavor=c["flavor"], members=members
         )
         md_status = child_install.write_child_claude_md(child_root, md, dry_run=dry_run)
-        reports.append((c["path"], c["flavor"], {
-            "settings": settings_status, "config": cfg_status, "CLAUDE.md": md_status,
-        }))
+        statuses = {"settings": settings_status, "config": cfg_status, "CLAUDE.md": md_status}
+        if pre_push_mode != "none":  # pushes happen FROM the children — same mode as the meta
+            statuses["pre-push"] = install_pre_push(child_root, pre_push_mode, ccfg, dry_run=dry_run)
+        reports.append((c["path"], c["flavor"], statuses))
     return reports
 
 
@@ -871,6 +883,10 @@ def install_child_mode(args: argparse.Namespace, inst: dict, user_keys: set[str]
     )
     cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
     snapshot_status = write_install_snapshot(target_claude, inst, force=args.force, dry_run=args.dry_run)
+    # Pre-push hook: same resolved pre_push.mode contract as a standalone install
+    # (a child is its own git repo — pushes happen from here).
+    pre_push_mode = install_config.get_key(inst, "pre_push.mode", "noop")
+    pre_push_status = install_pre_push(target, pre_push_mode, cfg, dry_run=args.dry_run)
 
     roster_status = "skipped (team disabled)"
     if roster_plan is not None:
@@ -891,11 +907,190 @@ def install_child_mode(args: argparse.Namespace, inst: dict, user_keys: set[str]
     print(f"settings.json:     {settings_status}")
     print(f"framework.config:  {cfg_status} (project.model=child, parent={rel}, flavor={flavor})")
     print(f"install snapshot:  {snapshot_status}")
+    print(f"pre-push hook:     {pre_push_status}")
     print(f"team roster:       {roster_status}")
     print(f"CLAUDE.md:         {md_status}")
     if roster_plan is not None and not args.no_enforce_identity:
         print("identity gate:     ENABLED (this roster ∪ the meta roster via the parent-merge)")
     return 0
+
+
+# ---------------------------------------------------------------- pre-push hook
+
+_NOOP_PRE_PUSH = """\
+#!/bin/sh
+# pre-push -- installed by the 2real team framework (framework/install/bootstrap.py).
+#
+# MODE: noop. This hook does nothing and never blocks a push (it exits 0).
+# It exists so the enforcement seam is visible: one config edit + reinstall
+# turns on real pre-push checks with no further wiring.
+#
+# To enable enforcement:
+#   1. List the checks to run in .claude/framework.config.json:
+#        "hooks": { "pre_push_commands": ["ruff check .", "pytest -q"] }
+#   2. Re-run the bootstrapper with --pre-push enforce
+#      (this hook is replaced; a non-framework hook would be kept as pre-push.bak).
+#
+# To remove: delete this file. Re-running bootstrap with --pre-push none
+# installs nothing (it never deletes an existing hook).
+exit 0
+"""
+
+_ENFORCE_PRE_PUSH = """\
+#!/bin/sh
+# pre-push -- installed by the 2real team framework (framework/install/bootstrap.py).
+#
+# MODE: enforce. Runs every command in hooks.pre_push_commands from
+# .claude/framework.config.json (in order, from the repo root) and BLOCKS the
+# push on the first nonzero exit. The list is read at push time, so editing the
+# config changes the checks with no reinstall.
+#
+# Fail-open by design: a missing config, missing python3, or an empty command
+# list allows the push (with a note) rather than stranding you.
+#
+# To go back to a do-nothing hook: re-run the bootstrapper with --pre-push noop.
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cfg="$repo_root/.claude/framework.config.json"
+[ -f "$cfg" ] || { echo "pre-push: no framework.config.json - allowing push." >&2; exit 0; }
+command -v python3 >/dev/null 2>&1 || { echo "pre-push: python3 not found - allowing push." >&2; exit 0; }
+cd "$repo_root" || exit 0
+exec python3 - "$cfg" <<'PY'
+import json, subprocess, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        cmds = (json.load(fh).get("hooks") or {}).get("pre_push_commands") or []
+except (OSError, ValueError):
+    sys.exit(0)  # fail-open: an unreadable config never blocks a push
+if not cmds:
+    print("pre-push: hooks.pre_push_commands is empty - allowing push.", file=sys.stderr)
+    sys.exit(0)
+for cmd in cmds:
+    print(f"pre-push: running: {cmd}", file=sys.stderr)
+    rc = subprocess.run(cmd, shell=True).returncode
+    if rc != 0:
+        print(f"pre-push: BLOCKED - '{cmd}' failed (exit {rc}).", file=sys.stderr)
+        print(
+            "pre-push: fix the failure, or edit hooks.pre_push_commands in"
+            " .claude/framework.config.json.",
+            file=sys.stderr,
+        )
+        sys.exit(rc)
+print("pre-push: all checks passed.", file=sys.stderr)
+PY
+"""
+
+
+def _next_backup_path(path: Path) -> Path:
+    """Return a non-clobbering backup path for ``path``.
+
+    Prefers ``<name>.bak``; if that already exists, falls back to ``<name>.bak.1``,
+    ``<name>.bak.2``, … so an existing backup is never overwritten. (Mirrors the
+    CLAUDE.md backup pattern in python/src/real_team/bootstrap.py.)
+    """
+    backup = path.with_name(path.name + ".bak")
+    counter = 1
+    while backup.exists():
+        backup = path.with_name(f"{path.name}.bak.{counter}")
+        counter += 1
+    return backup
+
+
+def _git_hooks_dir(target: Path) -> tuple[Path | None, str | None]:
+    """Resolve the EFFECTIVE git hooks dir for ``target``. Returns (dir, note).
+
+    Asks git itself first (``rev-parse --git-path hooks``), which honours
+    ``core.hooksPath`` and worktree/submodule ``.git``-file layouts; the note
+    reports a non-default ``core.hooksPath`` so the operator knows where the
+    hook went. Falls back to a manual ``.git`` walk when the git binary is
+    unavailable. Returns ``(None, reason)`` when there is nowhere sane to write
+    (fail-open: the caller skips with a notice, never errors).
+    """
+    git_entry = target / ".git"
+    if not git_entry.exists():
+        return None, "no .git"
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--git-path", "hooks"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            hooks_dir = Path(r.stdout.strip())
+            if not hooks_dir.is_absolute():
+                hooks_dir = (target / hooks_dir).resolve()
+            note = None
+            c = subprocess.run(
+                ["git", "-C", str(target), "config", "--get", "core.hooksPath"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if c.returncode == 0 and c.stdout.strip():
+                note = f"core.hooksPath is set ({c.stdout.strip()})"
+            return hooks_dir, note
+    except (OSError, subprocess.SubprocessError):
+        pass  # git missing/broken -> manual fallback below
+    if git_entry.is_dir():
+        return git_entry / "hooks", None
+    try:  # worktree/submodule: .git is a file containing "gitdir: <path>"
+        for line in git_entry.read_text(encoding="utf-8").splitlines():
+            if line.startswith("gitdir:"):
+                gitdir = Path(line.split(":", 1)[1].strip())
+                if not gitdir.is_absolute():
+                    gitdir = (target / gitdir).resolve()
+                return gitdir / "hooks", None
+    except OSError:
+        pass
+    return None, "unrecognised .git layout"
+
+
+def install_pre_push(target: Path, mode: str, cfg: dict | None = None, *, dry_run: bool) -> str:
+    """Install ``<hooks-dir>/pre-push`` in ``target`` per ``mode``. Idempotent.
+
+    Self-contained (only reads ``cfg`` for an advisory); ``mode`` is the
+    RESOLVED install-config ``pre_push.mode`` (--pre-push flag > user YAML >
+    shipped default noop). ``noop`` writes an executable, clearly-commented
+    exit-0 script; ``enforce`` writes a script that runs
+    ``hooks.pre_push_commands`` from framework.config.json and blocks the push
+    on failure; ``none`` installs nothing. A pre-existing pre-push with
+    different content is never clobbered — it is preserved via the
+    non-clobbering ``.bak`` pattern with a warning. No ``.git`` -> skip with a
+    notice (fail-open). Returns a one-line status for the report.
+    """
+    if mode == "none":
+        return "skipped (pre_push.mode=none)"
+    hooks_dir, note = _git_hooks_dir(target)
+    if hooks_dir is None:
+        return f"skipped ({note} — nothing to hook; re-run after `git init`)"
+    if note:
+        print(f"note:          {note} — writing pre-push there")
+    if mode == "enforce" and cfg is not None:
+        if not (cfg.get("hooks") or {}).get("pre_push_commands"):
+            print(
+                "warn:          hooks.pre_push_commands is empty — the enforce hook will"
+                " allow pushes until you set it in .claude/framework.config.json"
+            )
+    content = _ENFORCE_PRE_PUSH if mode == "enforce" else _NOOP_PRE_PUSH
+    dest = hooks_dir / "pre-push"
+    if dest.exists():
+        try:
+            existing = dest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            existing = None
+        if existing == content:
+            return f"already installed ({mode}; unchanged)"
+        if dry_run:
+            return f"would back up existing pre-push (.bak) and write the {mode} hook"
+        backup = _next_backup_path(dest)
+        dest.rename(backup)
+        print(
+            f"warn:          existing pre-push preserved as {backup.name} —"
+            " reconcile any custom logic it carried"
+        )
+    if dry_run:
+        return f"would write the {mode} hook"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    dest.write_text(content, encoding="utf-8")
+    dest.chmod(0o755)
+    return f"installed ({mode}) at {dest}"
 
 
 # ---------------------------------------------------------------- main
@@ -921,6 +1116,10 @@ def main() -> int:
     ap.add_argument("--shell", choices=["bash", "zsh"])
     ap.add_argument("--reviewers", type=int)
     ap.add_argument("--merge-model", choices=["wave-branch", "direct-to-main"])
+    ap.add_argument("--pre-push", choices=["noop", "enforce", "none"], default=None,
+                    help="Pre-push git hook to install (install-config key pre_push.mode; "
+                         "precedence: this flag > user YAML > shipped default noop). "
+                         "enforce runs hooks.pre_push_commands; none installs nothing.")
     mode_group = ap.add_mutually_exclusive_group()
     mode_group.add_argument("--interactive", action="store_true",
                             help="Prompt for missing fields + review the proposed team (TTY only)")
@@ -1074,6 +1273,10 @@ def main() -> int:
         target_claude, dry_run=args.dry_run, install_permissions=not args.no_permissions
     )
     charter = install_charter(target_claude, cfg, force=args.force, dry_run=args.dry_run)
+    # Pre-push hook mode is config-driven: the RESOLVED pre_push.mode
+    # (flag > user YAML > shipped default noop).
+    pre_push_mode = install_config.get_key(inst, "pre_push.mode", "noop")
+    pre_push_status = install_pre_push(target, pre_push_mode, cfg, dry_run=args.dry_run)
 
     # Ontology (seed overlay + generated structural index) is config-driven:
     # the RESOLVED ontology.enabled (flags > user YAML > shipped default ON).
@@ -1108,7 +1311,8 @@ def main() -> int:
             )
         child_reports = install_children(
             target, cfg, selected_children, members_by_child,
-            install_permissions=not args.no_permissions, force=args.force,
+            install_permissions=not args.no_permissions,
+            pre_push_mode=pre_push_mode, force=args.force,
             dry_run=args.dry_run,
         )
 
@@ -1127,7 +1331,7 @@ def main() -> int:
         f"{'would be written' if args.dry_run else 'written'}; "
         f"{len(charter['skipped'])} skipped"
     )
-    print(f"pre-push mode:     {install_config.get_key(inst, 'pre_push.mode', 'noop')} (recorded; hook installer is a separate tranche)")
+    print(f"pre-push hook:     {pre_push_status}")
     children = inst.get("children") or []
     if children:
         print(f"children:          {len(children)} recorded ({', '.join(c.get('path', '?') for c in children[:4])}{' …' if len(children) > 4 else ''})")

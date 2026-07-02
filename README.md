@@ -314,6 +314,27 @@ a subsystem isn't present:
 - `/ontology-rebuild [scope]` — Reconcile the semantic overlay: scan dirty checksums, update
   ontology files and auto-updatable docs from code, mark resolved
 
+## Pre-push hook
+
+The framework bootstrapper (`framework/install/bootstrap.py`, also run by
+`2real-team init --with-hooks`) installs a `pre-push` git hook into the target repo's
+effective hooks directory (it respects `core.hooksPath`). Three modes, driven by the unified
+install config key `pre_push.mode` or the `--pre-push {noop,enforce,none}` flag (precedence:
+flag > user YAML > shipped default `noop`):
+
+- **`noop`** (default) — an executable, clearly-commented script that always exits 0. It never
+  blocks a push; it just makes the enforcement seam visible and documents how to turn it on.
+- **`enforce`** — runs every command in `hooks.pre_push_commands` from
+  `.claude/framework.config.json` (in order, from the repo root) and blocks the push on the
+  first failure. The list is read at push time, so editing the config changes the checks
+  without reinstalling. Fail-open: a missing config or an empty list allows the push.
+- **`none`** — installs nothing (and never deletes an existing hook).
+
+To switch modes, re-run the bootstrapper with the new `--pre-push` value. An existing
+`pre-push` hook is never clobbered: a non-framework hook is preserved as `pre-push.bak`
+(`.bak.1`, `.bak.2`, … — never overwriting an earlier backup) with a warning. Targets without
+a `.git` directory are skipped with a notice.
+
 ## How it works with Claude Code
 
 1. **Bootstrap:** Run `2real-team init` in your project

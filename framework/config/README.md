@@ -32,6 +32,7 @@ capability but do not error.
 | `ci.neutral_pending_check_prefixes` | Services whose `NEUTRAL` means "review pending" (e.g. `["chromatic"]`). |
 | `ci.tooling` | The full CI check-set the local⇄CI parity gate expects mirrored. |
 | `hooks.pre_bash` / `hooks.post_bash` | Which checks run, in what order (the dispatcher seam). |
+| `hooks.pre_push_commands` | Checks the enforce-mode pre-push git hook runs (read at push time; empty = pass). |
 
 ## How reads work
 
