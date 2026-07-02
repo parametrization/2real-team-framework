@@ -64,6 +64,13 @@ _DEFAULTS: dict[str, Any] = {
         "reviewers_required": 1,
         "merge_model": "direct-to-main",
         "admin_merge_exceptions": {},
+        # Lifecycle-skill knobs (#86): per-wave tech-debt intake (/plan-phase),
+        # phase-exit tech-debt gate (/phase-review), retro counter-drift
+        # tolerances (/wave-retro).
+        "tech_debt_intake_pct": 20,
+        "tech_debt_exit_ratio_pct": 10,
+        "retro_counter_drift_abs": 2,
+        "retro_counter_drift_pct": 5,
     },
     "ci": {
         "merge_requires_green": True,

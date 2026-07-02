@@ -106,6 +106,32 @@
           "additionalProperties": { "type": "string" },
           "default": {},
           "description": "Map of <class> -> <human rationale> naming the only admin-merge bypass classes the CI gate accepts via ADMIN_MERGE_EXCEPTION=<class>:<rationale>. Empty = no admin bypass allowed."
+        },
+        "tech_debt_intake_pct": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Per-wave tech-debt intake: after a wave's feature/bug/security content is set, /plan-phase allocates tech-debt-only issues equal to this percentage of that content (rounded up). A cap on every wave except the last wave of a phase, where it becomes a floor."
+        },
+        "tech_debt_exit_ratio_pct": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Phase exit gate: maximum percentage of tech-debt issues (new-filed during the phase, and cumulative-open) tolerated at phase exit. /phase-review flags the gate as NOT MET at or above this."
+        },
+        "retro_counter_drift_abs": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "description": "/wave-retro counter-drift tolerance (absolute). A wrapup-recorded counter differing from the retro recomputation within this absolute diff OR within retro_counter_drift_pct percent is corrected and logged; a drift exceeding both is a retro-blocker."
+        },
+        "retro_counter_drift_pct": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 0,
+          "description": "/wave-retro counter-drift tolerance (percent). See retro_counter_drift_abs."
         }
       }
     },

@@ -105,6 +105,15 @@ def _schema_defaults() -> dict:
         "version": 1,
         "scm": {"provider": "github", "default_branch": "main", "allow_force": False},
         "shell": "bash",
+        # Lifecycle-skill policy knobs (#86) — written so a deployed repo can see
+        # and tune them. Values MUST match framework.config.schema.json defaults
+        # and _framework_config._DEFAULTS (test_config_schema_sync.py pins this).
+        "policy": {
+            "tech_debt_intake_pct": 20,
+            "tech_debt_exit_ratio_pct": 10,
+            "retro_counter_drift_abs": 2,
+            "retro_counter_drift_pct": 5,
+        },
         "hooks": {
             "pre_bash": [
                 "block_no_verify",
