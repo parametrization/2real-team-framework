@@ -79,8 +79,10 @@ CLAUDE.md                # Team section, written at the project root
     review-pr.md         # PR review using charter format
     plan-phase.md        # Phase planning skill
     close-stale-issues.md
-    # with --with-hooks, also: session-start, handoff,
-    # wave-lifecycle, ontology-librarian, ontology-rebuild
+    # with --with-hooks, also the 13 runtime skills
+    # (session-start, handoff, wave-lifecycle, wave-retro,
+    #  phase-review, team-reset, wave-audit, ontology-*, ...
+    #  — see the Skills section)
 ```
 
 ## Commands
@@ -300,8 +302,8 @@ Templated per project and installed by every preset (the 6 listed in [Presets](#
 ### Runtime skills
 
 Config-driven and fail-open, installed alongside the hooks/libs runtime with
-`2real-team init --with-hooks`. They read `.claude/framework.config.json` and skip cleanly when
-a subsystem isn't present:
+`2real-team init --with-hooks` (13 skills). They read `.claude/framework.config.json` and skip
+cleanly when a subsystem isn't present:
 
 - `/session-start` — Run first in every session: loads memory, confirms the team, reads the
   last handoff, and reports git/PR/CI + lifecycle + ontology status in one table
@@ -309,10 +311,23 @@ a subsystem isn't present:
   lifecycle/wave status, and the context the next session needs to resume)
 - `/wave-lifecycle` — Drive one wave through its full lifecycle (allocate → start → scope →
   kickoff → work → wrapup → retro) on the deterministic `lifecycle.py` engine
+- `/wave-retro` — Full end-of-wave retrospective with mechanical, evidence-anchored trust
+  scoring (`trust_signals.py`), counter drift verification, feedback log, process proposals
+- `/phase-review` — Phase-level health check before scoping the next wave: phase-doc tracking
+  state, tech-debt ratio vs the configured exit threshold, owner revision checkpoint
+- `/team-reset` — Transparent agent reset: shut down unresponsive session agents and
+  re-orient the implicit team, reporting roster changes
+- `/wave-audit` — Audit open wave issues against merged PRs and close orphaned issues
+  (with proper comments; nothing closes without user confirmation)
 - `/ontology-librarian [query]` — Read-only ontology reference: checks staleness of both the
   hand-curated semantic overlay and the generated structural index, and retrieves context
 - `/ontology-rebuild [scope]` — Reconcile the semantic overlay: scan dirty checksums, update
   ontology files and auto-updatable docs from code, mark resolved
+
+The runtime tier also ships **enriched versions of `retro`, `wave-start`, `plan-phase`, and
+`close-stale-issues`** that supersede the templated team-workflow versions when the runtime is
+installed — e.g. `/retro` becomes a lightweight mid-wave pulse (the end-of-wave scoring moves
+to `/wave-retro`), and `/wave-start` gains STOP-guards before any branch work.
 
 ## Pre-push hook
 
