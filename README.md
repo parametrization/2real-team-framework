@@ -102,9 +102,10 @@ CLAUDE.md                # Team section, written at the project root
 | `--preset <name>` | Project preset: `fullstack-monorepo`, `data-pipeline`, `library` |
 | `--team-size <n>` | Override the preset's default team size |
 | `--project-name <name>` | Project name (defaults to directory name) |
-| `--config <path>` | Path to a YAML config file (see below) |
+| `--config <path>` | Path to a YAML config file — unified install config or legacy team config (see below) |
 | `--target <dir>` | Target directory (defaults to `.`) |
 | `--no-interactive` | Disable interactive prompts |
+| `--non-interactive` | Guarantee zero prompts; the config (flags > YAML > shipped defaults) answers everything |
 | `--git-email-prefix <prefix>` | Email prefix (e.g., `myorg` produces `myorg+First.Last@gmail.com`) |
 | `--ai-personas` | Use Claude API to generate rich, diverse personas |
 | `--seed <n>` | Seed for reproducible AI persona generation |
@@ -149,6 +150,55 @@ Config file fields:
 | `members` | list | Per-member overrides (name, role, level, personality) |
 
 See `examples/` for sample configs for each preset.
+
+## Install configuration
+
+A single unified `install.config.yaml` schema covers **every** interactive decision point
+across both installers — the stdlib-only `framework/install/bootstrap.py` and `2real-team init`
+(which auto-detects it via `--config`). It drives fully non-interactive installs:
+
+```bash
+# Standalone framework installer (stdlib-only, zero prompts):
+python3 framework/install/bootstrap.py /path/to/repo --install-config my.install.yaml --non-interactive
+
+# Python CLI (same file, auto-detected):
+2real-team init --config my.install.yaml --non-interactive
+```
+
+**Precedence:** CLI flags > user YAML > shipped defaults
+(`framework/config/install.config.default.yaml` — a fully commented reference copy).
+The resolved config is recorded at `<target>/.claude/install.config.json` so downstream
+tooling reads one canonical record of the install-time decisions. This is the
+*install-time* config; the *runtime* config the hooks read remains
+`.claude/framework.config.json` (overlapping keys — `scm.owner`, `project.name`,
+`project.model` — flow into it).
+
+### Key reference
+
+| Key | Type | Default | Effect |
+|-----|------|---------|--------|
+| `version` | integer | `1` | Config schema version (must be `1`) |
+| `repo.expect` | `fresh` \| `existing` \| `any` | `fresh` | Expectation about the target repo. Recorded today (a mismatch prints a note); detection/enforcement ships with the meta/child install modes |
+| `project.name` | string \| null | `null` | Display name; `null` falls back to the target directory name |
+| `project.model` | `standalone` \| `meta` \| `child` | `standalone` | Project shape. Maps into the runtime config (`standalone`/`child` → `single-repo`, `meta` → `meta-and-children`) |
+| `scm.provider` | `github` | `github` | SCM host (only GitHub is implemented) |
+| `scm.owner` | string \| null | `null` | GitHub org/user. Replaces the interactive owner prompt; flows into `framework.config.json` |
+| `ci.provider` | `github-actions` | `github-actions` | CI system (only GitHub Actions is implemented) |
+| `ticketing.provider` | `github-issues` | `github-issues` | Story/task tracker (only GitHub Issues is implemented) |
+| `pre_push.mode` | `noop` \| `enforce` \| `none` | `noop` | Git pre-push hook mode. Validated and recorded; the hook installer is a separate tranche |
+| `ontology.enabled` | bool | `true` | Lay the two-layer ontology seed and activate the ontology hooks (`--with-ontology`/`--no-ontology` override) |
+| `team.enabled` | bool | `true` | Generate the team layer (roster, identity gate); `false` installs the runtime only |
+| `team.preset` | string \| null | `null` | Team preset for `2real-team init` (`fullstack-monorepo`, `data-pipeline`, `library`). Replaces the preset prompt |
+| `team.size` | integer \| null | `null` | Target headcount. Replaces the team-size and roster-proceed prompts; `null` lets the preset/introspection decide |
+| `children` | list | `[]` | Child repos for meta/child models: `- path: <rel-path>` with optional `flavor: product\|infra` (default `product`). Parsed, validated, and recorded for the meta/child install modes |
+
+Unknown keys are warned about and **carried** into the recorded snapshot (forward
+compatibility). Invalid values (bad enums/types) are fatal — the install refuses to proceed.
+
+With `--non-interactive` there are **zero prompts on any path**: `scm.owner` left `null`
+produces a warning (not a prompt), and the team is generated exactly as configured.
+`bootstrap.py` stays stdlib-only — it reads the YAML with a bundled minimal parser
+(`framework/install/miniyaml.py`); the Python CLI uses PyYAML.
 
 ## AI Persona Generation
 

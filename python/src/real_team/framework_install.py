@@ -53,10 +53,22 @@ def install_framework(
     shell: str = "bash",
     reviewers: int | None = None,
     merge_model: str | None = None,
-    with_ontology: bool = True,
+    install_config: Path | str | None = None,
+    with_ontology: bool | None = None,
     dry_run: bool = False,
 ) -> subprocess.CompletedProcess | None:
     """Install the framework runtime into ``target`` via its own bootstrapper.
+
+    ``install_config`` forwards a unified YAML install config so the
+    bootstrapper resolves every install-time decision (ontology, pre_push,
+    children, …) from the same file the CLI read. The subprocess always runs
+    ``--non-interactive`` — it can never prompt.
+
+    ``with_ontology`` is tri-state: ``True`` passes ``--with-ontology``,
+    ``False`` passes ``--no-ontology``, and ``None`` (default) passes neither
+    so the bootstrapper resolves ``ontology.enabled`` from the install config
+    (flags > user YAML > shipped default ON). This keeps a CLI default from
+    silently overriding a forwarded YAML.
 
     Returns the CompletedProcess (inspect ``.returncode`` / ``.stdout``), or
     None when the framework assets could not be located (caller should report a
@@ -71,17 +83,22 @@ def install_framework(
         str(root / "install" / "bootstrap.py"),
         str(target),
         "--no-team",
+        "--non-interactive",
         "--shell",
         shell,
     ]
+    if install_config:
+        cmd += ["--install-config", str(install_config)]
     if owner:
         cmd += ["--owner", owner]
     if reviewers is not None:
         cmd += ["--reviewers", str(reviewers)]
     if merge_model:
         cmd += ["--merge-model", merge_model]
-    if with_ontology:
+    if with_ontology is True:
         cmd += ["--with-ontology"]
+    elif with_ontology is False:
+        cmd += ["--no-ontology"]
     if dry_run:
         cmd += ["--dry-run"]
 

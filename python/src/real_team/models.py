@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
@@ -95,24 +95,138 @@ class YamlConfig(BaseModel):
         Raises ``ValueError`` with a human-readable message on validation
         failure, and ``FileNotFoundError`` when the file does not exist.
         """
-        p = Path(path)
-        if not p.exists():
-            raise FileNotFoundError(f"Config file not found: {path}")
-
-        with open(p) as f:
-            try:
-                raw: Any = yaml.safe_load(f)
-            except yaml.YAMLError as exc:
-                raise ValueError(f"Invalid YAML in config file ({path}): {exc}") from exc
-
-        if not isinstance(raw, dict):
-            raise ValueError(f"Config file must be a YAML mapping, got {type(raw).__name__}")
-
+        raw = _read_yaml_mapping(path)
         try:
             return cls(**raw)
         except ValidationError as exc:
-            lines = [f"Invalid config file ({path}):"]
-            for err in exc.errors():
-                loc = " -> ".join(str(part) for part in err["loc"])
-                lines.append(f"  {loc}: {err['msg']}")
-            raise ValueError("\n".join(lines)) from exc
+            raise ValueError(_format_validation_error(path, exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Unified install-config schema (install.config.yaml — shared with
+# framework/install/bootstrap.py; see framework/config/install.config.default.yaml)
+# ---------------------------------------------------------------------------
+
+#: Top-level keys that mark a YAML file as a UNIFIED install config rather than
+#: the legacy flat team config (which has a required top-level ``preset``).
+UNIFIED_CONFIG_MARKERS = frozenset(
+    {"version", "repo", "scm", "ci", "ticketing", "pre_push", "ontology", "children"}
+)
+
+
+class RepoSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    expect: Literal["fresh", "existing", "any"] = "fresh"
+
+
+class ProjectSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str | None = None
+    model: Literal["standalone", "meta", "child"] = "standalone"
+
+
+class ScmSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    provider: Literal["github"] = "github"
+    owner: str | None = None
+
+
+class CiSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    provider: Literal["github-actions"] = "github-actions"
+
+
+class TicketingSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    provider: Literal["github-issues"] = "github-issues"
+
+
+class PrePushSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    mode: Literal["noop", "enforce", "none"] = "noop"
+
+
+class OntologySection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = True
+
+
+class TeamSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = True
+    preset: str | None = None
+    size: int | None = None
+
+
+class ChildSpec(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    path: str
+    flavor: Literal["product", "infra"] = "product"
+
+
+class InstallConfig(BaseModel):
+    """The unified YAML install config (see the framework key reference).
+
+    Covers every interactive decision point of both installers. Extra keys are
+    allowed (forward compatibility) and carried through to the framework
+    bootstrapper, which records the resolved config in the target repo.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    version: Literal[1] = 1
+    repo: RepoSection = RepoSection()
+    project: ProjectSection = ProjectSection()
+    scm: ScmSection = ScmSection()
+    ci: CiSection = CiSection()
+    ticketing: TicketingSection = TicketingSection()
+    pre_push: PrePushSection = PrePushSection()
+    ontology: OntologySection = OntologySection()
+    team: TeamSection = TeamSection()
+    children: list[ChildSpec] = []
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> InstallConfig:
+        raw = _read_yaml_mapping(path)
+        try:
+            return cls(**raw)
+        except ValidationError as exc:
+            raise ValueError(_format_validation_error(path, exc)) from exc
+
+
+def is_unified_config(raw: dict) -> bool:
+    """True when the mapping uses the unified install-config schema."""
+    if UNIFIED_CONFIG_MARKERS & set(raw):
+        return True
+    return isinstance(raw.get("team"), dict) or isinstance(raw.get("project"), dict)
+
+
+def _read_yaml_mapping(path: str | Path) -> dict:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(p) as f:
+        try:
+            raw: Any = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid YAML in config file ({path}): {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError(f"Config file must be a YAML mapping, got {type(raw).__name__}")
+    return raw
+
+
+def _format_validation_error(path: str | Path, exc: ValidationError) -> str:
+    lines = [f"Invalid config file ({path}):"]
+    for err in exc.errors():
+        loc = " -> ".join(str(part) for part in err["loc"])
+        lines.append(f"  {loc}: {err['msg']}")
+    return "\n".join(lines)
