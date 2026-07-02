@@ -337,6 +337,48 @@ def install_overlay_template(
     return report
 
 
+def generate_structural(
+    target_root: Path, ontology_rel: str, cfg: dict, *, force: bool, dry_run: bool
+) -> str:
+    """Run the structural generator against the TARGET repo. Fail-open; returns a status line.
+
+    Reuses the same ``ontology_gen.refresh`` path the SessionStart hook uses, so a fresh
+    install ends with ``<ontology>/structural/code-graph.json`` + ``llms.txt`` on disk
+    immediately (not lazily on the next session). Generation runs against ``target_root``
+    (never the framework checkout). Any failure degrades to a warning string — an odd or
+    empty target must never abort the install. Deterministic + staleness-guarded, so
+    re-running is safe (a fresh index is left untouched).
+    """
+    if dry_run:
+        return "would generate (code-graph.json + llms.txt)"
+    lib_dir = _ASSETS / "lib"
+    if str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+    try:
+        from ontology_gen.refresh import refresh
+    except ImportError as e:
+        return f"SKIPPED (generator unavailable: {e})"
+    project = cfg.get("project", {}) if isinstance(cfg.get("project"), dict) else {}
+    model = project.get("model") or "single-repo"
+    name = project.get("name") or target_root.name
+    try:
+        result = refresh(
+            target_root, ontology_path=ontology_rel, repo_name=name, model=model, force=force
+        )
+    except Exception as e:  # noqa: BLE001 — fail-open by contract: install must continue.
+        return f"SKIPPED (generation failed: {e}; install continues)"
+    if not result.get("regenerated"):
+        return "fresh (already current)"
+    msg = (
+        f"generated ({result.get('files', 0)} files / "
+        f"{result.get('nodes', 0)} nodes / {result.get('edges', 0)} edges)"
+    )
+    agg = result.get("aggregate")
+    if agg:
+        msg += f"; cross-repo {agg.get('nodes', 0)} nodes across {agg.get('repos', 0)} repo(s)"
+    return msg
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -354,7 +396,7 @@ def main() -> int:
     ap.add_argument("--no-team", action="store_true", help="Skip roster generation (install hooks only)")
     ap.add_argument("--team-size", type=int, help="Target headcount for the generated roster")
     ap.add_argument("--no-enforce-identity", action="store_true", help="Generate the roster but do NOT enable the commit-identity gate")
-    ap.add_argument("--with-ontology", action="store_true", help="Lay down the seed semantic-overlay template (activates the ontology hooks)")
+    ap.add_argument("--with-ontology", action="store_true", help="Lay down the seed semantic-overlay template AND generate the structural index (activates the ontology hooks)")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
     args = ap.parse_args()
@@ -432,9 +474,13 @@ def main() -> int:
     settings_status = merge_settings(target_claude, dry_run=args.dry_run)
 
     overlay = None
+    structural_status = None
     if args.with_ontology:
         ontology_rel = cfg.get("paths", {}).get("ontology", "ontology")
         overlay = install_overlay_template(target, ontology_rel, force=args.force, dry_run=args.dry_run)
+        structural_status = generate_structural(
+            target, ontology_rel, cfg, force=args.force, dry_run=args.dry_run
+        )
 
     roster_status = "skipped (--no-team)"
     if team_enabled and roster_plan is not None:
@@ -457,6 +503,8 @@ def main() -> int:
     if overlay is not None:
         laid = overlay["would_copy"] if args.dry_run else overlay["copied"]
         print(f"ontology overlay:  {len(laid)} file(s) {'would be laid' if args.dry_run else 'laid'}; {len(overlay['skipped'])} skipped")
+    if structural_status is not None:
+        print(f"structural index:  {structural_status}")
     print(f"team roster:       {roster_status}")
     if team_enabled and roster_plan is not None and not args.no_enforce_identity:
         print("identity gate:     ENABLED (commits must use -c user.name/-c user.email from the roster)")

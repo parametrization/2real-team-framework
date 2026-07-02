@@ -53,6 +53,7 @@ def install_framework(
     shell: str = "bash",
     reviewers: int | None = None,
     merge_model: str | None = None,
+    with_ontology: bool = True,
     dry_run: bool = False,
 ) -> subprocess.CompletedProcess | None:
     """Install the framework runtime into ``target`` via its own bootstrapper.
@@ -79,6 +80,8 @@ def install_framework(
         cmd += ["--reviewers", str(reviewers)]
     if merge_model:
         cmd += ["--merge-model", merge_model]
+    if with_ontology:
+        cmd += ["--with-ontology"]
     if dry_run:
         cmd += ["--dry-run"]
 
