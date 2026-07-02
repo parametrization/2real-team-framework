@@ -478,6 +478,55 @@ class TestInitCommand:
         assert not (tmp_path / ".claude" / "framework.config.json").exists()
         assert not (tmp_path / ".claude" / "hooks").exists()
 
+    def test_init_ontology_installed_by_default(self, tmp_path: Path):
+        """Default-ON: init lays the overlay AND the generated structural index."""
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-default",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--owner", "acme",
+        ])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / "ontology" / "domain.yaml").is_file()
+        structural = tmp_path / "ontology" / "structural"
+        assert (structural / "code-graph.json").is_file()
+        assert (structural / "llms.txt").is_file()
+        graph = json.loads((structural / "code-graph.json").read_text())
+        assert "nodes" in graph and "edges" in graph
+
+    def test_init_no_ontology_skips_ontology(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-off",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--owner", "acme",
+            "--no-ontology",
+        ])
+        assert result.exit_code == 0, result.output
+        # Runtime installed, ontology not.
+        assert (tmp_path / ".claude" / "hooks" / "dispatcher.py").is_file()
+        assert not (tmp_path / "ontology").exists()
+
+    def test_init_no_hooks_skips_ontology_too(self, tmp_path: Path):
+        """Ontology install rides the framework runtime — --no-hooks disables both."""
+        result = runner.invoke(app, [
+            "init",
+            "--preset", "library",
+            "--team-size", "2",
+            "--project-name", "onto-nohooks",
+            "--target", str(tmp_path),
+            "--no-interactive",
+            "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / "ontology").exists()
+
     def test_init_missing_preset_noninteractive(self, tmp_path: Path):
         result = runner.invoke(app, [
             "init",
@@ -656,6 +705,229 @@ class TestInitCommand:
             "--no-interactive",
         ])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# framework_install bridge — flag threading (tri-state: the config decides
+# unless the operator passed an explicit CLI ontology flag)
+# ---------------------------------------------------------------------------
+
+
+class TestFrameworkInstallBridge:
+    def _capture_cmd(self, monkeypatch) -> dict:
+        import subprocess
+
+        import real_team.framework_install as fi
+
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(fi.subprocess, "run", fake_run)
+        return captured
+
+    def test_default_defers_ontology_to_config(self, monkeypatch, tmp_path: Path):
+        """No explicit flag: the bootstrapper resolves ontology.enabled itself
+        (shipped default ON — the default-init e2e asserts the generated
+        structural files land on disk)."""
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path)
+        assert "--with-ontology" not in captured["cmd"]
+        assert "--no-ontology" not in captured["cmd"]
+
+    def test_with_ontology_true_passes_flag(self, monkeypatch, tmp_path: Path):
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path, with_ontology=True)
+        assert "--with-ontology" in captured["cmd"]
+
+    def test_with_ontology_false_passes_no_ontology(self, monkeypatch, tmp_path: Path):
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path, with_ontology=False)
+        assert "--no-ontology" in captured["cmd"]
+        assert "--with-ontology" not in captured["cmd"]
+
+    def test_install_config_forwarded(self, monkeypatch, tmp_path: Path):
+        from real_team.framework_install import install_framework
+
+        captured = self._capture_cmd(monkeypatch)
+        install_framework(tmp_path, install_config=tmp_path / "my.yaml")
+        cmd = captured["cmd"]
+        assert "--install-config" in cmd
+        assert str(tmp_path / "my.yaml") in cmd
+        assert "--non-interactive" in cmd
+
+
+# ---------------------------------------------------------------------------
+# CLI commands — init with the UNIFIED install config / --non-interactive
+# ---------------------------------------------------------------------------
+
+
+class TestInitUnifiedConfig:
+    def _write_unified(self, tmp_path: Path, **overrides) -> Path:
+        import yaml
+
+        data = {
+            "version": 1,
+            "repo": {"expect": "fresh"},
+            "project": {"name": "unified-test", "model": "standalone"},
+            "scm": {"provider": "github", "owner": "acme"},
+            "ci": {"provider": "github-actions"},
+            "ticketing": {"provider": "github-issues"},
+            "pre_push": {"mode": "noop"},
+            "ontology": {"enabled": True},
+            "team": {"enabled": True, "preset": "library", "size": 3},
+            "children": [],
+        }
+        data.update(overrides)
+        cfg = tmp_path / "install.yaml"
+        cfg.write_text(yaml.dump(data))
+        return cfg
+
+    def test_unified_config_scaffolds_team(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path)
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target), "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        assert (target / ".claude" / "team" / "charter.md").exists()
+        cards = list((target / ".claude" / "team" / "roster").glob("*.md"))
+        assert len(cards) == 3
+
+    def test_unified_config_installs_runtime_with_owner(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path)
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target), "--non-interactive",
+        ])
+        assert result.exit_code == 0, result.output
+        claude = target / ".claude"
+        fw_cfg = json.loads((claude / "framework.config.json").read_text())
+        assert fw_cfg["scm"]["owner"] == "acme"
+        # The resolved install config is recorded by the bootstrapper.
+        snapshot = json.loads((claude / "install.config.json").read_text())
+        assert snapshot["pre_push"]["mode"] == "noop"
+        assert snapshot["ticketing"]["provider"] == "github-issues"
+        # The snapshot reflects the team the CLI actually scaffolded.
+        assert snapshot["team"] == {"enabled": True, "preset": "library", "size": 3}
+        # ontology.enabled: true (the shipped default) lays the seed overlay.
+        assert (target / "ontology" / "domain.yaml").is_file()
+
+    def test_unified_config_cli_flags_win(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path)
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target),
+            "--team-size", "2", "--project-name", "flag-name", "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        cards = list((target / ".claude" / "team" / "roster").glob("*.md"))
+        assert len(cards) == 2  # flag beat team.size: 3
+        assert "flag-name" in result.output
+
+    def test_unified_config_team_disabled_skips_scaffolding(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path, team={"enabled": False})
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target), "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not (target / ".claude" / "team").exists()
+
+    def test_unified_config_missing_preset_errors(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path, team={"enabled": True})
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target), "--no-hooks",
+        ])
+        assert result.exit_code == 1
+        assert "required" in result.output.lower()
+
+    def test_unified_config_invalid_enum_errors(self, tmp_path: Path):
+        cfg = self._write_unified(tmp_path, pre_push={"mode": "strict"})
+        target = tmp_path / "output"
+        target.mkdir()
+        result = runner.invoke(app, [
+            "init", "--config", str(cfg), "--target", str(target), "--no-hooks",
+        ])
+        assert result.exit_code == 1
+        assert "pre_push" in result.output
+
+    def test_non_interactive_flag(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init", "--preset", "library", "--team-size", "2",
+            "--project-name", "ni-test", "--target", str(tmp_path),
+            "--non-interactive", "--no-hooks",
+        ])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".claude" / "team" / "charter.md").exists()
+
+    def test_non_interactive_missing_preset_errors(self, tmp_path: Path):
+        result = runner.invoke(app, [
+            "init", "--target", str(tmp_path), "--non-interactive", "--no-hooks",
+        ])
+        assert result.exit_code == 1
+        assert "required" in result.output.lower()
+
+
+class TestInstallConfigModel:
+    def test_detection_unified_vs_legacy(self):
+        from real_team.models import is_unified_config
+
+        assert is_unified_config({"version": 1})
+        assert is_unified_config({"team": {"preset": "library"}})
+        assert is_unified_config({"scm": {"owner": "acme"}})
+        assert not is_unified_config({"preset": "library", "team_size": 3})
+        assert not is_unified_config({"preset": "library", "members": []})
+
+    def test_install_config_defaults(self):
+        from real_team.models import InstallConfig
+
+        cfg = InstallConfig()
+        assert cfg.repo.expect == "fresh"
+        assert cfg.project.model == "standalone"
+        assert cfg.scm.provider == "github"
+        assert cfg.ci.provider == "github-actions"
+        assert cfg.ticketing.provider == "github-issues"
+        assert cfg.pre_push.mode == "noop"
+        assert cfg.ontology.enabled is True
+        assert cfg.team.enabled is True
+        assert cfg.children == []
+
+    def test_install_config_children_flavor_default(self):
+        from real_team.models import InstallConfig
+
+        cfg = InstallConfig(children=[{"path": "services/api"}])
+        assert cfg.children[0].flavor == "product"
+
+    def test_install_config_rejects_bad_values(self):
+        import pydantic
+
+        from real_team.models import InstallConfig
+
+        with pytest.raises(pydantic.ValidationError):
+            InstallConfig(repo={"expect": "brand-new"})
+        with pytest.raises(pydantic.ValidationError):
+            InstallConfig(children=[{"flavor": "product"}])  # path required
+
+    def test_install_config_extra_keys_carried(self):
+        from real_team.models import InstallConfig
+
+        cfg = InstallConfig(future_section={"knob": 1})
+        assert cfg.model_dump()["future_section"] == {"knob": 1}
 
 
 # ---------------------------------------------------------------------------

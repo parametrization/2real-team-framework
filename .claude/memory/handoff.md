@@ -1,3 +1,4 @@
+<!-- handoff: manual — written by the /handoff skill; the session_handoff auto-hook must not overwrite this file. Delete it (or this line) to re-enable auto-refresh. -->
 # Session Handoff — 2026-06-29 (CLAUDE.md at project root)
 
 ## Pickup (next concrete step)

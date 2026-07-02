@@ -79,8 +79,10 @@ CLAUDE.md                # Team section, written at the project root
     review-pr.md         # PR review using charter format
     plan-phase.md        # Phase planning skill
     close-stale-issues.md
-    # with --with-hooks, also: session-start, handoff,
-    # wave-lifecycle, ontology-librarian, ontology-rebuild
+    # with --with-hooks, also the 13 runtime skills
+    # (session-start, handoff, wave-lifecycle, wave-retro,
+    #  phase-review, team-reset, wave-audit, ontology-*, ...
+    #  — see the Skills section)
 ```
 
 ## Commands
@@ -102,9 +104,10 @@ CLAUDE.md                # Team section, written at the project root
 | `--preset <name>` | Project preset: `fullstack-monorepo`, `data-pipeline`, `library` |
 | `--team-size <n>` | Override the preset's default team size |
 | `--project-name <name>` | Project name (defaults to directory name) |
-| `--config <path>` | Path to a YAML config file (see below) |
+| `--config <path>` | Path to a YAML config file — unified install config or legacy team config (see below) |
 | `--target <dir>` | Target directory (defaults to `.`) |
 | `--no-interactive` | Disable interactive prompts |
+| `--non-interactive` | Guarantee zero prompts; the config (flags > YAML > shipped defaults) answers everything |
 | `--git-email-prefix <prefix>` | Email prefix (e.g., `myorg` produces `myorg+First.Last@gmail.com`) |
 | `--ai-personas` | Use Claude API to generate rich, diverse personas |
 | `--seed <n>` | Seed for reproducible AI persona generation |
@@ -149,6 +152,99 @@ Config file fields:
 | `members` | list | Per-member overrides (name, role, level, personality) |
 
 See `examples/` for sample configs for each preset.
+
+## Install configuration
+
+A single unified `install.config.yaml` schema covers **every** interactive decision point
+across both installers — the stdlib-only `framework/install/bootstrap.py` and `2real-team init`
+(which auto-detects it via `--config`). It drives fully non-interactive installs:
+
+```bash
+# Standalone framework installer (stdlib-only, zero prompts):
+python3 framework/install/bootstrap.py /path/to/repo --install-config my.install.yaml --non-interactive
+
+# Python CLI (same file, auto-detected):
+2real-team init --config my.install.yaml --non-interactive
+```
+
+**Precedence:** CLI flags > user YAML > shipped defaults
+(`framework/config/install.config.default.yaml` — a fully commented reference copy).
+The resolved config is recorded at `<target>/.claude/install.config.json` so downstream
+tooling reads one canonical record of the install-time decisions. This is the
+*install-time* config; the *runtime* config the hooks read remains
+`.claude/framework.config.json` (overlapping keys — `scm.owner`, `project.name`,
+`project.model` — flow into it).
+
+### Key reference
+
+| Key | Type | Default | Effect |
+|-----|------|---------|--------|
+| `version` | integer | `1` | Config schema version (must be `1`) |
+| `repo.expect` | `fresh` \| `existing` \| `any` | `fresh` | Expectation about the target repo — **enforced**. The installer detects the actual state (git repo? commits? non-framework files?) and reports it. Non-interactive installs **refuse** on a mismatch (`any` always proceeds); interactive installs ask for explicit confirmation before touching an existing repo; idempotent re-runs skip the gate. Also available as the `--expect` flag |
+| `project.name` | string \| null | `null` | Display name; `null` falls back to the target directory name |
+| `project.model` | `standalone` \| `meta` \| `child` | `standalone` | Project shape. Maps into the runtime config (`standalone` → `single-repo`, `meta` → `meta-and-children`, `child` → `child` — first-class, so a child repo is recoverable from its runtime config) |
+| `project.flavor` | `product` \| `infra` | `product` | **Child model only:** this repo's flavor (see the flavor table below) |
+| `scm.provider` | `github` | `github` | SCM host (only GitHub is implemented) |
+| `scm.owner` | string \| null | `null` | GitHub org/user. Replaces the interactive owner prompt; flows into `framework.config.json` |
+| `ci.provider` | `github-actions` | `github-actions` | CI system (only GitHub Actions is implemented) |
+| `ticketing.provider` | `github-issues` | `github-issues` | Story/task tracker (only GitHub Issues is implemented) |
+| `pre_push.mode` | `noop` \| `enforce` \| `none` | `noop` | Git pre-push hook mode. Validated and recorded; the hook installer is a separate tranche |
+| `ontology.enabled` | bool | `true` | Lay the two-layer ontology seed and activate the ontology hooks (`--with-ontology`/`--no-ontology` override) |
+| `team.enabled` | bool | `true` | Generate the team layer (roster, identity gate); `false` installs the runtime only |
+| `team.preset` | string \| null | `null` | Team preset for `2real-team init` (`fullstack-monorepo`, `data-pipeline`, `library`). Replaces the preset prompt |
+| `team.size` | integer \| null | `null` | Target headcount. Replaces the team-size and roster-proceed prompts; `null` lets the preset/introspection decide |
+| `parent.path` | string \| null | `null` | **Child model only (required there):** relative path from this repo to its parent meta-repo (e.g. `..`). Must be relative — portable paths only. The parent must already have the framework installed |
+| `children` | list | `[]` | **Meta model only:** child repos to install — `- path: <rel-path>` with optional `flavor: product\|infra` (default `product`). Non-interactive installs use this list **verbatim** (no detection surprises); interactive installs multi-select from detected subdir git repos |
+
+Unknown keys are warned about and **carried** into the recorded snapshot (forward
+compatibility). Invalid values (bad enums/types) are fatal — the install refuses to proceed.
+
+With `--non-interactive` there are **zero prompts on any path**: `scm.owner` left `null`
+produces a warning (not a prompt), and the team is generated exactly as configured.
+`bootstrap.py` stays stdlib-only — it reads the YAML with a bundled minimal parser
+(`framework/install/miniyaml.py`); the Python CLI uses PyYAML.
+
+### Meta-repo and child installs
+
+A **meta** install lays the full framework at the meta root, then a hook-less *child
+layout* into each selected child repo. A **child** install lays only that child layout,
+pointing at an already-bootstrapped parent. Children carry **no hook code** — one copy of
+the hooks lives at the meta root and every child's `.claude/settings.json` invokes the
+parent's dispatchers via **portable** parent-relative commands
+(`python3 "$CLAUDE_PROJECT_DIR/../.claude/hooks/dispatcher.py"` — never machine-absolute
+paths, so the whole tree clones anywhere; the traversal depth is derived from the child's
+configured path).
+
+```yaml
+# meta.install.yaml — run at the META root
+repo: { expect: existing }        # meta roots usually already exist
+project: { model: meta }
+children:
+  - path: api                     # full harness
+  - path: infra/tf                # commit-safety + CI subset
+    flavor: infra
+```
+
+```yaml
+# child.install.yaml — run at the CHILD root (e.g. a child added later)
+project: { model: child, flavor: product }
+parent: { path: .. }              # must already have the framework installed
+```
+
+Each selected child gets: a flavor-appropriate `.claude/settings.json`, its own
+`framework.config.json` (`project.model: child` + `project.parent` + `project.flavor`,
+inheriting `scm`/`identity`/`policy`/`hooks` from the parent config), a scoped
+`.claude/team/` roster subset (`roster.json` + persona cards; trust matrix and feedback
+log stay at the meta), and a child `CLAUDE.md` (an existing one is preserved as
+`CLAUDE.md.bak`). The meta's `framework.config.json` records the children in
+`project.repos`. The commit-identity gate unions each child's roster with the meta roster
+(parent ∪ child), so org leads can commit in any child but one child's engineers cannot
+commit in another.
+
+| Flavor | Wired hook events |
+|--------|-------------------|
+| `product` | The full harness: SessionStart (ontology refresh), pre/post Bash dispatchers, file-edit tracking |
+| `infra` | Commit-safety + CI subset: pre/post **Bash** dispatchers only — no ontology/session extras |
 
 ## AI Persona Generation
 
@@ -206,8 +302,8 @@ Templated per project and installed by every preset (the 6 listed in [Presets](#
 ### Runtime skills
 
 Config-driven and fail-open, installed alongside the hooks/libs runtime with
-`2real-team init --with-hooks`. They read `.claude/framework.config.json` and skip cleanly when
-a subsystem isn't present:
+`2real-team init --with-hooks` (13 skills). They read `.claude/framework.config.json` and skip
+cleanly when a subsystem isn't present:
 
 - `/session-start` — Run first in every session: loads memory, confirms the team, reads the
   last handoff, and reports git/PR/CI + lifecycle + ontology status in one table
@@ -215,10 +311,50 @@ a subsystem isn't present:
   lifecycle/wave status, and the context the next session needs to resume)
 - `/wave-lifecycle` — Drive one wave through its full lifecycle (allocate → start → scope →
   kickoff → work → wrapup → retro) on the deterministic `lifecycle.py` engine
+- `/wave-retro` — Full end-of-wave retrospective with mechanical, evidence-anchored trust
+  scoring (`trust_signals.py`), counter drift verification, feedback log, process proposals
+- `/phase-review` — Phase-level health check before scoping the next wave: phase-doc tracking
+  state, tech-debt ratio vs the configured exit threshold, owner revision checkpoint
+- `/team-reset` — Transparent agent reset: shut down unresponsive session agents and
+  re-orient the implicit team, reporting roster changes
+- `/wave-audit` — Audit open wave issues against merged PRs and close orphaned issues
+  (with proper comments; nothing closes without user confirmation)
 - `/ontology-librarian [query]` — Read-only ontology reference: checks staleness of both the
   hand-curated semantic overlay and the generated structural index, and retrieves context
 - `/ontology-rebuild [scope]` — Reconcile the semantic overlay: scan dirty checksums, update
   ontology files and auto-updatable docs from code, mark resolved
+
+The runtime tier also ships **enriched versions of `retro`, `wave-start`, `plan-phase`, and
+`close-stale-issues`** that supersede the templated team-workflow versions when the runtime is
+installed — e.g. `/retro` becomes a lightweight mid-wave pulse (the end-of-wave scoring moves
+to `/wave-retro`), and `/wave-start` gains STOP-guards before any branch work.
+
+## Pre-push hook
+
+The framework bootstrapper (`framework/install/bootstrap.py`, also run by
+`2real-team init --with-hooks`) installs a `pre-push` git hook into the target repo's
+effective hooks directory (it respects `core.hooksPath`). Three modes, driven by the unified
+install config key `pre_push.mode` or the `--pre-push {noop,enforce,none}` flag (precedence:
+flag > user YAML > shipped default `noop`):
+
+- **`noop`** (default) — an executable, clearly-commented script that always exits 0. It never
+  blocks a push; it just makes the enforcement seam visible and documents how to turn it on.
+- **`enforce`** — runs every command in `hooks.pre_push_commands` from
+  `.claude/framework.config.json` (in order, from the repo root) and blocks the push on the
+  first failure. The list is read at push time, so editing the config changes the checks
+  without reinstalling. Fail-open: a missing config or an empty list allows the push.
+- **`none`** — installs nothing (and never deletes an existing hook).
+
+To switch modes, re-run the bootstrapper with the new `--pre-push` value. An existing
+`pre-push` hook is never clobbered: a non-framework hook is preserved as `pre-push.bak`
+(`.bak.1`, `.bak.2`, … — never overwriting an earlier backup) with a warning. Targets without
+a `.git` directory are skipped with a notice.
+
+Git hooks live under `.git/` and are **not committed artifacts** — they do not travel with a
+clone, fork, or new worktree. The installed mode is recorded in the committed install
+snapshot (`.claude/install.config.json`, key `pre_push.mode`); each fresh clone lays the hook
+locally by re-running the installer (`python3 framework/install/bootstrap.py .` — or just
+`… . --pre-push noop` to lay only the hook mode recorded for this repo).
 
 ## How it works with Claude Code
 

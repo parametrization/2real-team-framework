@@ -37,7 +37,11 @@
     "admin_merge_exceptions": {
       "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
       "emergency": "[EMERGENCY]-prefixed restore work"
-    }
+    },
+    "tech_debt_intake_pct": 20,
+    "tech_debt_exit_ratio_pct": 10,
+    "retro_counter_drift_abs": 2,
+    "retro_counter_drift_pct": 5
   },
   "ci": {
     "merge_requires_green": true,
@@ -59,9 +63,15 @@
       "block_git_config",
       "no_worktree_self_delete",
       "warn_zsh_wordsplit",
+      "validate_labels",
       "validate_workflow_paths_coverage",
-      "validate_pr_ci_status"
+      "validate_pr_ci_status",
+      "block_squash_wave_merge"
     ],
-    "post_bash": ["warn_pipe_mask_rc"]
+    "post_bash": ["warn_pipe_mask_rc"],
+    "session_start": ["ontology_refresh", "session_start"],
+    "agent": [],
+    "stop": ["session_handoff"],
+    "pre_push_commands": ["ruff check .", "pytest -q"]
   }
 }

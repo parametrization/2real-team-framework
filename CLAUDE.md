@@ -20,7 +20,7 @@
 
 ### Key Rules
 
-- **Commit identity:** Each team member commits using per-commit `-c` flags with two `Co-Authored-By` trailers (team member + Claude) — **never** set global/repo git config. See `.claude/team/charter.md` § Commit Identity for details.
+- **Commit identity:** Each team member commits using per-commit `-c` flags with two `Co-Authored-By` trailers (team member + Claude) — **never** set global/repo git config. See `.claude/team/charter/commits.md` for details.
 - **Worktrees** are the preferred isolation method for all code-writing agents.
 - Manager spawns team members, creates stories/AC, and owns timelines.
 - Feedback flows up and down; severe feedback triggers fire-and-replace.

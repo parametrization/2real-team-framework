@@ -184,6 +184,10 @@ def test_no_team_flag_skips_roster(tmp_path: Path) -> None:
         capture_output=True, text=True,
     )
     assert r.returncode == 0
-    assert not (tmp_path / ".claude" / "team").exists()
+    # No roster artifacts — but the modular charter is part of the base install
+    # (laid even with --no-team, since the CLI's team layer links to it).
+    assert not (tmp_path / ".claude" / "team" / "roster").exists()
+    assert not (tmp_path / ".claude" / "team" / "roster.json").exists()
+    assert (tmp_path / ".claude" / "team" / "charter" / "charter.md").is_file()
     cfg = json.loads((tmp_path / ".claude" / "framework.config.json").read_text())
     assert cfg.get("identity", {}).get("enforce", False) is False

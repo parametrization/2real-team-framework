@@ -47,6 +47,8 @@ CONFIG_FILENAME = "framework.config.json"
 # framework/config/framework.config.schema.json.
 _DEFAULTS: dict[str, Any] = {
     "version": 1,
+    # model enum: single-repo | meta-and-children | child (child repos carry
+    # project.parent + project.flavor; the DEFAULT stays single-repo).
     "project": {"model": "single-repo"},
     "scm": {"provider": "github", "default_branch": "main", "allow_force": False},
     "branch": {"feature": "{initials}/{issue}-{slug}", "integration": "deployments/wave-{wave}"},
@@ -62,6 +64,13 @@ _DEFAULTS: dict[str, Any] = {
         "reviewers_required": 1,
         "merge_model": "direct-to-main",
         "admin_merge_exceptions": {},
+        # Lifecycle-skill knobs (#86): per-wave tech-debt intake (/plan-phase),
+        # phase-exit tech-debt gate (/phase-review), retro counter-drift
+        # tolerances (/wave-retro).
+        "tech_debt_intake_pct": 20,
+        "tech_debt_exit_ratio_pct": 10,
+        "retro_counter_drift_abs": 2,
+        "retro_counter_drift_pct": 5,
     },
     "ci": {
         "merge_requires_green": True,
@@ -90,7 +99,10 @@ _DEFAULTS: dict[str, Any] = {
         ],
         "post_bash": ["warn_pipe_mask_rc"],
         "post_file": ["ontology_tracker"],
-        "session_start": ["ontology_refresh"],
+        "session_start": ["ontology_refresh", "session_start"],
+        "agent": [],
+        "stop": ["session_handoff"],
+        "pre_push_commands": [],
     },
 }
 

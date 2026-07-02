@@ -1,6 +1,6 @@
 {
   "name": "2real-team-framework",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Drop-in AI agent team framework for Claude Code projects",
   "license": "Apache-2.0",
   "type": "module",
@@ -36,7 +36,8 @@
     "dist/",
     "templates/",
     "presets/",
-    "skills/"
+    "skills/",
+    "framework/"
   ],
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs');const c=fs.readFileSync('dist/index.js','utf-8');if(!c.startsWith('#!')){fs.writeFileSync('dist/index.js','#!/usr/bin/env node\\n'+c)}\"",

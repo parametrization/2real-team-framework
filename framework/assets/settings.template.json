@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Edit(.claude/**)",
+      "Read(.claude/**)",
+      "Write(.claude/**)",
+      "Bash(python3 .claude/hooks/*)",
+      "Bash(python3 .claude/lib/*)",
+      "Bash(mkdir -p .claude/*)",
+      "Bash(ls .claude/*)",
+      "Bash(cat .claude/*)",
+      "Bash(cp .claude/*)",
+      "Bash(mv .claude/*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -19,6 +33,27 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/dispatcher.py\"",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/dispatcher.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop_dispatcher.py\"",
+            "timeout": 60
           }
         ]
       }

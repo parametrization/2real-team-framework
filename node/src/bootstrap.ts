@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import Mustache from "mustache";
 
+import {
+  installFramework,
+  describeInstallResult,
+  type FrameworkInstallResult,
+} from "./framework-install.js";
+
 const _require = createRequire(import.meta.url);
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +44,14 @@ interface BootstrapOptions {
   interactive: boolean;
   aiPersonas?: boolean;
   seed?: number;
+  /** Also install the framework runtime (hooks/lib/skills/config). Default true. */
+  withHooks?: boolean;
+  /** SCM org/user forwarded to the framework config (scm.owner). */
+  owner?: string;
+  /** Default merge model: wave-branch | direct-to-main. */
+  mergeModel?: string;
+  /** Tri-state ontology flag; undefined defers to the install config. */
+  withOntology?: boolean;
 }
 
 interface PresetRole {
@@ -177,7 +191,8 @@ interface YamlConfig {
   members?: MemberOverride[];
 }
 
-export function loadYamlConfig(configPath: string): YamlConfig {
+/** Read a YAML file and require it to be a mapping. */
+export function readYamlMapping(configPath: string): Record<string, unknown> {
   const absPath = resolve(configPath);
   if (!existsSync(absPath)) {
     throw new Error(`Config file not found: ${configPath}`);
@@ -193,7 +208,60 @@ export function loadYamlConfig(configPath: string): YamlConfig {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`Config file must be a YAML mapping, got ${typeof raw}`);
   }
-  const cfg = raw as Record<string, unknown>;
+  return raw as Record<string, unknown>;
+}
+
+/**
+ * Top-level keys that only appear in the unified install-config schema
+ * (mirrors `UNIFIED_CONFIG_MARKERS` in the Python package's models.py).
+ */
+const UNIFIED_CONFIG_MARKERS = new Set([
+  "version",
+  "repo",
+  "scm",
+  "ci",
+  "ticketing",
+  "pre_push",
+  "ontology",
+  "children",
+]);
+
+function isMapping(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+/** True when the mapping uses the unified install-config schema. */
+export function isUnifiedConfig(raw: Record<string, unknown>): boolean {
+  for (const key of UNIFIED_CONFIG_MARKERS) {
+    if (key in raw) return true;
+  }
+  return isMapping(raw.team) || isMapping(raw.project);
+}
+
+/** The subset of the unified install config the team scaffolder consumes. */
+export interface UnifiedConfig {
+  teamEnabled: boolean;
+  preset?: string;
+  teamSize?: number;
+  projectName?: string;
+  owner?: string;
+}
+
+export function parseUnifiedConfig(raw: Record<string, unknown>): UnifiedConfig {
+  const team = isMapping(raw.team) ? raw.team : {};
+  const project = isMapping(raw.project) ? raw.project : {};
+  const scm = isMapping(raw.scm) ? raw.scm : {};
+  return {
+    teamEnabled: team.enabled !== false,
+    preset: typeof team.preset === "string" ? team.preset : undefined,
+    teamSize: typeof team.size === "number" ? team.size : undefined,
+    projectName: typeof project.name === "string" ? project.name : undefined,
+    owner: typeof scm.owner === "string" ? scm.owner : undefined,
+  };
+}
+
+export function loadYamlConfig(configPath: string): YamlConfig {
+  const cfg = readYamlMapping(configPath);
   if (!cfg.preset || typeof cfg.preset !== "string" || !cfg.preset.trim()) {
     throw new Error(`Invalid config file (${configPath}):\n  preset: Field required`);
   }
@@ -224,25 +292,60 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   let configSkills: string[] | undefined;
   let memberOverrides: MemberOverride[] | undefined;
   let emailPrefix = "";
+  let owner = opts.owner;
+  const withHooks = opts.withHooks !== false;
+  // Set only for the unified schema: forwarded to the framework bootstrapper
+  // as --install-config so it resolves install-time decisions (ontology,
+  // pre_push, children, …) from the same file this CLI read.
+  let installConfigPath: string | undefined;
+  let unifiedCfg: UnifiedConfig | undefined;
 
-  // Load YAML config if provided
+  // Load YAML config if provided — auto-detects the unified install-config
+  // schema (shared with framework/install/bootstrap.py) vs the legacy flat
+  // team config. Either way, config mode is fully non-interactive.
   if (opts.config) {
-    let yamlCfg: YamlConfig;
     try {
-      yamlCfg = loadYamlConfig(opts.config);
+      const raw = readYamlMapping(opts.config);
+      if (isUnifiedConfig(raw)) {
+        unifiedCfg = parseUnifiedConfig(raw);
+        installConfigPath = resolve(opts.config);
+        // Unified schema: CLI flags win over the YAML.
+        presetName = presetName ?? unifiedCfg.preset;
+        if (!opts.teamSize && unifiedCfg.teamSize) opts.teamSize = unifiedCfg.teamSize;
+        if (!opts.projectName && unifiedCfg.projectName) opts.projectName = unifiedCfg.projectName;
+        owner = owner ?? unifiedCfg.owner;
+      } else {
+        const yamlCfg = loadYamlConfig(opts.config);
+        presetName = yamlCfg.preset;
+        if (yamlCfg.project_name) opts.projectName = yamlCfg.project_name;
+        if (yamlCfg.team_size) opts.teamSize = yamlCfg.team_size;
+        if (yamlCfg.git_email_prefix) emailPrefix = yamlCfg.git_email_prefix;
+        if (yamlCfg.target && yamlCfg.target !== ".") target = resolve(yamlCfg.target);
+        if (yamlCfg.skills) configSkills = yamlCfg.skills;
+        if (yamlCfg.members) memberOverrides = yamlCfg.members;
+      }
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
       process.exit(1);
     }
-    presetName = yamlCfg.preset;
-    if (yamlCfg.project_name) opts.projectName = yamlCfg.project_name;
-    if (yamlCfg.team_size) opts.teamSize = yamlCfg.team_size;
-    if (yamlCfg.git_email_prefix) emailPrefix = yamlCfg.git_email_prefix;
-    if (yamlCfg.target && yamlCfg.target !== ".") target = resolve(yamlCfg.target);
-    if (yamlCfg.skills) configSkills = yamlCfg.skills;
-    if (yamlCfg.members) memberOverrides = yamlCfg.members;
-    // Config mode is fully non-interactive
     opts.interactive = false;
+  }
+
+  // Unified config said team.enabled: false — skip team scaffolding entirely.
+  if (unifiedCfg && !unifiedCfg.teamEnabled) {
+    console.log("team.enabled is false — skipping team scaffolding.");
+    if (withHooks) {
+      runFrameworkInstall(target, {
+        owner,
+        mergeModel: opts.mergeModel,
+        installConfig: installConfigPath,
+        withOntology: opts.withOntology,
+      });
+      console.log("\nFramework runtime installed (no team layer).");
+    } else {
+      console.log("Nothing to do: team disabled and --no-hooks given.");
+    }
+    return;
   }
 
   if (!presetName) {
@@ -418,7 +521,72 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
   for (const f of created) {
     console.log(`  ${f}`);
   }
+
+  // Install the config-driven framework runtime (hooks/lib/skills/config +
+  // dispatcher wiring) on top of the mustache team scaffolding.
+  if (withHooks) {
+    const result = runFrameworkInstall(target, {
+      owner: owner ?? (emailPrefix || undefined),
+      mergeModel: opts.mergeModel,
+      installConfig: installConfigPath,
+      withOntology: opts.withOntology,
+    });
+    // The bridge passes --no-team (this CLI scaffolded the roster itself),
+    // so correct the recorded install snapshot to reflect the real outcome.
+    if (result.kind === "ran" && result.status === 0) {
+      syncInstallSnapshot(target, presetName, members.length);
+    }
+  }
+
   console.log(`\nTeam framework bootstrapped for '${projectName}'!`);
+}
+
+/** Invoke the framework bootstrapper bridge and report the outcome. */
+function runFrameworkInstall(
+  target: string,
+  opts: {
+    owner?: string;
+    mergeModel?: string;
+    installConfig?: string;
+    withOntology?: boolean;
+  },
+): FrameworkInstallResult {
+  const result = installFramework(target, {
+    owner: opts.owner,
+    mergeModel: opts.mergeModel,
+    installConfig: opts.installConfig,
+    withOntology: opts.withOntology,
+  });
+  const message = describeInstallResult(result);
+  if (result.kind === "ran" && result.status === 0) {
+    console.log(`\n${message}`);
+  } else {
+    console.warn(`\n${message}`);
+  }
+  return result;
+}
+
+/** Record the team the CLI actually scaffolded in .claude/install.config.json. */
+function syncInstallSnapshot(
+  target: string,
+  preset: string | undefined,
+  teamSize: number,
+): void {
+  const snapshotPath = join(target, ".claude", "install.config.json");
+  if (!existsSync(snapshotPath)) return;
+  let snapshot: Record<string, unknown>;
+  try {
+    snapshot = JSON.parse(readFileSync(snapshotPath, "utf-8"));
+  } catch {
+    return;
+  }
+  if (!snapshot || typeof snapshot !== "object") return;
+  const team = isMapping(snapshot.team) ? snapshot.team : {};
+  team.enabled = true;
+  team.preset = preset ?? null;
+  team.size = teamSize;
+  snapshot.team = team;
+  writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2) + "\n");
 }
 
 // ---------------------------------------------------------------------------

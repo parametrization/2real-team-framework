@@ -1,0 +1,96 @@
+# 2real framework — install-time configuration (the unified install config).
+#
+# This file is the SHIPPED DEFAULT layer. It covers every interactive decision
+# point of both installers (framework/install/bootstrap.py and `2real-team init`)
+# so that a `--non-interactive` install needs zero prompts.
+#
+# Precedence (highest wins):   CLI flags  >  user YAML (--install-config)  >  this file
+#
+# Copy it, edit, and pass via:
+#   python3 framework/install/bootstrap.py <target> --install-config my.install.yaml --non-interactive
+#   2real-team init --config my.install.yaml --non-interactive
+#
+# NOTE: this is the INSTALL-time config. The RUNTIME config the hooks read is
+# still `.claude/framework.config.json` — install keys that overlap (scm.owner,
+# project name/model) flow into the generated runtime config.
+
+version: 1
+
+repo:
+  # What the installer should expect at the target:
+  #   fresh    — a brand-new project (no commits, no real files yet)
+  #   existing — an already-established repository (has commits and/or files)
+  #   any      — no expectation; install either way
+  # ENFORCED: the installer detects the actual state and reports it. A
+  # non-interactive install REFUSES on a mismatch (`any` always proceeds);
+  # an interactive install asks for explicit confirmation before touching an
+  # existing repo. Idempotent re-runs (framework already installed) skip the gate.
+  expect: fresh
+
+project:
+  # Display name. null -> defaults to the target directory's name.
+  name: null
+  # Project shape:
+  #   standalone — a single self-contained repository
+  #   meta       — a parent meta-repo orchestrating N child repos (see `children:`)
+  #   child      — one child repo inside a meta-repo project (see `parent:`)
+  model: standalone
+  # Child-model only: THIS repo's flavor (which hook events its settings.json
+  # wires to the parent's dispatchers):
+  #   product — the full harness (session/ontology + pre/post Bash + file edits)
+  #   infra   — commit-safety + CI subset (pre/post Bash dispatchers only)
+  flavor: product
+
+scm:
+  # Source-control host. Only `github` is implemented today.
+  provider: github
+  # GitHub org or user that owns the repo(s). null -> prompted in interactive
+  # mode, warned about (and left unset) in non-interactive mode.
+  owner: null
+
+ci:
+  # CI/CD system. Only `github-actions` is implemented today.
+  provider: github-actions
+
+ticketing:
+  # Story/task/bug tracker. Only `github-issues` is implemented today.
+  provider: github-issues
+
+pre_push:
+  # Git pre-push hook installation mode:
+  #   noop    — install the pre-push hook as a no-op placeholder (recommended)
+  #   enforce — install the pre-push hook with checks enabled
+  #   none    — do not install a pre-push hook
+  mode: noop
+
+ontology:
+  # Lay down the two-layer ontology seed (semantic overlay template) and
+  # activate the ontology_refresh / ontology_tracker hooks.
+  enabled: true
+
+team:
+  # Generate the simulated-team layer (charter/roster/identity gate).
+  enabled: true
+  # Team preset (used by `2real-team init`): fullstack-monorepo | data-pipeline
+  # | library. null -> prompted in interactive mode, required for a
+  # non-interactive `2real-team init` (bootstrap.py introspects instead).
+  preset: null
+  # Target headcount. null -> the preset default / repo introspection decides.
+  size: null
+
+# Parent meta-repo (child model only). REQUIRED when project.model is `child`:
+# the relative path from THIS repo to its parent meta-repo (e.g. `..`). The
+# parent must already have the framework installed (its .claude/hooks are what
+# this child's settings.json invokes).
+parent:
+  path: null
+
+# Child repositories (meta model only). Each entry:
+#   - path: relative path (from the meta root) of the child
+#     flavor: product | infra        (defaults to product)
+# A non-interactive meta install uses this list VERBATIM (no detection
+# surprises); an interactive install multi-selects from the detected
+# immediate-subdirectory git repos. Each selected child gets a parent-relative
+# .claude/settings.json, a child framework.config.json, a roster subset, and a
+# child CLAUDE.md.
+children: []

@@ -71,8 +71,25 @@ def test_install_is_complete_and_idempotent(tmp_path: Path) -> None:
     # SessionStart auto-regeneration hook is wired (matcher-less block) + installed.
     assert (claude / "hooks" / "start_dispatcher.py").is_file()
     assert (claude / "hooks" / "ontology_refresh.py").is_file()
+    assert (claude / "hooks" / "session_start.py").is_file()
     session_cmd = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert "start_dispatcher.py" in session_cmd
+
+    # Agent dispatch (PreToolUse matcher "Agent") + Stop dispatch are wired + installed.
+    pre_matchers = {b.get("matcher") for b in settings["hooks"]["PreToolUse"]}
+    assert pre_matchers == {"Bash", "Agent"}
+    assert (claude / "hooks" / "stop_dispatcher.py").is_file()
+    assert (claude / "hooks" / "session_handoff.py").is_file()
+    stop_cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert "stop_dispatcher.py" in stop_cmd
+
+    # The written runtime config carries the full default module lists (issue #84:
+    # a module missing from the WRITTEN pre_bash never runs in a deployed repo).
+    cfg = json.loads((claude / "framework.config.json").read_text())
+    assert "validate_labels" in cfg["hooks"]["pre_bash"]
+    assert "block_squash_wave_merge" in cfg["hooks"]["pre_bash"]
+    assert cfg["hooks"]["agent"] == []
+    assert cfg["hooks"]["stop"] == ["session_handoff"]
 
     # Re-run: nothing copied, config not clobbered.
     r2 = _install(tmp_path, "--shell", "zsh")
@@ -90,6 +107,57 @@ def test_with_ontology_lays_overlay_template(tmp_path: Path) -> None:
     r2 = _install(tmp_path, "--with-ontology")
     assert r2.returncode == 0
     assert "ontology overlay:" in r2.stdout
+
+
+def test_with_ontology_generates_structural_index(tmp_path: Path) -> None:
+    """A fresh install ends with the GENERATED structural layer on disk immediately."""
+    (tmp_path / "app.py").write_text("def hello():\n    return 'world'\n")
+    r = _install(tmp_path, "--with-ontology")
+    assert r.returncode == 0, r.stderr
+    assert "structural index:  generated" in r.stdout
+
+    structural = tmp_path / "ontology" / "structural"
+    assert (structural / "code-graph.json").is_file()
+    assert (structural / "llms.txt").is_file()
+    graph = json.loads((structural / "code-graph.json").read_text())
+    paths = {n.get("path") for n in graph["nodes"]}
+    assert "app.py" in paths  # generation ran against the TARGET repo
+
+    # Idempotent re-run: index is fresh, regeneration safely skipped, files intact.
+    r2 = _install(tmp_path, "--with-ontology")
+    assert r2.returncode == 0
+    assert "structural index:  fresh" in r2.stdout
+    assert (structural / "code-graph.json").is_file()
+
+
+def test_with_ontology_empty_target_still_valid(tmp_path: Path) -> None:
+    """A target with no parseable sources still gets a valid (minimal) structural layer."""
+    r = _install(tmp_path, "--with-ontology")
+    assert r.returncode == 0, r.stderr
+    graph = json.loads((tmp_path / "ontology" / "structural" / "code-graph.json").read_text())
+    assert "nodes" in graph and "edges" in graph
+    assert (tmp_path / "ontology" / "structural" / "llms.txt").is_file()
+
+
+def test_with_ontology_generation_failure_is_fail_open(tmp_path: Path) -> None:
+    """Generation failure warns and continues — the install itself must not abort."""
+    # A regular FILE where the structural dir should go makes generation blow up.
+    (tmp_path / "ontology").mkdir()
+    (tmp_path / "ontology" / "structural").write_text("not a directory")
+    r = _install(tmp_path, "--with-ontology")
+    assert r.returncode == 0, r.stderr
+    assert "structural index:  SKIPPED" in r.stdout
+    assert "install continues" in r.stdout
+    # The overlay + runtime were still laid down.
+    assert (tmp_path / "ontology" / "domain.yaml").is_file()
+    assert (tmp_path / ".claude" / "hooks" / "dispatcher.py").is_file()
+
+
+def test_with_ontology_dry_run_writes_nothing(tmp_path: Path) -> None:
+    r = _install(tmp_path, "--with-ontology", "--dry-run")
+    assert r.returncode == 0, r.stderr
+    assert "structural index:  would generate" in r.stdout
+    assert not (tmp_path / "ontology").exists()
 
 
 def test_no_verify_blocks(tmp_path: Path) -> None:

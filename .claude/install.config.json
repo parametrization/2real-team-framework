@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "repo": {
+    "expect": "existing"
+  },
+  "project": {
+    "name": "2real-team-framework",
+    "model": "standalone",
+    "flavor": "product"
+  },
+  "scm": {
+    "provider": "github",
+    "owner": "parametrization"
+  },
+  "ci": {
+    "provider": "github-actions"
+  },
+  "ticketing": {
+    "provider": "github-issues"
+  },
+  "pre_push": {
+    "mode": "noop"
+  },
+  "ontology": {
+    "enabled": true
+  },
+  "team": {
+    "enabled": true,
+    "preset": null,
+    "size": null
+  },
+  "parent": {
+    "path": null
+  },
+  "children": []
+}

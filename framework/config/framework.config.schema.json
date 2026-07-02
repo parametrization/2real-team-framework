@@ -20,13 +20,22 @@
         "name": { "type": "string", "description": "Display name." },
         "model": {
           "type": "string",
-          "enum": ["single-repo", "meta-and-children"],
+          "enum": ["single-repo", "meta-and-children", "child"],
           "default": "single-repo",
-          "description": "single-repo: one repository. meta-and-children: a parent meta-repo that .gitignores N child repos (the cross-repo orchestration model)."
+          "description": "single-repo: one repository. meta-and-children: a parent meta-repo that .gitignores N child repos (the cross-repo orchestration model). child: one child repo inside a meta-and-children project — it carries NO hook code; its settings.json invokes the parent's installed hooks (see project.parent)."
         },
         "meta_repo": {
           "type": "string",
           "description": "Name of the meta-repo (meta-and-children model only). The repo that holds the shared .claude/ config."
+        },
+        "parent": {
+          "type": "string",
+          "description": "Child model only: PORTABLE relative path from this repo's root to its parent meta-repo (e.g. `..` or `../..`). Never an absolute path — the whole meta tree stays cloneable anywhere."
+        },
+        "flavor": {
+          "type": "string",
+          "enum": ["product", "infra"],
+          "description": "Child model only: which hook events this child wires to the parent's dispatchers. product = the full harness; infra = the commit-safety + CI subset (pre/post Bash only; no ontology/session extras)."
         },
         "repos": {
           "type": "array",
@@ -97,6 +106,32 @@
           "additionalProperties": { "type": "string" },
           "default": {},
           "description": "Map of <class> -> <human rationale> naming the only admin-merge bypass classes the CI gate accepts via ADMIN_MERGE_EXCEPTION=<class>:<rationale>. Empty = no admin bypass allowed."
+        },
+        "tech_debt_intake_pct": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Per-wave tech-debt intake: after a wave's feature/bug/security content is set, /plan-phase allocates tech-debt-only issues equal to this percentage of that content (rounded up). A cap on every wave except the last wave of a phase, where it becomes a floor."
+        },
+        "tech_debt_exit_ratio_pct": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Phase exit gate: maximum percentage of tech-debt issues (new-filed during the phase, and cumulative-open) tolerated at phase exit. /phase-review flags the gate as NOT MET at or above this."
+        },
+        "retro_counter_drift_abs": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "description": "/wave-retro counter-drift tolerance (absolute). A wrapup-recorded counter differing from the retro recomputation within this absolute diff OR within retro_counter_drift_pct percent is corrected and logged; a drift exceeding both is a retro-blocker."
+        },
+        "retro_counter_drift_pct": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 0,
+          "description": "/wave-retro counter-drift tolerance (percent). See retro_counter_drift_abs."
         }
       }
     },
@@ -155,8 +190,26 @@
         "session_start": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["ontology_refresh"],
-          "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present)."
+          "default": ["ontology_refresh", "session_start"],
+          "description": "Ordered SessionStart checks (run via start_dispatcher.py). Advisory only — never block; INERT unless the subsystem they target exists (e.g. ontology_refresh acts only when an ontology dir is present; session_start only orients when a framework config is found)."
+        },
+        "agent": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Ordered PreToolUse checks for the Agent tool (subagent spawns; settings matcher `Agent`, legacy name `Task`). Same semantics as pre_bash: first block wins. Empty by default — the dispatch seam ships wired so enabling a check is a config edit, not settings surgery."
+        },
+        "stop": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["session_handoff"],
+          "description": "Ordered Stop-event checks (run via stop_dispatcher.py). Advisory only — NEVER block (a block decision is downgraded to a warning). Each must be cheap/no-op when there is nothing to do; session_handoff throttles itself and never overwrites a manual /handoff note."
+        },
+        "pre_push_commands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Shell commands the ENFORCE-mode pre-push git hook runs (in order, from the repo root) before every push; the first nonzero exit blocks the push. Read at push time, so editing this list needs no reinstall. Empty = the enforce hook allows the push (fail-open). Ignored by the default noop hook. Installed via bootstrap.py --pre-push {noop,enforce,none}."
         }
       }
     }

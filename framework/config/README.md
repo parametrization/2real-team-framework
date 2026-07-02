@@ -22,7 +22,7 @@ capability but do not error.
 | Key | Why you'd change it |
 |-----|---------------------|
 | `scm.owner` | Your GitHub org/user. Needed by every `gh`-calling hook. |
-| `project.model` | `single-repo` vs `meta-and-children` (a meta-repo + child repos). |
+| `project.model` | `single-repo` vs `meta-and-children` (a meta-repo + child repos) vs `child` (one child repo — carries no hook code; `project.parent` is the portable relative path to its meta-repo, `project.flavor` is `product`/`infra`). |
 | `shell` | Set `zsh` to activate the zsh bash-ism advisory. |
 | `policy.reviewers_required` | The N-reviewer-before-merge threshold. |
 | `policy.merge_model` | `wave-branch` vs `direct-to-main`. |
@@ -32,6 +32,9 @@ capability but do not error.
 | `ci.neutral_pending_check_prefixes` | Services whose `NEUTRAL` means "review pending" (e.g. `["chromatic"]`). |
 | `ci.tooling` | The full CI check-set the local⇄CI parity gate expects mirrored. |
 | `hooks.pre_bash` / `hooks.post_bash` | Which checks run, in what order (the dispatcher seam). |
+| `hooks.agent` | PreToolUse checks for the Agent tool (subagent spawns); same first-block-wins semantics. Empty by default — the seam ships wired. |
+| `hooks.stop` | Stop-event checks (advisory, never block). Ships with `session_handoff` (auto handoff note; defers to a manual `/handoff`). |
+| `hooks.pre_push_commands` | Checks the enforce-mode pre-push git hook runs (read at push time; empty = pass). |
 
 ## How reads work
 
