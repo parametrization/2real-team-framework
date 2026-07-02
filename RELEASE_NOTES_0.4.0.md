@@ -45,13 +45,15 @@ asks (interactive) on a mismatch; idempotent re-runs skip the gate.
 
 - **Ontology at install** (#66) — `ontology.enabled: true` (default) seeds the
   two-layer ontology (semantic overlay + generated structural index) and
-  activates the ontology hooks during install, including meta/child trees.
+  activates the ontology hooks at install; for meta trees the ontology lives
+  at the meta root with cross-repo aggregation over the children.
 - **Pre-push hook installer** (#67) — `pre_push.mode: noop | enforce | none`.
   `enforce` runs `hooks.pre_push_commands` from `framework.config.json` at
   push time; existing non-framework hooks are preserved as `pre-push.bak`.
 - **Shipped permissions allowlist** (#68) — `settings.template.json` now
-  carries a genericized permissions allowlist so a fresh install prompts far
-  less for routine git/gh/test commands.
+  carries a genericized permissions allowlist so a fresh install doesn't
+  prompt for the framework's own runtime — `.claude/` file edits and
+  hook/lib invocations.
 - **Modular charter template** (#69) — the installed charter is a thin index
   over per-topic modules (`.claude/team/charter/*.md`), so teams evolve
   individual sections without merge pain.

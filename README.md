@@ -327,7 +327,7 @@ cleanly when a subsystem isn't present:
 The runtime tier also ships **enriched versions of `retro`, `wave-start`, `plan-phase`, and
 `close-stale-issues`** that supersede the templated team-workflow versions when the runtime is
 installed — e.g. `/retro` becomes a lightweight mid-wave pulse (the end-of-wave scoring moves
-to `/wave-retro`), and `/wave-start` gains STOP-guards at its approval gates.
+to `/wave-retro`), and `/wave-start` gains STOP-guards before any branch work.
 
 ## Pre-push hook
 
