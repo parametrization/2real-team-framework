@@ -760,6 +760,7 @@ def install_children(
     members_by_child: dict[str, list],
     *,
     install_permissions: bool,
+    force: bool,
     dry_run: bool,
 ) -> list[tuple[str, str, dict[str, str]]]:
     """Lay the child layout (parent-relative settings, child runtime config,
@@ -777,7 +778,7 @@ def install_children(
             install_permissions=install_permissions, template=child_tmpl,
         )
         ccfg = child_install.child_runtime_config(meta_cfg, child_root.name, rel, c["flavor"])
-        cfg_status = write_config(child_root / ".claude", ccfg, force=False, dry_run=dry_run)
+        cfg_status = write_config(child_root / ".claude", ccfg, force=force, dry_run=dry_run)
         members = [
             (p.role, p.level, p.name) for p in members_by_child.get(child_root.name, [])
         ]
@@ -1107,7 +1108,8 @@ def main() -> int:
             )
         child_reports = install_children(
             target, cfg, selected_children, members_by_child,
-            install_permissions=not args.no_permissions, dry_run=args.dry_run,
+            install_permissions=not args.no_permissions, force=args.force,
+            dry_run=args.dry_run,
         )
 
     print("\n-- plan --" if args.dry_run else "\n-- result --")
