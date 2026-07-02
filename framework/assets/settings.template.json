@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Edit(.claude/**)",
+      "Read(.claude/**)",
+      "Write(.claude/**)",
+      "Bash(python3 .claude/hooks/*)",
+      "Bash(python3 .claude/lib/*)",
+      "Bash(mkdir -p .claude/*)",
+      "Bash(ls .claude/*)",
+      "Bash(cat .claude/*)",
+      "Bash(cp .claude/*)",
+      "Bash(mv .claude/*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
