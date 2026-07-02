@@ -25,11 +25,11 @@ Schema (v1) — every key, with the shipped default:
     team.size:           int | null                      (null)
     children:            list of {path: str, flavor: product|infra}   ([])
 
-Keys whose behaviour lands in later issues (``repo.expect`` enforcement,
-``project.model`` meta/child modes, ``children``, ``pre_push``) are parsed,
-validated, and carried — the resolved config is written to
-``.claude/install.config.json`` so downstream consumers read one canonical
-record of the install-time decisions.
+``pre_push.mode`` drives the bootstrapper's pre-push hook installer. Keys
+whose behaviour lands in later issues (``repo.expect`` enforcement,
+``project.model`` meta/child modes, ``children``) are parsed, validated, and
+carried — the resolved config is written to ``.claude/install.config.json`` so
+downstream consumers read one canonical record of the install-time decisions.
 
 Stdlib only (uses the sibling ``miniyaml`` parser).
 """
