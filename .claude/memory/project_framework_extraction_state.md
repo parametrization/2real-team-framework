@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.3.2, what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.4.0, what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,9 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-06-29): no active work in flight.** The foundation (PR #41) shipped
-long ago; the project is **released at v0.3.2** on both registries. Both Python and Node
+**Current baseline (2026-07-02): no active work in flight.** The foundation (PR #41) shipped
+long ago; the project is **released at v0.4.0** on both registries (Phase 3 installer
+overhaul — see below). Both Python and Node
 packages publish via **OIDC trusted publishing** — no long-lived tokens (PR #57 switched the
 workflows; trusted publishers are configured on PyPI and npmjs.com for
 `parametrization/2real-team-framework` + the respective `publish-*.yml` workflow). v0.3.0 had
@@ -23,11 +24,18 @@ runtime) so the PyPI/npm long-description metadata — baked per release — cov
 skills installed by `--with-hooks`. Repo holds **zero** Actions secrets. Verify live state with
 `gh release list` / `gh pr list` before assuming.
 
-**`main` is ahead of the released `v0.3.2` tag (unreleased):** the bootstrap now writes
-`CLAUDE.md` to the **project root** (not `.claude/CLAUDE.md`), backing up any existing root
-`CLAUDE.md` to `CLAUDE.md.bak` (non-clobbering) and warning the user to reconcile — issue #60 /
-PR #61, in both Python and Node bootstraps. This repo dogfoods it: its own `CLAUDE.md` now lives
-at the root (PR #63). User chose "let it ride" — registries stay at 0.3.2 until the next release.
+**v0.4.0 (2026-07-02, Phase 3 = PRs #64–#97, released from main @ `6605da8`):** the installer
+overhaul. Unified `install.config.yaml` (v1 schema, stdlib `miniyaml`, precedence flags > user
+YAML > shipped defaults at `framework/config/install.config.default.yaml`, resolved snapshot
+written to `.claude/install.config.json`) + `--non-interactive`; meta/child install modes
+(children get parent-relative hook paths, product vs infra flavor; one ontology at the meta
+root with cross-repo aggregation — children get none); ontology generated at install; pre-push
+installer (`noop` default); `.claude/`-scoped permissions allowlist merged into settings;
+7-file modular charter template with `{{key}}` context substitution; Node CLI bridges to the
+bundled Python bootstrap (prepack copies `framework/` into the npm package); Agent/Stop events
+route through the dispatchers; skills 5→13. CI runs on PRs to `deployments/**` too. Also ships
+the previously unreleased CLAUDE.md-at-root behavior (#60/#61). Release tag convention: `v0.x.y`
+— both publish workflows fire on ANY published release, so exactly one release per version.
 
 **Built + tested end-to-end** (framework tests 39 passing, python tests 103 passing):
 - The config keystone (`framework/config/framework.config.schema.json`) + loader/logger/parsers.
@@ -56,18 +64,19 @@ at the root (PR #63). User chose "let it ride" — registries stay at 0.3.2 unti
 **Deferred — the pickup queue** (also in `framework/README.md` § "Next"). Owner directive
 2026-06-27: port the FULL orchestration suite generically — nothing is fundamentally
 project-coupled, it's config-decouplable:
-1. **Full wave/phase lifecycle skill chain** (genericise on the `lifecycle.py` engine):
-   `phase-review` → `wave-scope` → `wave-kickoff` → `wave-wrapup` → `wave-retro`, plus
-   `board-audit`. The valuable end-to-end process: theme → scope → kickoff → implement →
-   wrapup → retro. Coupling to decouple via config: GitHub Projects v2 field-sync (`board.*`),
-   the state-file schema (already generic in `lifecycle.py`), repo-name lists (`project.model`
-   + child discovery), reviewer counts (`policy.reviewers_required`).
+1. ~~Full wave/phase lifecycle skill chain~~ — **largely shipped in v0.4.0** (Phase 3 Wave 2
+   ported/enriched: phase-review, wave-audit, wave-retro, team-reset, plan-phase, retro,
+   wave-start, close-stale-issues → 13 skills total). Remaining coupling to revisit: GitHub
+   Projects v2 field-sync (`board.*`), reviewer counts (`policy.reviewers_required`).
 2. **Review-gate tranche**: port `validate_pr_review` (~1189-line N-reviewer/TechDebt gate) +
    the `pr_review_state` oracle that reuses it + `validate_review_comment_format`.
+   (Explicitly deferred again by user during Phase 3 planning.)
 3. `validate_branch_freshness`; mid-wave reachability `gh` wrapper around
    `lifecycle.classify_reachability`.
-4. **Node CLI runtime install** — node `init` subprocesses `python3` the bundled bootstrap.
+4. ~~Node CLI runtime install~~ — **shipped in v0.4.0** (#70): node CLI bundles `framework/`
+   and subprocesses the Python bootstrap (`node/src/framework-install.ts`).
 5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
+6. Open tech-debt issues from Phase 3: #74, #75, #77, #82, #90, #94.
 
 **Architecture overview:** [[reference_config_driven_architecture]].
 **Commit/PR mechanics for this repo:** [[feedback_framework_commit_pr_mechanics]].
