@@ -206,12 +206,15 @@ class TestNonInteractiveInstall:
     def test_children_carried_into_snapshot(self, tmp_path: Path) -> None:
         user = tmp_path / "install.yaml"
         user.write_text(
+            "repo:\n  expect: any\n"
             "project:\n  model: meta\nchildren:\n"
             "  - path: services/api\n  - path: infra/tf\n    flavor: infra\n",
             encoding="utf-8",
         )
         target = tmp_path / "repo"
-        target.mkdir()
+        # Meta children must exist — the meta install lays a child layout into them.
+        (target / "services" / "api" / ".git").mkdir(parents=True)
+        (target / "infra" / "tf" / ".git").mkdir(parents=True)
         r = _run(str(target), "--install-config", str(user), "--non-interactive", "--no-team")
         assert r.returncode == 0, r.stderr or r.stdout
         snapshot = json.loads((target / ".claude" / "install.config.json").read_text())
@@ -246,6 +249,8 @@ class TestPrecedence:
         user.write_text("ontology:\n  enabled: false\nrepo:\n  expect: existing\n", encoding="utf-8")
         target = tmp_path / "repo"
         target.mkdir()
+        # repo.expect=existing is now ENFORCED — make the target genuinely existing.
+        (target / "src.py").write_text("x = 1\n", encoding="utf-8")
         r = _run(str(target), "--install-config", str(user), "--non-interactive", "--no-team")
         assert r.returncode == 0, r.stderr or r.stdout
         assert not (target / "ontology").exists()  # default true overridden

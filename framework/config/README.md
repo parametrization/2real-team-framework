@@ -22,7 +22,7 @@ capability but do not error.
 | Key | Why you'd change it |
 |-----|---------------------|
 | `scm.owner` | Your GitHub org/user. Needed by every `gh`-calling hook. |
-| `project.model` | `single-repo` vs `meta-and-children` (a meta-repo + child repos). |
+| `project.model` | `single-repo` vs `meta-and-children` (a meta-repo + child repos) vs `child` (one child repo — carries no hook code; `project.parent` is the portable relative path to its meta-repo, `project.flavor` is `product`/`infra`). |
 | `shell` | Set `zsh` to activate the zsh bash-ism advisory. |
 | `policy.reviewers_required` | The N-reviewer-before-merge threshold. |
 | `policy.merge_model` | `wave-branch` vs `direct-to-main`. |

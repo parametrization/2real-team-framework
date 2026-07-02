@@ -16,6 +16,14 @@ guarantees zero prompts on every path. The resolved install config is recorded
 at ``<target>/.claude/install.config.json``; the RUNTIME config the hooks read
 remains ``<target>/.claude/framework.config.json``.
 
+Project models: ``standalone`` (default) installs everything here; ``meta``
+additionally lays a hook-less child layout (parent-relative settings, child
+config/roster/CLAUDE.md) into each selected child repo; ``child`` installs ONLY
+that child layout, pointing at an already-bootstrapped parent (``parent.path``).
+A fresh-vs-existing gate reports the target's state and enforces ``repo.expect``
+(non-interactive mismatches refuse; interactive installs confirm before touching
+an existing repo; idempotent re-runs skip the gate).
+
 Usage
 =====
 
@@ -42,7 +50,8 @@ Flags
   --config PATH          JSON RUNTIME-config seed (framework.config.json shape).
   --owner NAME           scm.owner (GitHub org/user). Overlays the configs.
   --project-name NAME    project.name.
-  --model {single-repo,meta-and-children}
+  --model {single-repo,meta-and-children,child}
+  --expect {fresh,existing,any}  repo.expect override (fresh-vs-existing gate).
   --shell {bash,zsh}
   --reviewers N          policy.reviewers_required.
   --merge-model {wave-branch,direct-to-main}
@@ -60,10 +69,12 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import child_install  # noqa: E402  (sibling module in install/)
 import install_config  # noqa: E402  (sibling module in install/)
 import roster_gen  # noqa: E402  (sibling module in install/)
 
@@ -138,6 +149,7 @@ def resolve_install_config(args: argparse.Namespace) -> tuple[dict, set[str]]:
         "scm.owner": args.owner,
         "project.name": args.project_name,
         "team.size": args.team_size,
+        "repo.expect": args.expect,
     }
     if args.model:  # runtime enum -> install enum
         flag_map["project.model"] = install_config.INSTALL_MODEL_MAP[args.model]
@@ -358,7 +370,13 @@ def _merge_permissions(template: dict, existing: dict) -> bool:
     return changed
 
 
-def merge_settings(target_claude: Path, *, dry_run: bool, install_permissions: bool = True) -> str:
+def merge_settings(
+    target_claude: Path,
+    *,
+    dry_run: bool,
+    install_permissions: bool = True,
+    template: dict | None = None,
+) -> str:
     """Idempotently merge the template hook wiring into <target>/.claude/settings.json.
 
     Generic over events (PreToolUse / PostToolUse / SessionStart / …): blocks match by
@@ -368,8 +386,13 @@ def merge_settings(target_claude: Path, *, dry_run: bool, install_permissions: b
     Also merges the template's curated ``permissions.allow`` allowlist (union, no duplicates,
     user-added rules preserved) unless ``install_permissions`` is False, in which case the
     template's permissions block is not installed and any existing one is left untouched.
+
+    ``template`` overrides the shipped ``settings.template.json`` — used by the child-repo
+    install, whose template is the shipped one rewritten to parent-relative commands (and
+    flavor-filtered). The merge/idempotency semantics are identical.
     """
-    template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
+    if template is None:
+        template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
     dest = target_claude / "settings.json"
     existing: dict = {}
     if dest.exists():
@@ -569,6 +592,311 @@ def generate_structural(
     return msg
 
 
+# ------------------------------------------------------ fresh-vs-existing gate
+
+#: Framework-owned entries that never make a target count as "existing" — the
+#: CLI's team scaffolding and our own artifacts must not trip the gate.
+_FRAMEWORK_OWNED = {".git", ".claude", "ontology"}
+
+
+def detect_repo_state(target: Path) -> dict:
+    """Detect the target's fresh-vs-existing state. Fail-open (never raises).
+
+    Signals reported: is it a git repo, does it have commits, does it contain
+    non-framework files. ``classification`` is ``existing`` when there are
+    commits OR foreign files, else ``fresh``. ``installed`` means the framework
+    itself is already there (idempotent re-runs skip the gate entirely).
+    """
+    has_git = (target / ".git").exists()
+    has_commits = False
+    if has_git:
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(target), "rev-parse", "--verify", "-q", "HEAD"],
+                capture_output=True, timeout=10,
+            )
+            has_commits = r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            pass  # fail-open: git unavailable -> judge by files alone
+    nonempty = False
+    if target.is_dir():
+        for entry in target.iterdir():
+            if entry.name in _FRAMEWORK_OWNED or entry.name.startswith("CLAUDE.md"):
+                continue
+            nonempty = True
+            break
+    return {
+        "has_git": has_git,
+        "has_commits": has_commits,
+        "nonempty": nonempty,
+        "installed": (target / ".claude" / "framework.config.json").is_file(),
+        "classification": "existing" if (has_commits or nonempty) else "fresh",
+    }
+
+
+def repo_expectation_gate(
+    state: dict,
+    expect: str,
+    *,
+    non_interactive: bool,
+    interactive_tty: bool,
+    dry_run: bool = False,
+    ask=input,
+) -> tuple[bool, list[str]]:
+    """Decide whether the install may proceed given detection vs ``repo.expect``.
+
+    Returns ``(proceed, notes)``. Rules:
+
+    * already installed        -> proceed (idempotent re-run; gate skipped)
+    * ``expect == any`` /match -> proceed
+    * mismatch, dry-run        -> proceed (report what a real run would do)
+    * mismatch, non-interactive-> REFUSE with a clear message (deliberate: automation
+      against an established repo must say so via ``repo.expect: existing|any``)
+    * existing repo, interactive TTY -> explicit confirmation prompt ([y/N])
+    * otherwise (plain mode / no TTY) -> note and proceed (back-compat)
+    """
+    notes: list[str] = []
+    if state["installed"]:
+        notes.append("framework already installed here — idempotent re-run; expectation gate skipped.")
+        return True, notes
+    actual = state["classification"]
+    if expect == "any" or actual == expect:
+        if actual == "existing":
+            notes.append(f"installing into an EXISTING repo (repo.expect={expect}).")
+        return True, notes
+    detail = (
+        f"repo.expect={expect} but the target looks {actual.upper()} "
+        f"(git repo: {'yes' if state['has_git'] else 'no'}, "
+        f"commits: {'yes' if state['has_commits'] else 'no'}, "
+        f"non-framework files: {'yes' if state['nonempty'] else 'no'})."
+    )
+    if dry_run:
+        notes.append(detail + " Dry-run continues; a non-interactive install would refuse.")
+        return True, notes
+    if non_interactive:
+        notes.append(
+            detail + " Refusing: set repo.expect to match the target (or `any`) in the "
+            "install config / --expect flag, or run with --interactive to confirm."
+        )
+        return False, notes
+    if interactive_tty and actual == "existing":
+        ans = ask(f"{detail}\nInstall into this EXISTING repo anyway? [y/N]: ").strip().lower()
+        if ans in ("y", "yes"):
+            notes.append("existing repo explicitly confirmed — proceeding.")
+            return True, notes
+        notes.append("aborted at the existing-repo confirmation.")
+        return False, notes
+    notes.append(detail + " Proceeding (advisory in this mode).")
+    return True, notes
+
+
+# ------------------------------------------------------ meta/child install modes
+
+
+def _prompt_children(candidates: list[Path]) -> list[dict]:
+    """Interactive multi-select of the meta-repo's children (+ per-child flavor)."""
+    if not candidates:
+        print("no candidate child repos detected (immediate subdirs with .git).")
+        return []
+    print("\n-- meta-repo children --")
+    print("candidate child repos (immediate subdirs with .git):")
+    for i, c in enumerate(candidates, 1):
+        print(f"  {i}. {c.name}")
+    ans = input(
+        "Which are children of this meta-repo? [a]ll / [n]one / numbers (e.g. 1,3) [all]: "
+    ).strip().lower()
+    if ans in ("", "a", "all"):
+        chosen = list(candidates)
+    elif ans in ("n", "none"):
+        chosen = []
+    else:
+        picked: set[int] = set()
+        for tok in ans.replace(",", " ").split():
+            try:
+                picked.add(int(tok))
+            except ValueError:
+                print(f"  (ignored {tok!r} — not a number)")
+        chosen = [c for i, c in enumerate(candidates, 1) if i in picked]
+    selected: list[dict] = []
+    for c in chosen:
+        f = input(f"flavor for {c.name}? [p]roduct / [i]nfra [product]: ").strip().lower()
+        selected.append({"path": c.name, "flavor": "infra" if f.startswith("i") else "product"})
+    return selected
+
+
+def select_children(
+    inst: dict, user_keys: set[str], target: Path, *, interactive_tty: bool
+) -> list[dict]:
+    """Resolve the meta install's children as ``{path, flavor}`` dicts.
+
+    The config is consulted first: an explicit ``children:`` list (YAML/flags)
+    is used VERBATIM — detection never overrides it. Interactive mode (TTY,
+    no configured list) multi-selects from ``detect_child_repos`` candidates.
+    Non-interactive without a list installs no children (no detection
+    surprises). Missing configured paths are fatal.
+    """
+    if "children" in user_keys or not interactive_tty:
+        selected = [dict(c) for c in inst.get("children") or []]
+    else:
+        selected = _prompt_children(roster_gen.detect_child_repos(target))
+    for c in selected:
+        c.setdefault("flavor", "product")
+    missing = [c["path"] for c in selected if not (target / c["path"]).is_dir()]
+    if missing:
+        raise SystemExit(
+            f"ERROR: configured children not found under {target}: {', '.join(missing)} "
+            "— children must exist before the meta install (create/clone them first)."
+        )
+    for c in selected:
+        if not ((target / c["path"]) / ".git").exists():
+            print(f"warn:          child {c['path']} is not a git repo (no .git) — installing anyway.")
+    return selected
+
+
+def install_children(
+    target: Path,
+    meta_cfg: dict,
+    selected: list[dict],
+    members_by_child: dict[str, list],
+    *,
+    install_permissions: bool,
+    dry_run: bool,
+) -> list[tuple[str, str, dict[str, str]]]:
+    """Lay the child layout (parent-relative settings, child runtime config,
+    child CLAUDE.md) into each selected child. Roster subsets are written by
+    ``roster_gen.write_roster`` (per-child branch). Idempotent throughout."""
+    template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
+    reports: list[tuple[str, str, dict[str, str]]] = []
+    meta_name = meta_cfg.get("project", {}).get("name") or target.name
+    for c in selected:
+        rel = child_install.parent_rel_for_child(c["path"])
+        child_root = target / c["path"]
+        child_tmpl = child_install.build_child_settings(template, rel, c["flavor"])
+        settings_status = merge_settings(
+            child_root / ".claude", dry_run=dry_run,
+            install_permissions=install_permissions, template=child_tmpl,
+        )
+        ccfg = child_install.child_runtime_config(meta_cfg, child_root.name, rel, c["flavor"])
+        cfg_status = write_config(child_root / ".claude", ccfg, force=False, dry_run=dry_run)
+        members = [
+            (p.role, p.level, p.name) for p in members_by_child.get(child_root.name, [])
+        ]
+        md = child_install.child_claude_md(
+            meta_name=meta_name, rel=rel, flavor=c["flavor"], members=members
+        )
+        md_status = child_install.write_child_claude_md(child_root, md, dry_run=dry_run)
+        reports.append((c["path"], c["flavor"], {
+            "settings": settings_status, "config": cfg_status, "CLAUDE.md": md_status,
+        }))
+    return reports
+
+
+def _print_child_reports(reports: list[tuple[str, str, dict[str, str]]]) -> None:
+    for path, flavor, statuses in reports:
+        detail = "; ".join(f"{k} {v}" for k, v in statuses.items())
+        print(f"child {path} [{flavor}]: {detail}")
+
+
+def install_child_mode(args: argparse.Namespace, inst: dict, user_keys: set[str], target: Path) -> int:
+    """The standalone CHILD install (``project.model: child``).
+
+    Installs the child-flavor layout into ``target``, pointing at the parent
+    meta-repo from ``parent.path``: parent-relative settings.json, a child
+    ``framework.config.json`` (model=child + parent + flavor, shared sections
+    inherited from the parent's config), a child-scoped roster, and a child
+    CLAUDE.md. No hook/lib assets, charter, or ontology are laid here — those
+    live once, at the parent.
+    """
+    rel = "/".join(child_install.normalize_rel(install_config.get_key(inst, "parent.path"))) or "."
+    parent_root = (target / rel).resolve()
+    err = child_install.parent_install_error(parent_root)
+    if err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 1
+    try:
+        parent_cfg = json.loads(
+            (parent_root / ".claude" / "framework.config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: parent framework.config.json is unreadable: {e}", file=sys.stderr)
+        return 1
+
+    flavor = install_config.get_key(inst, "project.flavor", "product")
+    name = install_config.get_key(inst, "project.name") or target.name
+    cfg = child_install.child_runtime_config(parent_cfg, name, rel, flavor)
+    cfg = _deep_merge(cfg, install_config.runtime_overlay(inst, user_keys))
+    cfg.setdefault("project", {})["model"] = "child"  # never remapped by overlays
+
+    print(f"parent repo:   {parent_root} (framework found)")
+    print(f"child flavor:  {flavor}; hook commands anchored at $CLAUDE_PROJECT_DIR/{rel}/.claude/")
+
+    # Child-scoped roster (lead + fitting engineers; org artifacts stay at the meta).
+    team_enabled = bool(install_config.get_key(inst, "team.enabled", True))
+    roster_plan = None
+    if team_enabled:
+        email_pattern = cfg.get("identity", {}).get("email_pattern") or "team+{First}.{Last}@example.com"
+        roster_plan = roster_gen.plan(
+            target, email_pattern=email_pattern, declared_model="child",
+            declared_repos=[], team_size=install_config.get_key(inst, "team.size"),
+        )
+        print("\n-- repo introspection + proposed team --")
+        print(roster_plan.summary())
+        if not args.no_enforce_identity:
+            cfg.setdefault("identity", {})["enforce"] = True
+            pre = cfg.setdefault("hooks", {}).setdefault("pre_bash", [])
+            if "validate_commit_identity" not in pre:
+                pre.insert(0, "validate_commit_identity")
+    else:
+        # Without a child roster the gate would have nothing to allow — leave
+        # enforcement to an explicit later opt-in (mirrors --no-team standalone).
+        cfg.setdefault("identity", {})["enforce"] = False
+
+    problems = validate_config(cfg)
+    if problems:
+        print("config problems:")
+        for p in problems:
+            print(f"  - {p}")
+        if any("version" in p for p in problems):
+            print("ERROR: refusing to install an invalid config.", file=sys.stderr)
+            return 1
+        print("  (continuing; non-fatal)")
+
+    target_claude = target / ".claude"
+    template = json.loads((_ASSETS / "settings.template.json").read_text(encoding="utf-8"))
+    child_tmpl = child_install.build_child_settings(template, rel, flavor)
+    settings_status = merge_settings(
+        target_claude, dry_run=args.dry_run,
+        install_permissions=not args.no_permissions, template=child_tmpl,
+    )
+    cfg_status = write_config(target_claude, cfg, force=args.force, dry_run=args.dry_run)
+    snapshot_status = write_install_snapshot(target_claude, inst, force=args.force, dry_run=args.dry_run)
+
+    roster_status = "skipped (team disabled)"
+    if roster_plan is not None:
+        rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
+        if args.dry_run:
+            roster_status = f"would write {len(rep['would_write'])} file(s) for {len(roster_plan.personas)} member(s)"
+        else:
+            roster_status = f"wrote {len(rep['written'])} file(s) ({len(roster_plan.personas)} member(s)); {len(rep['skipped'])} skipped"
+
+    members = [(p.role, p.level, p.name) for p in (roster_plan.personas if roster_plan else [])]
+    md = child_install.child_claude_md(
+        meta_name=parent_root.name, rel=rel, flavor=flavor, members=members
+    )
+    md_status = child_install.write_child_claude_md(target, md, dry_run=args.dry_run)
+
+    print("\n-- plan --" if args.dry_run else "\n-- result --")
+    print("hook assets:       none (child repos invoke the PARENT's hooks)")
+    print(f"settings.json:     {settings_status}")
+    print(f"framework.config:  {cfg_status} (project.model=child, parent={rel}, flavor={flavor})")
+    print(f"install snapshot:  {snapshot_status}")
+    print(f"team roster:       {roster_status}")
+    print(f"CLAUDE.md:         {md_status}")
+    if roster_plan is not None and not args.no_enforce_identity:
+        print("identity gate:     ENABLED (this roster ∪ the meta roster via the parent-merge)")
+    return 0
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -585,7 +913,10 @@ def main() -> int:
     ap.add_argument("--config", help="JSON RUNTIME-config seed (framework.config.json shape)")
     ap.add_argument("--owner", help="scm.owner (GitHub org/user)")
     ap.add_argument("--project-name", help="project.name")
-    ap.add_argument("--model", choices=["single-repo", "meta-and-children"])
+    ap.add_argument("--model", choices=["single-repo", "meta-and-children", "child"])
+    ap.add_argument("--expect", choices=["fresh", "existing", "any"],
+                    help="repo.expect override: what the target should look like "
+                         "(non-interactive installs refuse on a mismatch; `any` always proceeds)")
     ap.add_argument("--shell", choices=["bash", "zsh"])
     ap.add_argument("--reviewers", type=int)
     ap.add_argument("--merge-model", choices=["wave-branch", "direct-to-main"])
@@ -620,19 +951,48 @@ def main() -> int:
     print(f"target repo:   {target}")
 
     inst, user_keys = resolve_install_config(args)
+    interactive_tty = args.interactive and sys.stdin.isatty()
 
-    # repo.expect: informational today — detection/enforcement lands with the
-    # meta/child install modes. Mismatches are noted, never fatal.
-    expect = install_config.get_key(inst, "repo.expect", "fresh")
-    has_git = (target / ".git").exists()
-    if not has_git:
-        print("note:          no .git here — installing anyway (new repo / pre-init).")
-    if expect == "existing" and not has_git:
-        print("note:          repo.expect=existing but no .git found — proceeding.")
-    elif expect == "fresh" and has_git:
-        print("note:          repo.expect=fresh but a .git already exists — proceeding.")
+    # Fresh-vs-existing gate: detect, REPORT, then enforce repo.expect.
+    state = detect_repo_state(target)
+    print("\n-- target repo state --")
+    print(f"git repo:      {'yes' if state['has_git'] else 'no'}"
+          f"{' (with commits)' if state['has_commits'] else ' (no commits yet)' if state['has_git'] else ''}")
+    print(f"other files:   {'yes' if state['nonempty'] else 'no'} "
+          "(framework-owned .claude/, CLAUDE.md*, ontology/ excluded)")
+    print(f"verdict:       {state['classification']} "
+          f"(repo.expect: {install_config.get_key(inst, 'repo.expect', 'fresh')})")
+    proceed, notes = repo_expectation_gate(
+        state, install_config.get_key(inst, "repo.expect", "fresh"),
+        non_interactive=args.non_interactive, interactive_tty=interactive_tty,
+        dry_run=args.dry_run,
+    )
+    for n in notes:
+        print(f"repo gate:     {n}", file=None if proceed else sys.stderr)
+    if not proceed:
+        print("ERROR: refusing to install (repo expectation gate).", file=sys.stderr)
+        return 1
+
+    # The CHILD install mode is a different layout (no hook code of its own) —
+    # dedicated path.
+    if install_config.get_key(inst, "project.model") == "child":
+        return install_child_mode(args, inst, user_keys, target)
 
     cfg = build_config(args, inst, user_keys)
+
+    # META install: resolve which subdir repos are children (config verbatim in
+    # non-interactive mode; multi-select from detection in interactive mode).
+    install_model = install_config.get_key(inst, "project.model", "standalone")
+    selected_children: list[dict] = []
+    if install_model == "meta":
+        selected_children = select_children(
+            inst, user_keys, target, interactive_tty=interactive_tty
+        )
+        inst["children"] = selected_children  # the snapshot records the SELECTION
+        cfg.setdefault("project", {})["model"] = "meta-and-children"
+        cfg["project"]["repos"] = [target.name] + [
+            (target / c["path"]).name for c in selected_children
+        ]
 
     # --- introspect the repo + plan the roster (the team layer) ---
     team_enabled = bool(install_config.get_key(inst, "team.enabled", True))
@@ -640,11 +1000,18 @@ def main() -> int:
     roster_plan = None
     if team_enabled:
         email_pattern = cfg.get("identity", {}).get("email_pattern") or "team+{First}.{Last}@example.com"
+        # A meta SELECTION drives the roster exactly (paths, not detection);
+        # otherwise a --config seed's declared repos / detection apply as before.
+        declared_repos = (
+            [c["path"] for c in selected_children]
+            if install_model == "meta"
+            else cfg.get("project", {}).get("repos")
+        )
         roster_plan = roster_gen.plan(
             target,
             email_pattern=email_pattern,
             declared_model=cfg.get("project", {}).get("model"),
-            declared_repos=cfg.get("project", {}).get("repos"),
+            declared_repos=declared_repos,
             team_size=team_size,
         )
         # Record what introspection found back into the configs.
@@ -674,7 +1041,7 @@ def main() -> int:
                     size = int(ans.split()[-1])
                     roster_plan = roster_gen.plan(target, email_pattern=email_pattern,
                                                   declared_model=cfg["project"]["model"],
-                                                  declared_repos=cfg.get("project", {}).get("repos"),
+                                                  declared_repos=declared_repos,
                                                   team_size=size)
                     print(roster_plan.summary())
                     install_config.set_key(inst, "team.size", size)
@@ -728,6 +1095,21 @@ def main() -> int:
         else:
             roster_status = f"wrote {len(rep['written'])} file(s) ({len(roster_plan.personas)} member(s){child_note}); {len(rep['skipped'])} skipped"
 
+    # META model: lay the child layout (parent-relative settings, child runtime
+    # config, child CLAUDE.md) into every SELECTED child. Runs after the meta
+    # cfg is final so children inherit the real identity/hooks sections.
+    child_reports: list[tuple[str, str, dict[str, str]]] = []
+    if selected_children:
+        members_by_child: dict[str, list] = {}
+        if roster_plan is not None and roster_plan.intro.model == "meta-and-children":
+            _, members_by_child = roster_gen.partition_for_children(
+                roster_plan.personas, roster_plan.intro
+            )
+        child_reports = install_children(
+            target, cfg, selected_children, members_by_child,
+            install_permissions=not args.no_permissions, dry_run=args.dry_run,
+        )
+
     print("\n-- plan --" if args.dry_run else "\n-- result --")
     print(f"hooks/lib copied:  {len(assets['copied'])}")
     if assets["would_copy"]:
@@ -747,6 +1129,7 @@ def main() -> int:
     children = inst.get("children") or []
     if children:
         print(f"children:          {len(children)} recorded ({', '.join(c.get('path', '?') for c in children[:4])}{' …' if len(children) > 4 else ''})")
+    _print_child_reports(child_reports)
     if overlay is not None:
         laid = overlay["would_copy"] if args.dry_run else overlay["copied"]
         print(f"ontology overlay:  {len(laid)} file(s) {'would be laid' if args.dry_run else 'laid'}; {len(overlay['skipped'])} skipped")
