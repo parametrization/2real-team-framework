@@ -23,6 +23,37 @@ _MANIFEST_PY = _FRAMEWORK_ROOT / "install" / "manifest.py"
 
 PENDING_NOTE = "pending #139 (framework/install/manifest.py not on the wave branch yet)"
 
+#: Harness runtime model token -> canonical install-config ``project.model`` token. This MUST
+#: match ``install_config.INSTALL_MODEL_MAP`` (guarded by
+#: ``test_harness_model_map_matches_install_config``); #139's ``expected_install_set`` branches
+#: on the install-config spelling (``standalone`` / ``meta`` / ``child``), NOT the harness's
+#: runtime spelling (``single-repo`` / ``meta-and-children`` / ``child``).
+_HARNESS_MODEL_TO_INSTALL = {
+    "single-repo": "standalone",
+    "meta-and-children": "meta",
+    "child": "child",
+}
+
+
+def permutation_to_install_config(permutation: dict) -> dict:
+    """Convert a harness leg's FLAT permutation into the NESTED resolved install-config shape.
+
+    #139's ``expected_install_set`` reads its input with dotted
+    ``install_config.get_key(config, "project.model")`` / ``"team.enabled"`` — i.e. it expects a
+    nested dict (the ``.claude/install.config.json`` shape), not the harness's flat permutation.
+    Passing the flat dict silently resolved EVERY cell to the ``standalone`` / team-enabled
+    default (the discriminant was ignored), so a child/meta/no-team cell would be mis-graded.
+    This maps the permutation's ``model``/``team`` into ``project.model`` (canonical install
+    token) + ``team.enabled`` so the manifest branch matches the cell's actual install mode.
+    """
+    model = permutation.get("model", "standalone")
+    canonical = _HARNESS_MODEL_TO_INSTALL.get(model, model)  # identity if already canonical
+    team_enabled = bool(permutation.get("team", True))
+    config: dict = {"project": {"model": canonical}, "team": {"enabled": team_enabled}}
+    if "flavor" in permutation:
+        config["project"]["flavor"] = permutation["flavor"]
+    return config
+
 
 def _load():
     """Import the #139 manifest module by path, or return None if it does not exist yet."""
@@ -45,15 +76,18 @@ def available() -> bool:
     return mod is not None and hasattr(mod, "expected_install_set")
 
 
-def expected_install_set(config: dict) -> set[str] | None:
-    """Delegate to #139's ``expected_install_set(config)``; ``None`` when #139 is absent.
+def expected_install_set(permutation: dict) -> set[str] | None:
+    """Expected ``.claude/**`` relpaths for a cell's PERMUTATION; ``None`` when #139 is absent.
 
-    ``config`` is the resolved install config for the cell (model, team, ontology, …). The
-    exact shape is #139's contract; the harness passes the permutation dict through verbatim.
+    Takes the harness leg's FLAT permutation, converts it to the nested install-config shape
+    #139 consumes (see ``permutation_to_install_config``), and delegates to
+    #139's ``expected_install_set``. Converting here — the single seam — is what makes the
+    permutation discriminant actually reach the manifest (the #139 config-shape fix).
     """
     mod = _load()
     if mod is None or not hasattr(mod, "expected_install_set"):
         return None
+    config = permutation_to_install_config(permutation)
     try:
         result = mod.expected_install_set(config)
         return set(result) if result is not None else None

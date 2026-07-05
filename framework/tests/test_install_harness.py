@@ -8,6 +8,8 @@ REAL installer so the harness itself is regression-covered. Stdlib + pytest only
 
 from __future__ import annotations
 
+import importlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,6 +18,9 @@ import pytest
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _FRAMEWORK_ROOT.parent
 sys.path.insert(0, str(_REPO_ROOT))  # make `framework.harness` importable (namespace package)
+sys.path.insert(0, str(_FRAMEWORK_ROOT / "install"))  # install_config / manifest siblings
+
+import install_config  # noqa: E402  (framework/install sibling — the resolved-config accessors)
 
 from framework.harness import buckets, compare, manifest, metrics, snapshot, teardown  # noqa: E402
 from framework.harness.records import (  # noqa: E402
@@ -132,6 +137,71 @@ def test_files_installed_complete_skips_without_manifest(tmp_path: Path) -> None
     m = metrics.m_files_installed_complete(ctx)
     if not manifest.available():
         assert m.passed is None and "pending #139" in m.notes  # neutral skip, not a fail
+
+
+# --------------------------------------------------- #139 config-shape seam (the mis-grade fix)
+
+
+def test_harness_model_map_matches_install_config() -> None:
+    """The bridge's model map MUST equal the installer's canonical map (drift guard)."""
+    assert manifest._HARNESS_MODEL_TO_INSTALL == install_config.INSTALL_MODEL_MAP
+
+
+def test_permutation_to_install_config_honors_discriminant() -> None:
+    """Regression for the silent mis-grade: the flat permutation must resolve to the NESTED
+    install-config shape #139 reads via ``get_key`` — with the discriminant actually applied,
+    NOT collapsed to the standalone+team default."""
+    default = manifest.permutation_to_install_config({"model": "single-repo", "team": True})
+    # read through the EXACT accessor #139 uses:
+    assert install_config.get_key(default, "project.model") == "standalone"
+    assert install_config.get_key(default, "team.enabled") is True
+
+    child = manifest.permutation_to_install_config({"model": "child", "team": True})
+    assert install_config.get_key(child, "project.model") == "child"
+
+    meta = manifest.permutation_to_install_config({"model": "meta-and-children", "team": True})
+    assert install_config.get_key(meta, "project.model") == "meta"
+
+    no_team = manifest.permutation_to_install_config({"model": "single-repo", "team": False})
+    assert install_config.get_key(no_team, "team.enabled") is False
+
+    # the whole point — a child / no-team permutation is DISTINCT from the standalone+team default
+    assert child != default and no_team != default
+
+
+def test_files_installed_complete_real_wiring_child_differs_from_standalone(tmp_path: Path) -> None:
+    """End-to-end through #139's ACTUAL manifest code: prove the nested shape drives distinct
+    expected sets per mode (child installs no hooks/lib; no-team drops org-artifacts). Uses the
+    real ``framework/install/manifest.py`` if merged, else vendors #139's source from its branch
+    so the wiring is proven now — before #139 lands on the base."""
+    target = _FRAMEWORK_ROOT / "install" / "manifest.py"
+    wrote = False
+    if not target.exists():
+        src = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "show",
+             "origin/N.Rossi/0139-golden-manifest-metric-vocab:framework/install/manifest.py"],
+            capture_output=True, text=True,
+        )
+        if src.returncode != 0:
+            pytest.skip("#139 branch not fetched and manifest.py not merged — mapping unit-tested above")
+        target.write_text(src.stdout, encoding="utf-8")
+        wrote = True
+    try:
+        importlib.invalidate_caches()
+        assert manifest.available()
+        standalone = manifest.expected_install_set({"model": "single-repo", "team": True})
+        child = manifest.expected_install_set({"model": "child", "team": True})
+        no_team = manifest.expected_install_set({"model": "single-repo", "team": False})
+        assert standalone and child and no_team
+        # a child installs NO hooks of its own; standalone does — the discriminant reaches #139
+        assert ".claude/hooks/dispatcher.py" in standalone
+        assert ".claude/hooks/dispatcher.py" not in child
+        assert child < standalone      # strict subset
+        assert no_team < standalone     # team org-artifacts dropped
+    finally:
+        if wrote:
+            target.unlink()
+            importlib.invalidate_caches()
 
 
 # --------------------------------------------------------------- comparison (§4)

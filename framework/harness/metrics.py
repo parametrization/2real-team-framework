@@ -173,19 +173,20 @@ def m_non_interactive_zero_prompts(ctx: CellContext) -> Measurement:
 
 
 def m_files_installed_complete(ctx: CellContext) -> Measurement:
+    # The manifest is scoped to the target's own .claude/** tree (#139 contract), and its input
+    # is the cell's PERMUTATION converted to the nested install-config shape inside the bridge.
     expected = manifest.expected_install_set(ctx.permutation)
     if expected is None:
         return _skip(manifest.PENDING_NOTE)
-    present = {p for p in ctx.after if p.startswith(".claude/") or p.startswith("ontology/")
-               or p.startswith("CLAUDE.md") or p.startswith(".git/hooks/pre-push")}
+    present = {p for p in ctx.after if p.startswith(".claude/")}
     missing = sorted(expected - present)
     fraction = round(len(expected & present) / len(expected), 4) if expected else 1.0
     ok = not missing
     return Measurement(
         value=fraction, passed=ok,
-        expected={"count": len(expected)},
+        expected={"count": len(expected), "model": ctx.permutation.get("model")},
         observed={"fraction": fraction, "missing": missing[:20], "missing_count": len(missing)},
-        notes="wired to #139 golden manifest",
+        notes="wired to #139 golden manifest (permutation → install-config shape)",
     )
 
 
