@@ -89,6 +89,37 @@ confirms every claimed file is in the diff (and nothing unexpected is), and that
 PR body carries the `Closes #N` lines for every issue it claims to resolve. A "done"
 report that fails its own reconciliation is not done — fix it first, don't caveat it.
 
+### Claude Assets: Reinstall on Change
+
+A repo that is both the framework **source** and a live **consumer** of it (this repo)
+keeps Claude-related assets in two trees that must not drift:
+
+- **Canonical / install source** — `framework/assets/**` (+ `framework/config/**`,
+  `framework/install/**`): what deploys to target repos.
+- **Live runtime** — `.claude/**`: what this repo actually loads.
+
+A change touching any Claude asset (skills, hooks, libs, charter, config, settings) is
+**not done** until (1) it exists in the canonical/install dir, (2) the live `.claude/**`
+copy has been regenerated from it, and (3) the two are verified in sync (byte-identical
+where a parity test applies).
+
+Reinstall command (this repo):
+
+```bash
+python3 framework/install/reinstall.py           # regenerate .claude/ from framework/assets/
+python3 framework/install/reinstall.py --check    # verify in sync (CI gate; exit 1 on drift)
+```
+
+Deploying into another repo uses the same installer via the published CLI
+(`real-team init --with-hooks --force`, i.e. the bundled bootstrap).
+
+Not every asset needs a copy step: **hooks/** + **lib/** are wired in place (settings.json
+points the dispatchers at `framework/assets/hooks/`, so they run canonical directly and
+cannot drift), and **team/charter/** is rendered with per-repo substitution and is
+hand-evolvable. The byte-mirrored trees (today: `skills/`) are the ones `reinstall.py`
+manages and `test_reinstall_parity.py` enforces in CI — a PR that edits a canonical
+mirrored asset (or its live copy) without reinstalling fails that check.
+
 ## Wave Merge PR
 
 At the end of a wave/phase, the Manager creates a PR from the integration branch
