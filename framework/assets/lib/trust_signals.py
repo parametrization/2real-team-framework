@@ -373,7 +373,34 @@ def _phase_for_wave(wave: str, status_path: Path | None) -> str | int | None:
     return val if val is not None else None
 
 
-def _integration_base(cfg, wave: str, phase: str | int | None = None) -> str:
+def _wave_ordinal_for_wave(wave: str, status_path: Path | None) -> str | int | None:
+    """The phase-local ordinal of a wave (``wave_<id>_phase_ordinal``), or None.
+
+    PROJECT-COUPLING: keyed on a state-file entry named
+    ``wave_<id>_phase_ordinal`` stamped by the wave allocator alongside
+    ``wave_<id>_phase`` (see ``lifecycle.py``). A phase-namespaced project numbers
+    its integration branches by the position of the wave *within its phase*
+    (``deployments/phase4/wave-1`` is the first wave of phase 4), not by the
+    monotonic global wave id, so the ``{wave}`` token must resolve to this
+    ordinal. Absent in a generic (non-phased) project — or when the state file is
+    missing/unreadable — → None, and the caller falls back to the global wave id.
+    """
+    if status_path is None:
+        return None
+    try:
+        data = json.loads(Path(status_path).read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    val = data.get(f"wave_{wave}_phase_ordinal")
+    return val if val is not None else None
+
+
+def _integration_base(
+    cfg,
+    wave: str,
+    phase: str | int | None = None,
+    wave_ordinal: str | int | None = None,
+) -> str:
     """The merged-PR base branch for *wave*, from the integration-branch template.
 
     PROJECT-COUPLING: the original tool scoped the base to a phase+wave path
@@ -383,12 +410,21 @@ def _integration_base(cfg, wave: str, phase: str | int | None = None) -> str:
     declares. Both ``{phase}`` and ``{wave}`` tokens are substituted; a project
     that namespaces waves by phase (``deployments/phase{phase}/wave-{wave}``) is
     resolved correctly when *phase* is supplied (from ``wave_<id>_phase`` state).
+
+    The ``{wave}`` token resolves to the **phase-local ordinal** when
+    *wave_ordinal* is supplied (from ``wave_<id>_phase_ordinal`` state), NOT the
+    global wave id: a phase-namespaced project names its first phase-4 branch
+    ``deployments/phase4/wave-1`` even when that is global wave 2. Falling back to
+    the global *wave* id keeps generic (non-phased) projects — which do not stamp
+    an ordinal — rendering ``deployments/wave-<id>`` unchanged.
+
     A project whose merges target the default branch directly should set
     ``branch.integration`` to that branch name. Unknown/unresolved tokens are
     left literal rather than raising.
     """
     template = cfg.get("branch.integration", "deployments/wave-{wave}")
-    tokens: dict[str, str | int] = {"wave": wave}
+    wave_token = wave_ordinal if wave_ordinal is not None else wave
+    tokens: dict[str, str | int] = {"wave": wave_token}
     if phase is not None:
         tokens["phase"] = phase
     return _render_branch_template(str(template), **tokens)
@@ -474,7 +510,12 @@ def merged_prs(
     """
     cfg = cfg or config()
     repos = _resolve_repos(cfg)
-    base = _integration_base(cfg, wave, phase=_phase_for_wave(wave, status_path))
+    base = _integration_base(
+        cfg,
+        wave,
+        phase=_phase_for_wave(wave, status_path),
+        wave_ordinal=_wave_ordinal_for_wave(wave, status_path),
+    )
     kickoff = _kickoff_ts(wave, status_path)
 
     out: list[dict] = []
