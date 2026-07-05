@@ -8,8 +8,9 @@ description: "Initialize a new wave"
 Initialize a new wave (`args`: phase number `{N}`, wave number `{M}`).
 
 > Config-driven + fail-open: reads `.claude/framework.config.json` via `jq`; missing keys fall
-> back to the documented defaults. Wave kickoff requires **explicit User approval** before work
-> begins — this skill only sets up infrastructure.
+> back to the documented defaults. This skill sets up wave infrastructure AND records the
+> lifecycle state live (`allocate → start → scope`); the **kickoff transition** fires only
+> after **explicit User approval** (step 7).
 
 ## Instructions
 
@@ -26,6 +27,16 @@ ONTO_DIR="$(get '.paths.ontology')";           : "${ONTO_DIR:=ontology}"
 BRANCH_TMPL="$(get '.branch.integration')";    : "${BRANCH_TMPL:=deployments/phase{phase}/wave-{wave}}"
 WAVE_BRANCH="$(printf '%s' "$BRANCH_TMPL" | sed "s/{phase}/$N/g; s/{wave}/$M/g")"
 echo "Wave branch: $WAVE_BRANCH (default branch: $DEFAULT_BRANCH)"
+
+# Framework libs: installed location first, framework-source checkout as fallback.
+# Dual-deploy: bootstrap copies assets/lib → a deployed repo's .claude/lib; the
+# framework SOURCE repo has no .claude/lib, so it falls back to framework/assets/lib.
+LIB="$REPO_ROOT/.claude/lib"
+[ -f "$LIB/lifecycle.py" ] || LIB="$REPO_ROOT/framework/assets/lib"   # framework source repo
+
+# Merge model this wave lives under (one model for its whole life — mixing strands work).
+# Config default; the owner confirms/overrides at the kickoff gate (step 7).
+MERGE_MODEL="$(get '.policy.merge_model')"; : "${MERGE_MODEL:=direct-to-main}"
 ```
 
 ### 1. Clean stale worktrees
@@ -110,12 +121,53 @@ git -C "$REPO_ROOT" checkout -b "$WAVE_BRANCH" "{base_branch}"
 git -C "$REPO_ROOT" push -u origin "$WAVE_BRANCH"
 ```
 
-### 5. Run retro
+### 5. Record lifecycle state (allocate → start → scope)
+
+Write the wave into the lifecycle state file **live** — this is what lets retros read
+`state.json` instead of backfilling it by hand. The state file is config'd
+(`paths.state_file`, default `.claude/state.json`) and owned by `lifecycle.py`.
+
+```bash
+python3 "$LIB/lifecycle.py" wave peek                          # preview the next id (no write)
+
+# Idempotency: if this wave was already allocated (a re-run of /wave-start), skip the
+# allocate below and reuse its id from `lifecycle.py state show` — allocate --write
+# advances the monotonic counter and must run exactly once per wave.
+W="$(python3 "$LIB/lifecycle.py" wave allocate --phase "$N" --write | sed -n 's/^wave id: //p')"
+echo "Allocated global wave id: $W  (display: Phase $N, Wave $M)"
+
+python3 "$LIB/lifecycle.py" wave start "$W"
+python3 "$LIB/lifecycle.py" wave scope "$W" --repos "$(get '.project.name')" --phase "$N"
+python3 "$LIB/lifecycle.py" state show
+```
+
+`allocate --write` advances the monotonic `global_wave_seq` and stamps `wave_{W}_phase` +
+`wave_{W}_phase_ordinal` (the "Phase N, Wave M" display); `start` sets `current_wave`,
+`wave_{W}_active=true`, `wave_{W}_started_at`; `scope` records `wave_{W}_repos_in_scope` +
+`wave_{W}_scope_reconciled_at`. For a multi-repo (meta) project pass the comma-separated
+in-scope subset to `--repos` instead of the single project name.
+
+### 6. Run retro
 
 Run the `/retro` skill if this is not the first wave, so carry-over items from the previous
 wave are surfaced before new work starts.
 
-### 6. Report
+### 7. Kick off (User approval gate)
+
+Wave kickoff requires **explicit User approval** — present the plan and wait for the
+go-ahead. **Only after** the User approves, record the kickoff transition live:
+
+```bash
+python3 "$LIB/lifecycle.py" wave kickoff "$W" --merge-model "$MERGE_MODEL"
+```
+
+This stamps `wave_{W}_kicked_off_at`, declares `wave_{W}_merge_model`, and re-points
+`current_wave`. Confirm the model with the User first: a wave whose per-issue PRs base on
+the integration branch is `wave-branch`; one whose PRs base straight on the default branch
+is `direct-to-main`. Do **not** run this before the go-ahead — it marks the wave as
+officially started and work beginning.
+
+### 8. Report
 
 ```
 **Wave Initialized: Phase {N} Wave {M}**
@@ -123,6 +175,8 @@ wave are surfaced before new work starts.
 - Checkout parked on clean `$DEFAULT_BRANCH` @ {short_sha}
 - Wave branch: `$WAVE_BRANCH` (base: {base_branch})
 - Stale worktrees pruned: {count}
+- Lifecycle: allocated global wave id `{W}`, `wave_{W}_active=true`, merge model `$MERGE_MODEL`
+- State file: `{state_path}` (written live by `lifecycle.py`)
 - Branch URL: {url}
 ```
 
@@ -131,4 +185,5 @@ wave are surfaced before new work starts.
 - User confirms if active worktrees should be removed
 - The Step 2 STOP-guards do not auto-discard — the user resolves dirty/unmerged state and
   re-runs
-- Wave kickoff (plan presentation + user go-ahead) happens after this skill completes
+- Wave kickoff (Step 7) is an approval gate: the plan is presented and the `wave kickoff`
+  lifecycle transition fires only on the User's explicit go-ahead

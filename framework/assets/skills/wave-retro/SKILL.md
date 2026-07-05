@@ -49,7 +49,7 @@ The PR base depends on the wave's merge model:
 
 ```bash
 MM="$(python3 "$LIB/lifecycle.py" merge-model get "{W}" 2>/dev/null || echo direct-to-main)"
-# wave-branch     → BASE = branch.integration template with {wave} → {W}
+# wave-branch     → BASE = branch.integration template ({phase} → wave's phase, {wave} → {W})
 # direct-to-main  → BASE = $DEFAULT_BRANCH, additionally filtered by the wave label
 gh pr list --state merged --base "{BASE}" --json number,title,author,body,mergedAt,reviews
 ```

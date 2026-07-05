@@ -33,8 +33,8 @@ LIB="$REPO_ROOT/.claude/lib"
 
 Read `current_wave` (call it `{W}`) from the state output, or ask the user. The wave label
 is `labels.wave` with `{id}` → `{W}`. The PR base branch is `branch.integration` (with
-`{wave}` → `{W}`) when the wave's merge model is `wave-branch`, otherwise the default
-branch.
+`{phase}` → the wave's phase and `{wave}` → `{W}`) when the wave's merge model is
+`wave-branch`, otherwise the default branch.
 
 ### 1. Collect progress data
 
