@@ -1,19 +1,29 @@
-"""Tests for trust_signals.py verdict-vocabulary parsing (issue #98).
+"""Tests for trust_signals.py — verdict-vocabulary parsing (#98) and phase-aware
+integration-branch resolution (#100).
 
-The regression these tests pin: the extraction layer used to count a must-fix
-only when a verdict comment read ``RequestOrReplied: ChangesRequested``. This
-project's charter (``.claude/team/charter/issues.md``) instead writes
-``RequestOrReplied: Request | Replied`` and carries the review *severity* in the
-comment body as an enumerated ``Must-fix:`` list. Under the old vocabulary every
-real review read as zero. These tests assert the charter vocabulary now scores,
-the legacy machine token still scores, and clean reviews / replies do not.
+Two independent concerns share this module because they exercise the same lib:
 
-Fixtures are trimmed but shape-faithful to the real Phase 3 PR comments the
-issue names (#79, #78, #96, #93). Pure functions only — no gh, no I/O.
+* **Verdict vocabulary (#98)** — the extraction layer used to count a must-fix
+  only when a verdict comment read ``RequestOrReplied: ChangesRequested``. This
+  project's charter (``.claude/team/charter/issues.md``) instead writes
+  ``RequestOrReplied: Request | Replied`` and carries the review *severity* in
+  the comment body as an enumerated ``Must-fix:`` list. Under the old vocabulary
+  every real review read as zero. These tests assert the charter vocabulary now
+  scores, the legacy machine token still scores, and clean reviews / replies do
+  not. Fixtures are trimmed but shape-faithful to the real Phase 3 PR comments
+  the issue names (#79, #78, #96, #93). Pure functions only — no gh, no I/O.
+
+* **Integration-branch resolution (#100)** — the ``branch.integration`` template
+  that scopes the merged-PR set must substitute both ``{phase}`` and ``{wave}``;
+  phase is resolved from ``wave_<id>_phase`` in the state file, and
+  unknown/unresolved tokens degrade to a literal placeholder rather than raising.
+  No network (``_integration_base`` / ``_phase_for_wave`` are pure aside from an
+  optional state-file read).
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -306,3 +316,106 @@ def test_score_delta_discriminates_clean_reviewer_from_blocked_author():
     author = ts.Signals(prs_merged=2, must_fix_received=1, rework_cycles=1)
     assert ts.score_delta(reviewer) >= 1
     assert ts.score_delta(author) <= 0
+
+
+# ===========================================================================
+# Integration-branch resolution (#100): phase-aware branch.integration template.
+# ===========================================================================
+
+
+class _Cfg:
+    """Minimal stand-in for the shared config object: dotted ``.get(key, default)``."""
+
+    def __init__(self, values: dict) -> None:
+        self._v = values
+
+    def get(self, key: str, default=None):
+        return self._v.get(key, default)
+
+
+# --------------------------------------------------------------- _render_branch_template
+
+
+def test_render_substitutes_both_tokens() -> None:
+    out = ts._render_branch_template(
+        "deployments/phase{phase}/wave-{wave}", phase=6, wave="1"
+    )
+    assert out == "deployments/phase6/wave-1"
+
+
+def test_render_leaves_unknown_token_literal() -> None:
+    # An unresolved token must not raise (mirrors the shell sed behaviour).
+    out = ts._render_branch_template("deployments/phase{phase}/wave-{wave}", wave="3")
+    assert out == "deployments/phase{phase}/wave-3"
+
+
+def test_render_wave_only_template() -> None:
+    out = ts._render_branch_template("deployments/wave-{wave}", wave="7", phase=2)
+    assert out == "deployments/wave-7"
+
+
+# --------------------------------------------------------------- _integration_base
+
+
+def test_integration_base_phase_aware() -> None:
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    assert ts._integration_base(cfg, "1", phase=6) == "deployments/phase6/wave-1"
+
+
+def test_integration_base_phase_aware_phase4() -> None:
+    # Regression for issue #100: config unchanged between phases, phase drives the branch.
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    assert ts._integration_base(cfg, "1", phase=4) == "deployments/phase4/wave-1"
+
+
+def test_integration_base_missing_phase_is_safe() -> None:
+    # No phase supplied for a phase-namespaced template → literal token, no KeyError.
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    assert ts._integration_base(cfg, "2") == "deployments/phase{phase}/wave-2"
+
+
+def test_integration_base_generic_default() -> None:
+    # Empty config → generic wave-only default still resolves.
+    cfg = _Cfg({})
+    assert ts._integration_base(cfg, "9") == "deployments/wave-9"
+
+
+def test_integration_base_literal_default_branch() -> None:
+    # A project merging straight to a named branch (no tokens) passes through.
+    cfg = _Cfg({"branch.integration": "main"})
+    assert ts._integration_base(cfg, "5", phase=3) == "main"
+
+
+# --------------------------------------------------------------- _phase_for_wave
+
+
+def test_phase_for_wave_reads_state(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_1_phase": 6, "wave_2_phase": 7}))
+    assert ts._phase_for_wave("1", state) == 6
+    assert ts._phase_for_wave("2", state) == 7
+
+
+def test_phase_for_wave_missing_key_is_none(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_1_phase": 6}))
+    assert ts._phase_for_wave("9", state) is None
+
+
+def test_phase_for_wave_no_status_path_is_none() -> None:
+    assert ts._phase_for_wave("1", None) is None
+
+
+def test_phase_for_wave_unreadable_is_none(tmp_path) -> None:
+    assert ts._phase_for_wave("1", tmp_path / "does-not-exist.json") is None
+
+
+# --------------------------------------------------------------- end-to-end wiring
+
+
+def test_base_resolved_from_state_end_to_end(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_1_phase": 4}))
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    phase = ts._phase_for_wave("1", state)
+    assert ts._integration_base(cfg, "1", phase=phase) == "deployments/phase4/wave-1"

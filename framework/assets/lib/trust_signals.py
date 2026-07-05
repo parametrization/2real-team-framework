@@ -335,21 +335,63 @@ def _resolve_repos(cfg) -> list[str]:
     return [nwo] if nwo else []
 
 
-def _integration_base(cfg, wave: str) -> str:
+class _PartialTokens(dict):
+    """Format map that leaves unknown ``{token}`` placeholders literal.
+
+    Mirrors the shell skills' ``sed "s/{phase}/…/; s/{wave}/…/"`` behaviour:
+    known tokens are substituted, anything else is passed through verbatim
+    instead of raising ``KeyError``. Keeps template rendering fail-safe.
+    """
+
+    def __missing__(self, key: str) -> str:  # noqa: D105
+        return "{" + key + "}"
+
+
+def _render_branch_template(template: str, **tokens) -> str:
+    """Substitute *tokens* into *template*, leaving unknown placeholders literal."""
+    try:
+        return str(template).format_map(_PartialTokens(**tokens))
+    except (KeyError, IndexError, ValueError):
+        return str(template)
+
+
+def _phase_for_wave(wave: str, status_path: Path | None) -> str | int | None:
+    """The phase a wave belongs to (``wave_<id>_phase`` in state), or None.
+
+    PROJECT-COUPLING: keyed on a state-file entry named ``wave_<id>_phase``
+    stamped by the wave allocator (see ``lifecycle.py``). Absent in a generic
+    project (or when the state file is missing/unreadable) → None, so a template
+    that references ``{phase}`` degrades gracefully rather than crashing.
+    """
+    if status_path is None:
+        return None
+    try:
+        data = json.loads(Path(status_path).read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    val = data.get(f"wave_{wave}_phase")
+    return val if val is not None else None
+
+
+def _integration_base(cfg, wave: str, phase: str | int | None = None) -> str:
     """The merged-PR base branch for *wave*, from the integration-branch template.
 
     PROJECT-COUPLING: the original tool scoped the base to a phase+wave path
     (``deployments/phase-<P>/wave-<M>``). Here the base is derived generically
     from the configured ``branch.integration`` template (default
     ``deployments/wave-{wave}``) so it tracks whatever branching scheme a project
-    declares. A project whose merges target the default branch directly should
-    set ``branch.integration`` to that branch name.
+    declares. Both ``{phase}`` and ``{wave}`` tokens are substituted; a project
+    that namespaces waves by phase (``deployments/phase{phase}/wave-{wave}``) is
+    resolved correctly when *phase* is supplied (from ``wave_<id>_phase`` state).
+    A project whose merges target the default branch directly should set
+    ``branch.integration`` to that branch name. Unknown/unresolved tokens are
+    left literal rather than raising.
     """
     template = cfg.get("branch.integration", "deployments/wave-{wave}")
-    try:
-        return str(template).format(wave=wave)
-    except (KeyError, IndexError):
-        return str(template)
+    tokens: dict[str, str | int] = {"wave": wave}
+    if phase is not None:
+        tokens["phase"] = phase
+    return _render_branch_template(str(template), **tokens)
 
 
 def _kickoff_ts(wave: str, status_path: Path | None) -> str | None:
@@ -432,7 +474,7 @@ def merged_prs(
     """
     cfg = cfg or config()
     repos = _resolve_repos(cfg)
-    base = _integration_base(cfg, wave)
+    base = _integration_base(cfg, wave, phase=_phase_for_wave(wave, status_path))
     kickoff = _kickoff_ts(wave, status_path)
 
     out: list[dict] = []
