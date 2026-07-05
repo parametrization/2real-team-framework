@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.4.0, what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.4.2 (Phase 4 complete), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,9 +11,27 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-02): no active work in flight.** The foundation (PR #41) shipped
-long ago; the project is **released at v0.4.0** on both registries (Phase 3 installer
-overhaul — see below). Both Python and Node
+**Current baseline (2026-07-05): Phase 4 COMPLETE, no active work in flight.** Released at
+**v0.4.2** on both registries. Phase 4 ("self-hosting & quality machinery") ran two waves that
+made the framework trustworthy when run on itself; the retro dogfooded the scoring machinery on
+its own PRs and produced the first fully-clean mechanical trust score. Next: **Phase 5 theme
+decision** (stub #133 reserved; candidate = installer robustness + cross-repo audit + test
+harness, folding #131). See [[handoff]] for the exact pickup. The foundation (PR #41) shipped
+long ago; Phase 3 installer overhaul (v0.4.0) is below.
+
+**Phase 4 (2026-07-05, two waves off `deployments/phase4/wave-{1,2}`):**
+- **Wave 1 → v0.4.1** (#98 trust-vocab, #99 dogfood lifecycle into wave skills, #100 phase-aware
+  `branch.integration`, #111 `validate_review_comment_format` gate). Dogfooding the retro surfaced
+  4 defects → #116/#117/#118/#119.
+- **Wave 2 → v0.4.2** (10 issues): **#116** reinstall-on-change rule + `framework/install/reinstall.py`
+  + `--check` CI parity gate (byte-mirror scoped to `skills/`; hooks/lib canonical-by-reference;
+  charter via `--refresh-charter`); **#117** `{wave}`→phase-local ordinal; **#118** verdict-grammar
+  semantic warn tier; **#119** roster name normalization; **#77** `--refresh-charter` three-way
+  charter refresh (`team/.charter-manifest.json`); **#82** copy-shared rm+recopy; **#94** merge-model
+  wording + `policy.merge_model`→`wave-branch`; **#74** ontology_gen consumer-runtime exclusion;
+  **#75** meta-child ontology install test; **#90** wave-audit zero-pad. 373 tests.
+- **Wave 1 authoritative re-score closed** (corrected 3 mis-tagged approvals per #118); last scorer
+  artifact isolated as **#131**. See `trust_matrix.md` + `feedback_log.md`. Both Python and Node
 packages publish via **OIDC trusted publishing** — no long-lived tokens (PR #57 switched the
 workflows; trusted publishers are configured on PyPI and npmjs.com for
 `parametrization/2real-team-framework` + the respective `publish-*.yml` workflow). v0.3.0 had
@@ -69,14 +87,17 @@ project-coupled, it's config-decouplable:
    wave-start, close-stale-issues → 13 skills total). Remaining coupling to revisit: GitHub
    Projects v2 field-sync (`board.*`), reviewer counts (`policy.reviewers_required`).
 2. **Review-gate tranche**: port `validate_pr_review` (~1189-line N-reviewer/TechDebt gate) +
-   the `pr_review_state` oracle that reuses it + `validate_review_comment_format`.
-   (Explicitly deferred again by user during Phase 3 planning.)
+   the `pr_review_state` oracle that reuses it. (`validate_review_comment_format` **shipped** in
+   Phase 4: #111 ported it, #118 added the semantic warn tier.) Rest still deferred.
 3. `validate_branch_freshness`; mid-wave reachability `gh` wrapper around
    `lifecycle.classify_reachability`.
 4. ~~Node CLI runtime install~~ — **shipped in v0.4.0** (#70): node CLI bundles `framework/`
    and subprocesses the Python bootstrap (`node/src/framework-install.ts`).
 5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
-6. Open tech-debt issues from Phase 3: #74, #75, #77, #82, #90, #94.
+6. ~~Phase 3 tech-debt #74/#75/#77/#82/#90/#94~~ — **all shipped in Phase 4 Wave 2 (v0.4.2)**.
+7. **Phase 5 candidates**: #131 (scorer false-positive gate) + exploratory #101–#110
+   (installer consent/backup/restore, cross-repo audit, install/test/teardown harness) — clustered
+   in stub #133.
 
 **Architecture overview:** [[reference_config_driven_architecture]].
 **Commit/PR mechanics for this repo:** [[feedback_framework_commit_pr_mechanics]].
