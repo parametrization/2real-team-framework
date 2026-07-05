@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from atomic_io import atomic_write_text
 from backup import backup_file
 from consent import prompt_consent
 
@@ -223,8 +224,9 @@ def merge_settings(
         )
 
     backup = backup_file(path)  # None if the file does not exist yet
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+    # Atomic write (#145): temp file in the same dir + os.replace, so an interrupt
+    # can never leave a truncated settings.json (the backup above stays a fallback).
+    atomic_write_text(path, json.dumps(merged, indent=2) + "\n")
     return Result(
         status="written",
         added=added,
