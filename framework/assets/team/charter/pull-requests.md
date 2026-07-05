@@ -11,8 +11,13 @@ git push -u origin <feature-branch>
 gh pr create --base <integration-branch> --title "<short title>" --body-file /tmp/pr-body.md
 ```
 
-- Target the wave's integration branch (`{{integration_branch_scheme}}`), never
-  `{{default_branch}}` directly (merge model: `{{merge_model}}`).
+- **Base branch follows the wave's effective merge model** (configured default:
+  `{{merge_model}}`; the effective model for a wave is declared at kickoff via
+  `lifecycle.py wave kickoff --merge-model …` and recorded in the state file —
+  see [branching.md](branching.md)). Under `wave-branch`, target the wave's
+  integration branch (`{{integration_branch_scheme}}`), never `{{default_branch}}`
+  directly. Under `direct-to-main`, that base collapses to `{{default_branch}}`
+  and feature branches PR straight into it.
 - Title under 70 characters; body references the issue with `Closes #N`.
 - Push unpiped — piping `git push` through `tail`/`head` masks a rejected push
   behind the pipe's exit code (flagged — see [hooks.md](hooks.md)).
