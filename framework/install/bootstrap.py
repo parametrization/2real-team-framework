@@ -88,6 +88,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import child_install  # noqa: E402  (sibling module in install/)
 import install_config  # noqa: E402  (sibling module in install/)
+import repo_space  # noqa: E402  (sibling module in install/)
 import roster_gen  # noqa: E402  (sibling module in install/)
 
 # framework/install/bootstrap.py  ->  framework/
@@ -1302,6 +1303,34 @@ def main() -> int:
     if not proceed:
         print("ERROR: refusing to install (repo expectation gate).", file=sys.stderr)
         return 1
+
+    # Repo-level disposition (#108): if the target already carries FOREIGN Claude
+    # assets (a .claude/ or CLAUDE.md we did NOT install), offer — with explicit
+    # consent — to ARCHIVE them out of Claude's scope for a fresh install, or amend
+    # them in place. Non-interactive / non-TTY / dry-run take the safe non-destructive
+    # path (amend), preserving today's behaviour for CI. Skipped on our own idempotent
+    # re-runs (state["installed"]) and when there is nothing existing to touch.
+    if not args.dry_run and not state["installed"] and repo_space.has_existing_assets(target):
+        prep = repo_space.prepare_for_install(target, non_interactive=args.non_interactive)
+        if prep.action == "cancel":
+            print(
+                "aborted: existing repo Claude assets left untouched "
+                "(no consent to archive; nothing written).",
+                file=sys.stderr,
+            )
+            return 1
+        if prep.action == "archived":
+            print("\n-- repo Claude assets archived (out of Claude's scope; restorable) --")
+            print(f"moved:   {', '.join(prep.archive.moved)} -> {prep.archive.archive_dir}")
+            print(
+                f"restore: python3 framework/install/repo_space.py restore "
+                f"{prep.archive.archive_dir}"
+            )
+        elif prep.action == "amend":
+            print(
+                "\nexisting repo Claude assets: amending in place "
+                "(idempotent; nothing archived)."
+            )
 
     # The CHILD install mode is a different layout (no hook code of its own) —
     # dedicated path.
