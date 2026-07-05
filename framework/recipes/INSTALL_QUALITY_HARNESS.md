@@ -108,12 +108,13 @@ harness trends over time. Many stdout lines are keyable (e.g. `skipped (exists)`
 | `repo_state_gate_correct` | run with mismatched `--expect`; parse stdout `verdict:` + `repo gate:` lines | **pass** iff non-interactive mismatch REFUSES (exit 1, `"refusing to install (repo expectation gate)"`), `--expect any`/match proceeds, and an already-installed target (`.claude/framework.config.json` present) **skips the gate** on idempotent re-run |
 | `invalid_config_refused` | feed a config missing `version`; expect `SystemExit`/exit 1 `"refusing to install … invalid"` | **pass** iff install aborts non-zero and writes nothing |
 | `non_interactive_zero_prompts` | run `--non-interactive` with stdin closed; watch for hang/`EOFError` | **pass** iff completes without reading stdin (bounded wall-clock) |
+| `cli_bridge_soft_degrade` | **CLI installer only.** Run `2real-team init` with the bundled framework assets made unavailable (the `real_team/_bundled/framework` payload absent). Parse stdout for the soft-degrade notice | **pass** iff the bridge prints the soft-degrade notice and still **exits 0** — team scaffolding (mustache + root `CLAUDE.md`) is laid, the `bootstrap.py` runtime step is skipped, and no error is raised. Asserts the "degrades gracefully (soft notice, no failure) when bundled assets are absent" behavior of the CLI bridge (see *Two installers under test*). |
 
 ### B. Completeness (files installed vs expected)
 
 | id | how measured | pass/fail |
 |----|--------------|-----------|
-| `files_installed_complete` | compare on-disk paths under `.claude/` (+ `ontology/`, `CLAUDE.md`, resolved `.git/hooks/pre-push`) against the bucket's **golden manifest** | **scored**: fraction present/expected; **pass** iff 1.0. Core manifest (team+hooks install) MUST include `.claude/framework.config.json`, `.claude/install.config.json` (resolved snapshot), `.claude/settings.json`, `.claude/hooks/dispatcher.py`,`post_dispatcher.py`,`start_dispatcher.py`,`stop_dispatcher.py` (23 hook modules total), `.claude/lib/lifecycle.py`,`upsert_status_keys.py`,`trust_signals.py`,`pr_ci_state.py`, `.claude/lib/ontology_gen/`, `.claude/skills/*/SKILL.md` (14 skills), and — team mode — `.claude/team/charter/`, `.claude/team/.charter-manifest.json`, `.claude/team/roster/`, `.claude/team/roster.json`, `trust_matrix.md`, `feedback_log.md`. A root `CLAUDE.md` is expected only in **CLI** and **child-mode** manifests, not standalone `bootstrap.py`. |
+| `files_installed_complete` | compare on-disk paths under `.claude/` (+ `ontology/`, `CLAUDE.md`, resolved `.git/hooks/pre-push`) against the bucket's **golden manifest** | **scored**: fraction present/expected; **pass** iff 1.0. The expected `.claude/**` set is NOT a literal here — it is derived from `framework/assets/**` + the resolved install config by the **golden manifest single source**, `framework/install/manifest.py` (`expected_install_set(config) -> set[str]`; snapshot at `framework/install/golden-manifest.json`), which respects install mode (standalone / meta / child) and the `team.enabled` toggle. So the completeness metric can never disagree with what the installer actually copies (a coupling test in `framework/tests/test_golden_manifest.py` installs for real and asserts equality). Data-driven persona cards under `.claude/team/roster/` are asserted as a **non-empty directory** in team mode (their names/count depend on repo introspection + `team.size`), not enumerated. The manifest is scoped to `.claude/**`; a root `CLAUDE.md` (expected only for **CLI** and **child-mode** installs, not standalone `bootstrap.py`), the `ontology/**` overlay+index, and the resolved `.git/hooks/pre-push` are checked by this metric outside the `.claude/**` manifest. |
 | `no_unexpected_files` | diff the target tree before/after; every new path must fall inside the framework-owned namespace (`.claude/**`, `ontology/**`, `CLAUDE.md*`, `.git/hooks/pre-push*`) | **pass** iff no writes land outside that namespace |
 | `install_snapshot_recorded` | `.claude/install.config.json` exists; (CLI path) `team.enabled/preset/size` reflect what was scaffolded (`_sync_install_snapshot`) | **pass**/fail |
 
@@ -154,6 +155,15 @@ into the **installed** dispatcher, mirroring `test_bootstrap_smoke.py`.
 | `settings_merge_preserves_foreign` | B5: a foreign key/hook in the pre-existing `settings.json` survives the union merge; invalid pre-existing JSON is left untouched (error reported, exit 0) | **pass**/fail |
 | `dry_run_writes_nothing` | `--dry-run`: target tree byte-identical after; stdout `would generate`/`would write`/`-- plan --` | **pass**/fail |
 
+> **Note — `reinstall_idempotent` (F) vs `reinstall_parity_clean` (J) are different assertions.**
+> `reinstall_idempotent` asserts that **re-running the installer on a target is a no-op** — the
+> second run changes no bytes under that target's `.claude/` (config not clobbered, `skipped
+> (exists)` / `already wired`). `reinstall_parity_clean` (J) asserts **canonical↔live byte
+> parity for THIS repo** — that `.claude/**` matches its source in `framework/assets/**` via
+> `reinstall.py --check` (the dogfood dual-deploy invariant, #116). One is about *re-running an
+> install*; the other is about *this repo's live copy tracking its canonical source*. They can
+> pass and fail independently.
+
 ### G. Meta / child wiring
 
 | id | how measured | pass/fail |
@@ -183,7 +193,7 @@ into the **installed** dispatcher, mirroring `test_bootstrap_smoke.py`.
 |----|--------------|-----------|
 | `install_duration_s` | wall-clock of the install subprocess | trend line; per-bucket soft budget (regression alarm on Δ, esp. B9) |
 | `ontology_gen_duration_s` | time attributable to structural generation (B3/B9) | trend; scaling check |
-| `install_success_rate` | pass fraction across the full bucket matrix per run | the top-line quality number tracked over time |
+| `install_success_rate` | **metric-level** pass fraction: passing applicable pass/fail (+ scored) metric records ÷ total applicable such records across the whole bucket × installer matrix per run. Weighted 1 per applicable metric record, **not** per bucket. Pure-`trend` records (no pass/fail) are excluded from both numerator and denominator | the top-line quality number tracked over time (this is the single canonical definition #104 §4a computes against) |
 
 ### J. Dogfood parity (real-world B12 only)
 
@@ -194,9 +204,11 @@ into the **installed** dispatcher, mirroring `test_bootstrap_smoke.py`.
 ## Aggregation model (proposed)
 
 A run = the bucket matrix × the two installers. Per bucket, the applicable metrics produce a
-pass/fail vector plus scored values. Roll-up = `install_success_rate` (fraction of applicable
-pass/fail metrics passing) + the scored trend series. `#104` owns the exact scoring/weighting; this
-doc fixes the **vocabulary and semantics** those scores are computed from.
+pass/fail vector plus scored values. Roll-up = `install_success_rate` — the **metric-level** pass
+fraction defined in §I (passing applicable pass/fail + scored metric records ÷ all such applicable
+records across the whole matrix, weighted 1 per metric record, not per bucket) — plus the scored
+trend series. `#104` §4a owns the exact scoring/weighting and computes against this one definition;
+this doc fixes the **vocabulary and semantics** those scores are computed from.
 
 ## Open Questions (for #104 / owner)
 
