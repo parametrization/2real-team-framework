@@ -90,6 +90,17 @@ VALID_BODIES = {
     "bold": BOLD_FORM,
 }
 
+# Semantically CLEAN bodies: well-formed AND correct Request/Replied +
+# Must-fix/Tech-debt usage, so ``check`` returns None (no block, no warn).
+# BOLD_FORM is intentionally excluded — it is a `Request` with `Must-fix: None`
+# (an approval filed as a posting turn), which the #118 warn tier now flags.
+CLEAN_BODIES = {
+    "pr96": CORPUS_PR96,
+    "pr93": CORPUS_PR93,
+    "pr79": CORPUS_PR79,
+    "reply": CORPUS_REPLY,
+}
+
 
 def _bash(command: str, cwd: str | None = None) -> dict:
     d: dict = {"tool_name": "Bash", "tool_input": {"command": command}}
@@ -114,8 +125,9 @@ def test_grammar_accepts_every_real_corpus_body() -> None:
         assert hook.looks_like_charter_comment(body) is True
 
 
-def test_check_accepts_real_corpus_through_command() -> None:
-    for name, body in VALID_BODIES.items():
+def test_check_accepts_clean_corpus_through_command() -> None:
+    # Semantically clean, well-formed comments pass with no block and no warn.
+    for name, body in CLEAN_BODIES.items():
         assert hook.check(_bash(_comment_cmd(body))) is None, name
 
 
@@ -169,6 +181,110 @@ def test_check_blocks_malformed_through_command() -> None:
     result = hook.check(_bash(_comment_cmd(body)))
     assert result and result["decision"] == "block"
     assert "Request" in result["reason"] and "Replied" in result["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# Semantic WARN tier (#118) — the two Phase 4 Wave 1 misuse patterns. All warn
+# (fail-open) rather than block: a well-formed comment is never stopped.
+# --------------------------------------------------------------------------- #
+
+# WAVE-1 MISUSE #1: an approving reviewer filed the verdict as `Request` with no
+# blocking Must-fix (three Wave-1 approvers did this → phantom clean-Request).
+WAVE1_APPROVAL_AS_REQUEST = """Requestor: Nia.Rossi
+Requestee: Ibrahim.El-Amin
+RequestOrReplied: Request
+
+**Review: LGTM — ships as-is**
+Must-fix: None
+Tech-debt: None"""
+
+# WAVE-1 MISUSE #2: a non-blocking observation filed under `Must-fix:` instead of
+# `Tech-debt:` (→ phantom must_fix_received / review_false_positive in Wave 1).
+WAVE1_NONBLOCKING_UNDER_MUSTFIX = """Requestor: Tariq.Morales
+Requestee: Paloma.Gupta
+RequestOrReplied: Request
+
+**Review: one note**
+Must-fix:
+1. Reviewer-name reads "Tariq (QA)" not the canonical form — non-blocking, do not hold the merge.
+
+Tech-debt: None"""
+
+
+def _warn(body: str) -> str | None:
+    result = hook.check(_bash(_comment_cmd(body)))
+    if result is None:
+        return None
+    assert result["decision"] == "allow", "semantic misuse must WARN, never block"
+    return result["systemMessage"]
+
+
+def test_wave1_approval_as_request_warns_should_be_replied() -> None:
+    msg = _warn(WAVE1_APPROVAL_AS_REQUEST)
+    assert msg is not None, "Request + Must-fix:None must warn"
+    assert "Replied" in msg
+    # It must NOT block: grammar is valid.
+    assert hook.validate_grammar(WAVE1_APPROVAL_AS_REQUEST) is None
+
+
+def test_wave1_nonblocking_under_mustfix_warns_should_be_tech_debt() -> None:
+    msg = _warn(WAVE1_NONBLOCKING_UNDER_MUSTFIX)
+    assert msg is not None, "non-blocking item under Must-fix must warn"
+    assert "Tech-debt" in msg
+    assert hook.validate_grammar(WAVE1_NONBLOCKING_UNDER_MUSTFIX) is None
+
+
+def test_bold_request_with_none_mustfix_warns() -> None:
+    # BOLD_FORM is a bold-header `Request` + `Must-fix: None` — same misuse #1.
+    msg = _warn(BOLD_FORM)
+    assert msg is not None and "Replied" in msg
+
+
+def test_request_with_real_mustfix_does_not_warn() -> None:
+    # The correct use of `Request`: it carries blocking items. No warn.
+    for name in ("pr96", "pr93", "pr79"):
+        assert hook.semantic_warnings(VALID_BODIES[name]) is None, name
+
+
+def test_replied_with_none_mustfix_does_not_warn() -> None:
+    # A `Replied` turn with no must-fix is exactly correct — no warn.
+    assert hook.semantic_warnings(CORPUS_REPLY) is None
+
+
+def test_multiple_nonblocking_phrasings_flagged() -> None:
+    for phrase in ("non-blocking", "do not hold", "accept as-is", "not a blocker",
+                   "won't block", "no need to block"):
+        body = (
+            "Requestor: A.One\nRequestee: B.Two\nRequestOrReplied: Request\n\n"
+            f"Must-fix:\n1. Some note — {phrase}, just tracking it.\n"
+        )
+        assert hook.semantic_warnings(body), phrase
+
+
+def test_must_fix_items_parsing() -> None:
+    assert hook._must_fix_items("Must-fix: None") == []
+    assert hook._must_fix_items("Must-fix: N/A (all resolved)") == []
+    assert hook._must_fix_items("Must-fix:\n1. real item\n2. another") == [
+        "1. real item",
+        "2. another",
+    ]
+    assert hook._must_fix_items("Must-fix: an inline blocking item") == [
+        "an inline blocking item"
+    ]
+    # Code spans are stripped, so a `must-fix` token in code is not a section.
+    assert hook._must_fix_items("see `Must-fix: None` in the parser") == []
+
+
+def test_semantic_code_span_not_flagged() -> None:
+    # Non-blocking vocabulary inside a code span must not trip the warn.
+    body = (
+        "Requestor: A.One\nRequestee: B.Two\nRequestOrReplied: Request\n\n"
+        "Must-fix:\n1. Rename `do_not_hold_flag` to a clearer name.\n"
+    )
+    # The only 'do not hold' is inside a code span → not a non-blocking phrase;
+    # the item itself is a real blocking rename, so no non-blocking warn.
+    msg = hook.semantic_warnings(body)
+    assert msg is None or "Tech-debt" not in msg
 
 
 # --------------------------------------------------------------------------- #
@@ -284,6 +400,14 @@ def test_field_regexes_match_trust_signals() -> None:
     assert hook._STRICT_FIELD_RE["Requestor"].pattern == ts._FIELD_RE["requestor"].pattern
     assert hook._STRICT_FIELD_RE["Requestee"].pattern == ts._FIELD_RE["requestee"].pattern
     assert hook._STRICT_FIELD_RE["RequestOrReplied"].pattern == ts._FIELD_RE["verdict"].pattern
+
+
+def test_must_fix_regexes_match_trust_signals() -> None:
+    """The gate's Must-fix parsing (#118 warn tier) must mirror the scorer's, so
+    the gate warns about exactly what trust_signals counts."""
+    assert hook._MUST_FIX_LABEL_RE.pattern == ts._MUST_FIX_LABEL_RE.pattern
+    assert hook._LIST_ITEM_RE.pattern == ts._LIST_ITEM_RE.pattern
+    assert hook._EMPTY_MUST_FIX_RE.pattern == ts._EMPTY_MUST_FIX_RE.pattern
 
 
 def test_exported_vocabulary_constants() -> None:

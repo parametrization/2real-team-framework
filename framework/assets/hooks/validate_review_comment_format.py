@@ -49,6 +49,34 @@ The header-extraction regexes in ``_STRICT_FIELD_RE`` are kept **byte-identical*
 to ``trust_signals._FIELD_RE`` so this gate enforces exactly what the scorer
 parses. ``test_validate_review_comment_format`` pins that equality.
 
+Two tiers: block (grammar) vs warn (semantics) — issue #118
+===========================================================
+
+The gate separates a *structural* failure (which blocks) from a *semantic*
+misuse (which only warns, fail-open):
+
+  * **Block** — a malformed header (missing/mistyped field, unknown verdict
+    token). The comment cannot be parsed by the scorer at all, so it is stopped
+    at write time. This is the #111 contract, unchanged.
+
+  * **Warn** — the header is well-formed but the Request-vs-Replied /
+    Must-fix-vs-Tech-debt *semantics* are misused. Phase 4 Wave 1 surfaced two
+    patterns that contaminated trust deltas (issue #118):
+
+      1. ``RequestOrReplied: Request`` with an empty/``None`` Must-fix — an
+         approval filed as a posting turn. It reads clean to the scorer, but the
+         charter reserves ``Request`` for a turn that carries blocking findings;
+         an approval with none should be ``Replied``.
+      2. A ``Must-fix:`` item phrased as *non-blocking* ("non-blocking", "do not
+         hold", "accept as-is", …) — a Tech-debt note filed under the blocking
+         label. ``trust_signals.py`` counts it as ``must_fix_received``, a
+         phantom negative signal.
+
+    Both only *warn* (``{"decision": "allow", "systemMessage": ...}``): the
+    author's intent may be legitimate, and blocking a well-formed comment over a
+    phrasing judgment would be too aggressive. The dispatcher surfaces the
+    systemMessage and still allows the command.
+
 Fail-open posture (matches the dispatcher)
 ==========================================
 
@@ -56,10 +84,12 @@ The check is pure grammar — it needs no config, roster, or network, so it
 trivially works whether or not those are present. It returns ``None`` (allow) on
 every ambiguous edge: not a comment command, no extractable body, an unreadable
 ``--body-file``, or a body with no header labels at all. Only a genuine,
-attempted-but-malformed charter comment is blocked.
+attempted-but-malformed charter comment is blocked; a well-formed comment with a
+semantic misuse is *warned*, never blocked.
 
 Exit codes:
-  0 — allow (not a comment command, no body, free-form comment, or well-formed)
+  0 — allow (not a comment command, no body, free-form comment, well-formed, or
+      a well-formed comment carrying only a semantic warning)
   2 — block (a charter verdict-comment attempt whose header grammar is malformed)
 """
 
@@ -97,6 +127,46 @@ VERDICT_STATES = frozenset({"request", "replied"})
 #: Body severity labels. ``Must-fix:`` with enumerated items => changes
 #: requested; ``None`` / absent => clean. ``Tech-debt:`` is non-blocking.
 SEVERITY_MARKERS = ("Must-fix", "Tech-debt")
+
+# --------------------------------------------------------------------------- #
+# Body-severity parsing for the SEMANTIC warn tier (#118).
+#
+# These mirror ``trust_signals._has_must_fix_items`` byte-for-byte (the coupling
+# test pins the equality) so the gate's warn aligns with exactly what the scorer
+# counts as a Must-fix. They are re-declared here rather than imported so the
+# hook keeps its zero-dependency, fail-open posture: ``trust_signals`` lives in
+# ``assets/lib`` which is not on the hook runtime's ``sys.path``, and importing
+# it would make the gate crash (and silently skip) in a real install.
+# --------------------------------------------------------------------------- #
+
+#: The ``Must-fix:`` label line; group 1 captures any same-line remainder.
+_MUST_FIX_LABEL_RE = re.compile(r"^\s*\**must[\s-]?fix\**:\s*(.*?)\s*$", re.IGNORECASE)
+#: An enumerated / bulleted list item (``1.`` / ``2)`` / ``-`` / ``*`` / ``+``).
+_LIST_ITEM_RE = re.compile(r"^\s*(?:\d+[.)]|[-*+])\s+\S")
+#: An explicit "no findings" value (``None`` / ``N/A`` / ``-`` / ``0``).
+_EMPTY_MUST_FIX_RE = re.compile(r"^(none|n/?a|-+|0)(?:\W|$)", re.IGNORECASE)
+
+#: Non-blocking phrasing that does NOT belong under ``Must-fix:`` — it belongs
+#: under ``Tech-debt:``. A ``Must-fix`` item carrying any of these is the Wave-1
+#: misuse pattern that produced a phantom ``must_fix_received``.
+_NON_BLOCKING_PHRASE_RE = re.compile(
+    r"\bnon[\s-]?blocking\b"
+    r"|\bnot\s+(?:a\s+)?block(?:er|ing)?\b"
+    r"|\bdo(?:es)?\s*n['’o]?t\s+(?:block|hold)\b"
+    r"|\bdon['’]t\s+(?:block|hold)\b"
+    r"|\bno\s+need\s+to\s+(?:block|hold)\b"
+    r"|\bwo?n['’]?t\s+(?:block|hold)\b"
+    r"|\bwill\s+not\s+(?:block|hold)\b"
+    r"|\baccept\s+as[\s-]?is\b"
+    r"|\bnot\s+a\s+merge\s+blocker\b",
+    re.IGNORECASE,
+)
+
+#: Fenced / inline code stripping, so the ``must-fix`` token or the non-blocking
+#: vocabulary inside a code span or test name is never counted (mirrors
+#: ``trust_signals._strip_code_markup``).
+_FENCED_CODE_RE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 # The shared header grammar — byte-identical to trust_signals._FIELD_RE. This is
 # what the SCORER (#98) parses; the coupling test pins the equality so the two
@@ -256,8 +326,111 @@ def validate_grammar(body: str) -> str | None:
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Semantic warnings (pure) — the WARN tier (#118). Fail-open: never blocks.
+# --------------------------------------------------------------------------- #
+
+
+def _strip_code_markup(text: str) -> str:
+    """Blank out fenced blocks and inline code spans (positions preserved)."""
+    text = _FENCED_CODE_RE.sub(lambda m: " " * len(m.group()), text)
+    text = _INLINE_CODE_RE.sub(lambda m: " " * len(m.group()), text)
+    return text
+
+
+def _must_fix_items(body: str) -> list[str]:
+    """Return the text of each ``Must-fix:`` item, or ``[]`` when the section is
+    empty / ``None`` / absent.
+
+    Mirrors ``trust_signals._has_must_fix_items``: an inline value on the label
+    line counts as one item (unless it's an explicit "no findings" marker); a
+    bare label takes the following enumerated/bulleted lines. Code spans are
+    stripped first. Only the first ``Must-fix:`` section is read.
+    """
+    lines = _strip_code_markup(body).splitlines()
+    for i, line in enumerate(lines):
+        label_m = _MUST_FIX_LABEL_RE.match(line)
+        if not label_m:
+            continue
+        items: list[str] = []
+        inline = label_m.group(1).strip()
+        if inline and not _EMPTY_MUST_FIX_RE.match(inline):
+            items.append(inline)
+        # Collect following enumerated/bulleted item lines (skipping blanks).
+        j = i + 1
+        while j < len(lines):
+            nxt = lines[j]
+            if not nxt.strip():
+                j += 1
+                continue
+            if _LIST_ITEM_RE.match(nxt):
+                items.append(nxt.strip())
+                j += 1
+                continue
+            break
+        return items
+    return []
+
+
+_WARN_REQUEST_NO_MUSTFIX = (
+    "WARNING (not blocking): RequestOrReplied is `Request` but there are no "
+    "blocking `Must-fix:` items ({detail}). The charter reserves `Request` for a "
+    "turn that carries blocking findings; an approval / response with no "
+    "must-fix should be `RequestOrReplied: Replied` (or add the blocking items "
+    "under `Must-fix:`). Filed as `Request`, trust_signals reads this as a clean "
+    "posting — harmless to the score, but it muddies the Request/Replied "
+    "distinction the charter draws."
+)
+
+_WARN_NONBLOCKING_MUSTFIX = (
+    "WARNING (not blocking): a `Must-fix:` item is phrased as non-blocking "
+    "({quoted}). `Must-fix:` is blocking-only — anything you would NOT hold the "
+    "merge for belongs under `Tech-debt:`. trust_signals counts every Must-fix "
+    "item as a `must_fix_received` negative signal against the author, so a "
+    "non-blocking note filed here becomes a phantom blocking signal (the exact "
+    "Wave-1 contamination this gate now flags)."
+)
+
+
+def semantic_warnings(body: str) -> str | None:
+    """Return a fail-open advisory for a well-formed comment whose Request/Replied
+    or Must-fix/Tech-debt *semantics* are misused, else None.
+
+    Precondition: the header grammar is already valid (``validate_grammar``
+    returned None), so the verdict token parses cleanly. Two patterns warn:
+
+      1. ``Request`` + empty/``None`` Must-fix  -> should be ``Replied``.
+      2. a ``Must-fix:`` item phrased non-blocking -> should be ``Tech-debt:``.
+
+    The two are effectively mutually exclusive (pattern 1 needs an empty
+    Must-fix, pattern 2 needs an item present); the join is kept as a defensive
+    no-op so adding a future pattern needs no rewiring.
+    """
+    verdict_m = _LINE_FIELD_RE["RequestOrReplied"].search(body)
+    if verdict_m is None:  # defensive — grammar was validated upstream
+        return None
+    verdict = verdict_m.group(1).split()[0].strip("*").strip().lower()
+
+    items = _must_fix_items(body)
+    warnings: list[str] = []
+
+    if verdict == "request" and not items:
+        detail = "the `Must-fix:` section is `None`/empty or absent"
+        warnings.append(_WARN_REQUEST_NO_MUSTFIX.format(detail=detail))
+
+    non_blocking = [it for it in items if _NON_BLOCKING_PHRASE_RE.search(it)]
+    if non_blocking:
+        quoted = "; ".join(f'"{it[:80]}"' for it in non_blocking)
+        warnings.append(_WARN_NONBLOCKING_MUSTFIX.format(quoted=quoted))
+
+    if not warnings:
+        return None
+    return "\n\n".join(warnings)
+
+
 def check(input_data: dict) -> dict | None:
-    """Block result dict if a malformed charter verdict-comment is detected, else
+    """Block result dict if a malformed charter verdict-comment is detected, an
+    allow+warning dict if it is well-formed but semantically misused (#118), else
     None. Fails open on every ambiguous edge (see module docstring)."""
     if input_data.get("tool_name") != "Bash":
         return None
@@ -274,13 +447,19 @@ def check(input_data: dict) -> dict | None:
         return None  # free-form comment, not a charter verdict-comment attempt
 
     reason = validate_grammar(body)
-    if reason is None:
-        return None
+    if reason is not None:
+        log_pretooluse_block(
+            "validate_review_comment_format", command, reason, input_data=input_data
+        )
+        return {"decision": "block", "reason": reason}
 
-    log_pretooluse_block(
-        "validate_review_comment_format", command, reason, input_data=input_data
-    )
-    return {"decision": "block", "reason": reason}
+    # Grammar is well-formed. Evaluate the SEMANTIC warn tier (#118): never
+    # blocks, only surfaces an advisory the dispatcher relays.
+    warning = semantic_warnings(body)
+    if warning is not None:
+        return {"decision": "allow", "systemMessage": warning}
+
+    return None
 
 
 def main() -> None:
@@ -293,6 +472,10 @@ def main() -> None:
     if result and result.get("decision") == "block":
         print(json.dumps(result))
         sys.exit(2)
+    if result and result.get("systemMessage"):
+        # Well-formed but semantically misused (#118): surface the advisory and
+        # still allow (fail-open) — matches the dispatcher's warn contract.
+        print(json.dumps(result))
     sys.exit(0)
 
 
