@@ -10,6 +10,60 @@ Track all feedback events here. Format:
 
 ---
 
+## Retrospective: Wave 2 (Phase 4 Wave 1, "self-hosting & quality machinery") — 2026-07-05
+
+> **First live retro.** State machine drove the wave (via #99); counters recorded live at wrapup,
+> no backfill. Two Phase 4 exit criteria met: state written live, retros need no backfill.
+
+### Wave Metrics
+- **4 PRs merged** into `deployments/phase4/wave-1` — #112 (#100, Ibrahim), #113 (#98, Paloma),
+  #114 (#99, Nia), #115 (#111, Tariq). 4 issues closed (#98/#99/#100/#111).
+- **1 legitimate changes-requested cycle** (Paloma → #112, test-union merge order; resolved by
+  Ibrahim's rebase). Recorded `wave_2_changes_requested_cycles=1`.
+- CI green on every PR; integrated tip: `ruff` clean, **331 tests** (270→331; union suite +
+  #114/#115 additions). Counter drift: **zero** (recomputed = recorded).
+- Tech-debt filed this retro: **#116** (owner reinstall rule), **#117/#118/#119** (retro defects).
+
+### Top-Implementer Concentration
+1 PR each across 4 engineers → **max 1 / 4 = 25%**. Balanced; no fragility or theme-fit flag.
+
+### Per-Engineer Assessments (signals contaminated — see trust matrix)
+Deltas held flat. Raw signals: Ibrahim/Paloma/Tariq delta 0, Nia delta −1 (a #118 false-positive
+artifact). Every author showed a phantom `must_fix_received=1` because approving reviewers wrote
+`Request` (not `Replied`) and filed non-blocking notes under `Must-fix:`. See #118/#119.
+
+### Top 3 Going Well
+1. **The quality machinery runs end-to-end** — Phase 3's retro scored all-zero; this one executed
+   the full pipeline and (by design) caught its own remaining defects.
+2. **Clean, balanced delivery** — 4/4 PRs, 25% concentration, one real must-fix, zero CI-red.
+3. **Cross-coupling reconciled in isolation** — #111 defined the vocab, #98 aligned to it, both
+   pinned the same regex; three independent reviewers confirmed the coupling survives integration.
+
+### Top 3 Pain Points
+1. **Branch renderer ignores phase-local ordinal (#117)** — scored 0 PRs until manually overridden;
+   the retro could not self-score. Sibling of #100.
+2. **Verdict-grammar semantics unenforced (#118)** — `Request` vs `Replied` and Must-fix-vs-Tech-debt
+   placement are convention-only; misuse silently contaminated trust signals.
+3. **Reviewer-name splitting (#119)** — dotted vs spaced names fragment one person's ledger.
+
+### Proposed Process Changes (approval-gated — not yet applied)
+1. **Fix #117** so `{wave}` resolves to `wave_<id>_phase_ordinal` for phase-namespaced projects —
+   restores authoritative self-scoring. *(Rationale: retro must not need a manual base override.)*
+2. **Fix #118** — charter clarity + gate warning on the two misuse patterns. *(Rationale: the
+   scorer is only as good as the review vocabulary; structure-only enforcement isn't enough.)*
+3. **Fix #119** — roster-normalize captured names before bucketing. *(Rationale: split identities
+   silently understate reviewer contribution.)*
+4. **Adopt #116** — reinstall-on-change rule to end source↔runtime drift.
+5. Minor fold-ins (from PR reviews, non-blocking): `/wave-start` allocate-idempotency guard
+   (re-run double-advances state); `_phase_for_wave`↔`lifecycle.phase_of` shared resolver;
+   `merged_prs` phase-passthrough + bad-JSON fail-open tests; wave-end in `DUAL_DEPLOY_REQUIRED`.
+
+### Re-score commitment
+Once #117/#118/#119 land, re-run `trust_signals score` on this wave's corrected comments and
+replace the flat-held deltas with authoritative numbers (same commitment the Phase 3 entry made).
+
+---
+
 ## Retrospective: Wave 1 (Phase 3, "installer overhaul → v0.4.0") — 2026-07-05
 
 > **Reconstructed retro.** Phase 3 was run without the lifecycle state machine (no
