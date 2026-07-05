@@ -10,7 +10,57 @@ Track all feedback events here. Format:
 
 ---
 
-## Retrospective: Wave 4 (Phase 5 Wave 1, "Installer robustness — discovery tranche") — 2026-07-05
+## Retrospective: Wave 5 (Phase 5 Wave 2, "Installer robustness — build tranche") — 2026-07-05
+
+> **The build wave.** Implemented what Wave 1 designed: the install/test/teardown harness, the golden
+> manifest, and the consented backup/amend/restore installs at user + repo level. Closed the load-bearing
+> **G1** gap. Third consecutive fully-clean mechanical score.
+
+### Wave Metrics
+- **4 PRs merged** into `deployments/phase5/wave-2`: #144 (#107, Ibrahim), #143 (#139, Nia),
+  #147 (#105, Tariq), #146 (#108, Paloma). **6 issues closed** (#105/#107/#108/#138/#139/#145).
+- **0 changes-requested cycles** — all 4 cross-assigned charter reviews returned `Replied` / `Must-fix: None`.
+  Integrated tip: `ruff` clean, **442 tests** (376→442, +66); reinstall-parity + golden-manifest drift guards in sync.
+- **Counter drift: zero** — recorded (4 / 0 / 25%) == recomputed.
+- Post-merge activation verified: `files_installed_complete` grades on all cells (was a pending-#139 skip);
+  `install_success_rate 1.00`.
+- Tech-debt filed: **#148** (cli_bridge_soft_degrade impl + --compare CI gate), **#149** (durability/fidelity
+  hardening: parent-dir fsync, foreign-asset detection, child/meta manifest snapshot). Deferred: **#142** (product uninstall).
+
+### Top-Implementer Concentration
+Ibrahim 1 / Nia 1 / Tariq 1 / Paloma 1 → **max 1 / 4 = 25%**. Perfectly even; no fragility flag.
+
+### Per-Engineer Assessments
+All four: `prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0` → **delta 0** (single clean PR
+is not a bump). Hold at **4 across the board**. See `trust_matrix.md` Wave 5.
+
+### Top 3 Going Well
+1. **Cross-PR contracts held exactly** — Nia's `expected_install_set` seam and Ibrahim's consent/backup
+   module API were both consumed verbatim (#105 auto-wired with zero change; #108 reused the module). Pinning
+   the contracts in the kickoff brief paid off — parallel tracks converged without divergence.
+2. **The quality oracle caught a bug in itself, pre-merge** — a latent config-shape mismatch (flat permutation
+   dict vs #139's nested dotted config) would have silently mis-graded child/meta/no-team installs. Both #105
+   reviewers flagged it independently; the pre-merge fix surfaced a deeper model-token spelling mismatch neither
+   caught. Fixed correct-by-construction rather than shipped correct-by-coincidence.
+3. **G1 closed** — the load-bearing invisible dependency (agent-teams flag) is now a consented, idempotent,
+   backup-safe user-level install; a fresh clone can be made team-capable without hand-editing `~/.claude`.
+
+### Top 3 Pain Points
+1. **"Correct by coincidence" nearly shipped** — the seam bug was non-blocking only because the current matrix
+   happens to run the metric solely on single-repo+team cells. Lesson: for a *measurement* tool, a metric that
+   silently defaults is worse than one that errors. Consider: metrics should fail-loud on unresolved config,
+   not fall back to a default set. (Process note, not a charter change yet.)
+2. **`must_fix_caught` still under-credits QA** — the reviewers' most valuable find (the seam) registered as
+   tech-debt, and its fix as orchestrator-directed hardening, so no reviewer scored a "catch." Third wave running
+   this pattern; worth a scoring-model look in a later wave.
+3. **Harness completeness deferred** — `cli_bridge_soft_degrade` unimplemented and `--compare` not yet a CI gate
+   (#148); the harness measures well but isn't yet a standing CI guard.
+
+### Proposed Process Changes
+1. **(Candidate, not applied)** Metrics in the harness should **fail-loud on unresolved/unknown config** rather
+   than silently returning a default expected-set — Rationale: Wave 5's seam bug. Fold into #148 when the harness
+   is hardened; surface for owner approval then.
+2. *(No charter amendments proposed — the review process worked: the seam was caught by review, escalated, fixed.)*
 
 > **Phase 5 opens.** First wave of the installer-robustness phase: a *discovery* tranche that
 > defines what a good install looks like before Wave 2 builds the harness. Two `[Explore]` spikes

@@ -146,3 +146,32 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | Methodology consumed #103's B1–B12 + metric ids verbatim; flagged `cli_bridge_soft_degrade` as an explicit fold-in rather than silently redefining | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 (review depth good but all non-blocking) |
 | Paloma Gupta | Shipped the #131 scorer gate with a real coupling test (the exact #115 shape) + positive guard; independently confirmed G1 as #135 reviewer via grep | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
 | Tariq Morales | Taxonomy + ~31 metrics grounded in real installer exit codes; as #137 reviewer caught the `record_id` join-key collision (a genuine spec defect → #138) | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+
+## Wave 5 Trust Updates (2026-07-05) — Phase 5 Wave 2: "Installer robustness — build tranche"
+
+> **Third consecutive fully-clean mechanical score.** The build wave: 4 PRs (#107 user-level install
+> closing G1, #139 golden manifest, #105 harness+#138, #108 repo-level install+#145), 0 changes-requested
+> cycles, 25% concentration (one PR each), counter drift zero. All four cross-reviews returned `Replied` /
+> `Must-fix: None`. Every engineer holds at **4** (delta 0 — a single clean PR is not a bump). Two cross-PR
+> contracts (`expected_install_set` seam, consent/backup module API) held exactly as pinned. Notable process
+> event: a **latent config-shape seam bug** (harness passed a flat permutation dict; #139 reads nested dotted
+> config → silent mis-grade on any child/meta/no-team cell) was independently flagged by BOTH #105 reviewers
+> as non-blocking tech-debt, then **fixed pre-merge by orchestrator direction** — the quality oracle made
+> correct-by-construction, not by coincidence. Not a reviewer must-fix, so it does not register as
+> `must_fix_received` (correctly — it was proactive hardening, not a rework demand).
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Ibrahim El-Amin | 4 | 4 | delta 0: prs_merged=1 (#144/#107), clean; closed his own G1 finding with an idempotent consented installer. Thorough #108 review (caught the parent-dir fsync durability nuance). |
+| Nia Rossi | 4 | 4 | delta 0: prs_merged=1 (#143/#139), clean; golden manifest contract held exact — #105 auto-wired with zero change. |
+| Paloma Gupta | 4 | 4 | delta 0: prs_merged=1 (#146/#108), clean; repo-level archive/restore + folded #145 atomic write across both write paths. |
+| Tariq Morales | 4 | 4 | delta 0: prs_merged=1 (#147/#105), clean; flagship harness + #138 fix; proactively hardened the #139 seam (found the model-token spelling mismatch neither reviewer caught). |
+
+### Done Well / Needs Improvement (Wave 5 / Phase 5 Wave 2)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Ibrahim El-Amin | Closed G1 (the load-bearing gap) with a consented, idempotent check-existing installer + reusable module; safety guarantees structural not just tested | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+| Nia Rossi | Golden-manifest contract held exact under head-to-head verification; derived-not-literal so it can't drift from the installer | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+| Paloma Gupta | Archive-out-of-scope + byte-identical restore round-trip; single atomic-write fix (#145) hardened both user- and repo-space paths | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+| Tariq Morales | Flagship harness (B1–B9 + B12 inline, teardown-proof, #138); pre-merge seam fix caught a model-token spelling mismatch both reviewers missed | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 (as #139 reviewer the real catch became the seam fix, tracked outside the scorer) |
