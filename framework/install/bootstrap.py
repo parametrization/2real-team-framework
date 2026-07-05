@@ -1252,6 +1252,14 @@ def main() -> int:
     ontology_group.add_argument("--no-ontology", action="store_true",
                                 help="Skip the ontology seed + structural index (ontology.enabled=false)")
     ap.add_argument("--no-permissions", action="store_true", help="Do NOT install the curated permissions.allow allowlist into settings.json (hook wiring still merges)")
+    ap.add_argument(
+        "--user-space", action="store_true",
+        help="Also run the CONSENTED user-level install step: idempotently add the "
+             "framework's harness-global settings (agent-teams flag, teammateMode, "
+             "worktree baseRef, ~/.claude permission globs) to ~/.claude/settings.json "
+             "(closes #106 G1). Opt-in prompt before any write; --non-interactive skips it; "
+             "existing/matching keys are a no-op; divergent values are surfaced, never clobbered.",
+    )
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument(
         "--refresh-charter", action="store_true",
@@ -1479,6 +1487,27 @@ def main() -> int:
     print(f"team roster:       {roster_status}")
     if team_enabled and roster_plan is not None and not args.no_enforce_identity:
         print("identity gate:     ENABLED (commits must use -c user.name/-c user.email from the roster)")
+
+    # CONSENTED user-level step (#107, closes #106 G1). Opt-in: only when --user-space
+    # is passed. Merge-only, idempotent, consent-gated; --non-interactive skips it and a
+    # dry-run never writes. Reads/writes ~/.claude, never the target repo — kept last so
+    # a repo install is complete before we touch user space.
+    if args.user_space:
+        import user_space  # noqa: E402  (sibling module in install/)
+
+        target_settings = user_space.user_settings_path()
+        if args.dry_run:
+            print("\n-- user-level install (~/.claude/settings.json) --")
+            print(f"would offer to add the framework's harness-global settings to {target_settings}")
+        else:
+            us_result = user_space.install_user_space(non_interactive=args.non_interactive)
+            print("\n" + user_space.report(us_result, target_settings))
+    elif not args.dry_run:
+        print(
+            "\nhint: harness-global team settings (agent-teams flag, worktree base) are a "
+            "USER-level concern. Re-run with --user-space (or `python3 "
+            "framework/install/user_space.py`) to install them into ~/.claude with consent."
+        )
 
     print("\nNext:")
     print("  1. Review .claude/framework.config.json (scm.owner / policy / ci.tooling) and .claude/team/roster.json.")
