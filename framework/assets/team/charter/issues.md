@@ -68,6 +68,46 @@ RequestOrReplied: Request
 - **Requestee** = the person being asked (`N/A` for general status updates).
 - **RequestOrReplied** = `Request` when posting, `Replied` when responding.
 
+### Verdict-Comment Grammar (machine-parsed — single source of truth)
+
+PR **review verdicts** use the same three-line header, and additionally carry the
+review outcome in the **body** via two severity markers:
+
+```
+Requestor: Firstname.Lastname
+Requestee: Firstname.Lastname
+RequestOrReplied: Request
+
+**Review: <one-line summary>**
+Must-fix: <enumerated items, or None>
+Tech-debt: <items, or None>
+```
+
+This shape is a **machine grammar**, not just a convention — two tools read it and
+must agree on the vocabulary:
+
+- **`validate_review_comment_format`** (a PreToolUse hook) *enforces* it: a
+  `gh pr comment` / `gh issue comment` whose body attempts the header but is
+  malformed (a missing/mistyped field, an unknown verdict token) is blocked at
+  write time.
+- **`trust_signals.py`** *parses* it to score review quality (issue #98): the
+  `Requestor:` line is the reviewer identity, `RequestOrReplied:` is the verdict
+  state, and the body `Must-fix:` tally is the severity.
+
+Canonical vocabulary (both tools bind to these exact tokens):
+
+| Element | Label | Allowed values | Meaning |
+|---------|-------|----------------|---------|
+| Header | `Requestor:` | a name (bare or `**bold**`) | comment author / reviewer |
+| Header | `Requestee:` | a name, or `N/A` | who is addressed / the PR author |
+| Header | `RequestOrReplied:` | **`Request`** \| **`Replied`** | posting a verdict / replying |
+| Body | `Must-fix:` | enumerated items, or `None` | enumerated ⇒ **changes requested** (blocks merge); `None` ⇒ clean |
+| Body | `Tech-debt:` | items, or `None` | non-blocking; tracked as issues |
+
+Severity lives in the **body** (`Must-fix:`), never in the verdict token — do not
+write `RequestOrReplied: Approved` or `ChangesRequested`. Both the bare
+(`Requestor: Name`) and bold (`**Requestor:** Name`) header forms are accepted.
+
 ## Reply Protocol
 
 When tagged as **Requestee** on a `Request` comment, respond on the same issue with
