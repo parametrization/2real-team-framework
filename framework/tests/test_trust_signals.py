@@ -319,6 +319,153 @@ def test_score_delta_discriminates_clean_reviewer_from_blocked_author():
 
 
 # ===========================================================================
+# Roster name normalization (#119): identity captured as `First.Last`,
+# `First Last`, and `First Last (Role)` must fold to one canonical roster
+# identity before bucketing; a name absent from the roster passes through.
+# ===========================================================================
+
+
+class _RosterCfg:
+    """Config stub with a `.path` so `_roster_names` can resolve the roster file.
+
+    The real config lives at `<repo>/.claude/framework.config.json`, so
+    `cfg.path.parent.parent` is the repo root. Mirrors that layout under tmp.
+    """
+
+    def __init__(self, path: Path, values: dict | None = None) -> None:
+        self.path = path
+        self._v = values or {}
+
+    def get(self, key: str, default=None):
+        return self._v.get(key, default)
+
+
+def _roster_cfg(tmp_path: Path, roster: dict[str, str]) -> _RosterCfg:
+    """Write a roster at the default `identity.roster_source` and return a cfg."""
+    claude = tmp_path / ".claude"
+    (claude / "team").mkdir(parents=True)
+    (claude / "team" / "roster.json").write_text(json.dumps(roster))
+    return _RosterCfg(claude / "framework.config.json")
+
+
+_ROSTER = {
+    "Tariq Morales": "Tariq.Morales@example.com",
+    "Ibrahim El-Amin": "Ibrahim.El-Amin@example.com",
+    "Nia Rossi": "Nia.Rossi@example.com",
+}
+
+
+# --------------------------------------------------------------- _name_key
+
+
+def test_name_key_folds_dotted_spaced_and_role_variants() -> None:
+    # The exact three variants issue #119 names collapse to one key.
+    assert (
+        ts._name_key("Tariq.Morales")
+        == ts._name_key("Tariq Morales")
+        == ts._name_key("Tariq Morales (QA)")
+        == "tariq morales"
+    )
+
+
+def test_name_key_preserves_hyphen_but_folds_dot() -> None:
+    # A dotted first/last separator becomes a space; the hyphen inside a
+    # surname is preserved (Ibrahim.El-Amin -> "ibrahim el-amin").
+    assert ts._name_key("Ibrahim.El-Amin") == "ibrahim el-amin"
+    assert ts._name_key("Ibrahim El-Amin (Senior SWE)") == "ibrahim el-amin"
+
+
+# --------------------------------------------------------------- _canonicalizer
+
+
+def test_canonicalizer_maps_all_variants_to_roster_identity(tmp_path) -> None:
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    for variant in ("Tariq.Morales", "Tariq Morales", "Tariq Morales (QA)"):
+        assert canon(variant) == "Tariq Morales"
+    assert canon("Ibrahim.El-Amin") == "Ibrahim El-Amin"
+
+
+def test_canonicalizer_passes_absent_name_through(tmp_path) -> None:
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    # A name not on the roster is returned verbatim — never dropped, never raised.
+    assert canon("Some Contractor") == "Some Contractor"
+    assert canon("dependabot[bot]") == "dependabot[bot]"
+
+
+def test_canonicalizer_fails_open_without_roster(tmp_path) -> None:
+    # No roster file at all (and cfg with no path) → every name passes through.
+    missing_cfg = _RosterCfg(tmp_path / ".claude" / "framework.config.json")
+    canon = ts._canonicalizer(missing_cfg)
+    assert canon("Tariq.Morales") == "Tariq.Morales"
+    assert ts._canonicalizer(_Cfg({}))("Tariq.Morales") == "Tariq.Morales"
+
+
+# --------------------------------------------------------------- end-to-end bucketing
+
+
+def _account_canon(
+    canon, pr_sets: dict[str, tuple[str, list[str]]]
+) -> dict[str, ts.Signals]:
+    """extract_signals' per-PR accounting with the roster canonicalizer applied
+    to both author and requestor identity — pure (no gh)."""
+    signals: dict[str, ts.Signals] = {}
+
+    def bucket(name: str) -> ts.Signals:
+        return signals.setdefault(canon(name), ts.Signals())
+
+    for _pr, (author, bodies) in pr_sets.items():
+        author_sig = bucket(author)
+        author_sig.prs_merged += 1
+        had_cr = False
+        for v in ts.parse_verdicts(bodies):
+            if v.changes_requested:
+                had_cr = True
+                author_sig.must_fix_received += 1
+                if v.requestor:
+                    bucket(v.requestor).must_fix_caught += 1
+            if v.false_positive and v.requestor:
+                bucket(v.requestor).review_false_positives += 1
+        if had_cr:
+            author_sig.rework_cycles += 1
+    return signals
+
+
+def test_variants_bucket_to_single_engineer_end_to_end(tmp_path) -> None:
+    """The #119 defect, end to end: Tariq reviewing as `Tariq Morales (QA)` on one
+    PR and `Tariq.Morales` on another must land in ONE ledger entry, not split."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    # PR96: Tariq (as "(QA)") catches a must-fix on Ibrahim's PR.
+    # PR93: Tariq (as dotted "Tariq.Morales") catches a must-fix on Nia's PR.
+    pr93_by_nia = """Requestor: Tariq.Morales
+Requestee: Nia Rossi
+RequestOrReplied: Request
+
+**Must-fix:**
+1. Correct the recorded numbers.
+"""
+    sigs = _account_canon(
+        canon,
+        {
+            "96": ("Ibrahim El-Amin", [PR96_REQUEST]),
+            "93": ("Nia Rossi", [pr93_by_nia]),
+        },
+    )
+    # Exactly one Tariq bucket — no phantom `Tariq.Morales` split.
+    tariq_keys = [k for k in sigs if "tariq" in k.lower()]
+    assert tariq_keys == ["Tariq Morales"]
+    assert sigs["Tariq Morales"].must_fix_caught == 2
+
+
+def test_absent_reviewer_still_buckets_without_roster(tmp_path) -> None:
+    # Fail-open path: with no roster, the dotted and (Role) forms remain distinct
+    # (unchanged legacy behavior) but nothing crashes or is dropped.
+    canon = ts._canonicalizer(_RosterCfg(tmp_path / ".claude" / "cfg.json"))
+    sigs = _account_canon(canon, {"96": ("Ibrahim El-Amin", [PR96_REQUEST])})
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 1
+    assert sigs["Tariq Morales (QA)"].must_fix_caught == 1
+
+
+# ===========================================================================
 # Integration-branch resolution (#100): phase-aware branch.integration template.
 # ===========================================================================
 
