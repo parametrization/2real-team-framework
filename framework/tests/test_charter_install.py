@@ -97,8 +97,118 @@ def test_force_refreshes_from_template(tmp_path: Path) -> None:
     assert "{{" not in text  # force path substitutes too
 
 
+def test_pr_creation_wording_is_merge_model_conditional(tmp_path: Path) -> None:
+    """Issue #94: the § PR Creation base-branch sentence must NOT render as a
+    self-contradiction under direct-to-main ("never `main` directly (merge
+    model: `direct-to-main`)"). It must describe BOTH models and cite the
+    per-wave kickoff mechanism, so it reads coherently for either config value."""
+    r = _install(tmp_path, "--merge-model", "direct-to-main")
+    assert r.returncode == 0, r.stderr
+    pr = (_charter_dir(tmp_path) / "pull-requests.md").read_text(encoding="utf-8")
+    # The old, self-contradictory phrasing is gone.
+    assert "directly (merge model:" not in pr
+    # Both models are described, and the per-wave declaration is cited.
+    assert "Under `wave-branch`" in pr
+    assert "Under `direct-to-main`" in pr
+    assert "lifecycle.py wave kickoff --merge-model" in pr
+    # No unreplaced placeholder survived the conditional rewrite.
+    assert "{{" not in pr and "}}" not in pr
+
+
+def test_ground_rules_merge_model_acknowledges_per_wave_declaration(tmp_path: Path) -> None:
+    """Issue #94: the charter.md ground-rules 'Merge model:' line must note that
+    the effective model is declared per wave at kickoff, so a `direct-to-main`
+    configured default does not mislead a reader in a repo that runs waves."""
+    r = _install(tmp_path, "--merge-model", "direct-to-main")
+    assert r.returncode == 0, r.stderr
+    charter = (_charter_dir(tmp_path) / "charter.md").read_text(encoding="utf-8")
+    assert "direct-to-main" in charter  # the configured default still renders
+    assert "declared at kickoff" in charter
+    assert "lifecycle.py wave kickoff --merge-model" in charter
+
+
 def test_dry_run_writes_nothing(tmp_path: Path) -> None:
     r = _install(tmp_path, "--dry-run")
     assert r.returncode == 0, r.stderr
     assert not _charter_dir(tmp_path).exists()
     assert "would be written" in r.stdout
+
+
+# --- --refresh-charter three-way behaviour (issue #77) -----------------------
+
+def _manifest(target: Path) -> Path:
+    return target / ".claude" / "team" / ".charter-manifest.json"
+
+
+def test_install_writes_charter_manifest(tmp_path: Path) -> None:
+    _install(tmp_path)
+    man = _manifest(tmp_path)
+    assert man.is_file(), "install should record a charter render manifest"
+    import json
+    data = json.loads(man.read_text(encoding="utf-8"))
+    assert set(data["files"]) == set(CHARTER_FILES)
+    # Manifest lives OUTSIDE the charter dir so it is not a charter module.
+    assert sorted(p.name for p in _charter_dir(tmp_path).glob("*")) == sorted(CHARTER_FILES)
+
+
+def test_refresh_charter_preserves_hand_edited_module(tmp_path: Path) -> None:
+    _install(tmp_path)
+    marker = "\n## LOCAL EDIT — must survive refresh\n"
+    edited = _charter_dir(tmp_path) / "commits.md"
+    edited.write_text(edited.read_text(encoding="utf-8") + marker, encoding="utf-8")
+
+    r = _install(tmp_path, "--refresh-charter")
+    assert r.returncode == 0, r.stderr
+    assert marker in edited.read_text(encoding="utf-8")  # hand edit not clobbered
+    assert "preserved (hand-evolved)" in r.stdout
+    assert "team/charter/commits.md" in r.stdout
+
+
+def test_refresh_charter_propagates_config_into_unmodified_module(tmp_path: Path) -> None:
+    _install(tmp_path)  # owner = test-org
+    charter = _charter_dir(tmp_path) / "charter.md"
+    assert "test-org" in charter.read_text(encoding="utf-8")
+
+    r = _install(tmp_path, "--refresh-charter", "--owner", "new-org")
+    assert r.returncode == 0, r.stderr
+    text = charter.read_text(encoding="utf-8")
+    assert "new-org" in text  # config change propagated
+    assert "test-org" not in text
+    assert "refreshed" in r.stdout
+
+
+def test_refresh_charter_updates_unmodified_but_keeps_hand_edited(tmp_path: Path) -> None:
+    """A single refresh both propagates config to clean modules AND preserves edited ones."""
+    _install(tmp_path)  # owner = test-org
+    edited = _charter_dir(tmp_path) / "commits.md"
+    hand = edited.read_text(encoding="utf-8") + "\n## hand edit\n"
+    edited.write_text(hand, encoding="utf-8")
+
+    r = _install(tmp_path, "--refresh-charter", "--owner", "new-org")
+    assert r.returncode == 0, r.stderr
+    # clean module refreshed to new owner…
+    assert "new-org" in (_charter_dir(tmp_path) / "charter.md").read_text(encoding="utf-8")
+    # …edited module untouched.
+    assert edited.read_text(encoding="utf-8") == hand
+
+
+def test_refresh_without_manifest_preserves_everything(tmp_path: Path) -> None:
+    """Fail-open: an install predating the manifest treats every module as hand-evolved."""
+    _install(tmp_path)
+    _manifest(tmp_path).unlink()  # simulate a pre-feature install
+
+    r = _install(tmp_path, "--refresh-charter", "--owner", "new-org")
+    assert r.returncode == 0, r.stderr
+    # No baseline => nothing is assumed safe to overwrite.
+    assert "new-org" not in (_charter_dir(tmp_path) / "charter.md").read_text(encoding="utf-8")
+    assert "preserved (hand-evolved)" in r.stdout
+
+
+def test_refresh_is_noop_when_nothing_changed(tmp_path: Path) -> None:
+    _install(tmp_path)
+    before = {n: (_charter_dir(tmp_path) / n).read_text(encoding="utf-8") for n in CHARTER_FILES}
+    r = _install(tmp_path, "--refresh-charter")  # same config, no edits
+    assert r.returncode == 0, r.stderr
+    after = {n: (_charter_dir(tmp_path) / n).read_text(encoding="utf-8") for n in CHARTER_FILES}
+    assert before == after
+    assert "0 refreshed" in r.stdout or "refreshed" not in r.stdout

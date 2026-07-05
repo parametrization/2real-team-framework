@@ -19,7 +19,7 @@
   },
   "policy": {
     "reviewers_required": 1,
-    "merge_model": "direct-to-main"
+    "merge_model": "wave-branch"
   },
   "ci": {
     "merge_requires_green": true,

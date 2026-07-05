@@ -108,6 +108,62 @@ Severity lives in the **body** (`Must-fix:`), never in the verdict token — do 
 write `RequestOrReplied: Approved` or `ChangesRequested`. Both the bare
 (`Requestor: Name`) and bold (`**Requestor:** Name`) header forms are accepted.
 
+Use roster-canonical `Firstname.Lastname` in the `Requestor:` / `Requestee:`
+fields (the exact form the roster carries) — `trust_signals.py` keys reviewer
+identity off that field, so a nickname or role suffix (`Tariq (QA)`) attributes
+the signal to the wrong (or no) engineer.
+
+### Request vs. Replied, Must-fix vs. Tech-debt (semantics)
+
+The tokens carry meaning beyond their shape. `validate_review_comment_format`
+enforces the **shape** (a malformed header is *blocked*) and — since #118 —
+*warns* (fail-open, never blocks) when the **semantics** below are misused:
+
+- **`RequestOrReplied: Request`** — a turn that **carries blocking findings**:
+  the body's `Must-fix:` section enumerates ≥1 item that must be resolved before
+  merge. Use `Request` when you are asking for changes.
+- **`RequestOrReplied: Replied`** — a **response or approval** turn: a reply to a
+  `Request`, or a review that clears the PR with no blocking items. An approving
+  review whose `Must-fix:` is `None` should be `Replied`, **not** `Request`.
+- **`Must-fix:` is blocking-only** — every item under it is counted by
+  `trust_signals.py` as a blocking `must_fix_received` signal against the author.
+  Put **only** items that must hold the merge here.
+- **`Tech-debt:` for everything non-blocking** — nits, follow-ups, "accept
+  as-is" notes, reviewer-name corrections, anything you would *not* hold the
+  merge for. Tracked as issues; never scored as blocking.
+
+Two Phase-4-Wave-1 misuses the warn tier now flags (each surfaced a phantom
+blocking signal that flattened the trust matrix):
+
+| Misuse | Why it's wrong | Fix |
+|--------|----------------|-----|
+| Approval filed as `Request` with `Must-fix: None` | `Request` implies blocking findings; there are none | use `Replied` |
+| A non-blocking note under `Must-fix:` ("non-blocking", "do not hold", "accept as-is") | scored as a blocking `must_fix_received` | move it to `Tech-debt:` |
+
+Examples — an approval and a changes-requested review:
+
+```
+Requestor: Nia.Rossi
+Requestee: Ibrahim.El-Amin
+RequestOrReplied: Replied          # approval, no blocking items → Replied
+
+**Review: LGTM — ships as-is**
+Must-fix: None
+Tech-debt: None
+```
+
+```
+Requestor: Tariq.Morales
+Requestee: Paloma.Gupta
+RequestOrReplied: Request          # carries a blocking item → Request
+
+**Review: one must-fix**
+Must-fix:
+1. Rebase — the branch is CONFLICTING against the moved base.
+Tech-debt:
+1. Reviewer-name string reads "Tariq (QA)"; prefer canonical `Tariq.Morales` (non-blocking).
+```
+
 ## Reply Protocol
 
 When tagged as **Requestee** on a `Request` comment, respond on the same issue with

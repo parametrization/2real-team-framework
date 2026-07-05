@@ -319,6 +319,153 @@ def test_score_delta_discriminates_clean_reviewer_from_blocked_author():
 
 
 # ===========================================================================
+# Roster name normalization (#119): identity captured as `First.Last`,
+# `First Last`, and `First Last (Role)` must fold to one canonical roster
+# identity before bucketing; a name absent from the roster passes through.
+# ===========================================================================
+
+
+class _RosterCfg:
+    """Config stub with a `.path` so `_roster_names` can resolve the roster file.
+
+    The real config lives at `<repo>/.claude/framework.config.json`, so
+    `cfg.path.parent.parent` is the repo root. Mirrors that layout under tmp.
+    """
+
+    def __init__(self, path: Path, values: dict | None = None) -> None:
+        self.path = path
+        self._v = values or {}
+
+    def get(self, key: str, default=None):
+        return self._v.get(key, default)
+
+
+def _roster_cfg(tmp_path: Path, roster: dict[str, str]) -> _RosterCfg:
+    """Write a roster at the default `identity.roster_source` and return a cfg."""
+    claude = tmp_path / ".claude"
+    (claude / "team").mkdir(parents=True)
+    (claude / "team" / "roster.json").write_text(json.dumps(roster))
+    return _RosterCfg(claude / "framework.config.json")
+
+
+_ROSTER = {
+    "Tariq Morales": "Tariq.Morales@example.com",
+    "Ibrahim El-Amin": "Ibrahim.El-Amin@example.com",
+    "Nia Rossi": "Nia.Rossi@example.com",
+}
+
+
+# --------------------------------------------------------------- _name_key
+
+
+def test_name_key_folds_dotted_spaced_and_role_variants() -> None:
+    # The exact three variants issue #119 names collapse to one key.
+    assert (
+        ts._name_key("Tariq.Morales")
+        == ts._name_key("Tariq Morales")
+        == ts._name_key("Tariq Morales (QA)")
+        == "tariq morales"
+    )
+
+
+def test_name_key_preserves_hyphen_but_folds_dot() -> None:
+    # A dotted first/last separator becomes a space; the hyphen inside a
+    # surname is preserved (Ibrahim.El-Amin -> "ibrahim el-amin").
+    assert ts._name_key("Ibrahim.El-Amin") == "ibrahim el-amin"
+    assert ts._name_key("Ibrahim El-Amin (Senior SWE)") == "ibrahim el-amin"
+
+
+# --------------------------------------------------------------- _canonicalizer
+
+
+def test_canonicalizer_maps_all_variants_to_roster_identity(tmp_path) -> None:
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    for variant in ("Tariq.Morales", "Tariq Morales", "Tariq Morales (QA)"):
+        assert canon(variant) == "Tariq Morales"
+    assert canon("Ibrahim.El-Amin") == "Ibrahim El-Amin"
+
+
+def test_canonicalizer_passes_absent_name_through(tmp_path) -> None:
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    # A name not on the roster is returned verbatim — never dropped, never raised.
+    assert canon("Some Contractor") == "Some Contractor"
+    assert canon("dependabot[bot]") == "dependabot[bot]"
+
+
+def test_canonicalizer_fails_open_without_roster(tmp_path) -> None:
+    # No roster file at all (and cfg with no path) → every name passes through.
+    missing_cfg = _RosterCfg(tmp_path / ".claude" / "framework.config.json")
+    canon = ts._canonicalizer(missing_cfg)
+    assert canon("Tariq.Morales") == "Tariq.Morales"
+    assert ts._canonicalizer(_Cfg({}))("Tariq.Morales") == "Tariq.Morales"
+
+
+# --------------------------------------------------------------- end-to-end bucketing
+
+
+def _account_canon(
+    canon, pr_sets: dict[str, tuple[str, list[str]]]
+) -> dict[str, ts.Signals]:
+    """extract_signals' per-PR accounting with the roster canonicalizer applied
+    to both author and requestor identity — pure (no gh)."""
+    signals: dict[str, ts.Signals] = {}
+
+    def bucket(name: str) -> ts.Signals:
+        return signals.setdefault(canon(name), ts.Signals())
+
+    for _pr, (author, bodies) in pr_sets.items():
+        author_sig = bucket(author)
+        author_sig.prs_merged += 1
+        had_cr = False
+        for v in ts.parse_verdicts(bodies):
+            if v.changes_requested:
+                had_cr = True
+                author_sig.must_fix_received += 1
+                if v.requestor:
+                    bucket(v.requestor).must_fix_caught += 1
+            if v.false_positive and v.requestor:
+                bucket(v.requestor).review_false_positives += 1
+        if had_cr:
+            author_sig.rework_cycles += 1
+    return signals
+
+
+def test_variants_bucket_to_single_engineer_end_to_end(tmp_path) -> None:
+    """The #119 defect, end to end: Tariq reviewing as `Tariq Morales (QA)` on one
+    PR and `Tariq.Morales` on another must land in ONE ledger entry, not split."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    # PR96: Tariq (as "(QA)") catches a must-fix on Ibrahim's PR.
+    # PR93: Tariq (as dotted "Tariq.Morales") catches a must-fix on Nia's PR.
+    pr93_by_nia = """Requestor: Tariq.Morales
+Requestee: Nia Rossi
+RequestOrReplied: Request
+
+**Must-fix:**
+1. Correct the recorded numbers.
+"""
+    sigs = _account_canon(
+        canon,
+        {
+            "96": ("Ibrahim El-Amin", [PR96_REQUEST]),
+            "93": ("Nia Rossi", [pr93_by_nia]),
+        },
+    )
+    # Exactly one Tariq bucket — no phantom `Tariq.Morales` split.
+    tariq_keys = [k for k in sigs if "tariq" in k.lower()]
+    assert tariq_keys == ["Tariq Morales"]
+    assert sigs["Tariq Morales"].must_fix_caught == 2
+
+
+def test_absent_reviewer_still_buckets_without_roster(tmp_path) -> None:
+    # Fail-open path: with no roster, the dotted and (Role) forms remain distinct
+    # (unchanged legacy behavior) but nothing crashes or is dropped.
+    canon = ts._canonicalizer(_RosterCfg(tmp_path / ".claude" / "cfg.json"))
+    sigs = _account_canon(canon, {"96": ("Ibrahim El-Amin", [PR96_REQUEST])})
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 1
+    assert sigs["Tariq Morales (QA)"].must_fix_caught == 1
+
+
+# ===========================================================================
 # Integration-branch resolution (#100): phase-aware branch.integration template.
 # ===========================================================================
 
@@ -410,6 +557,62 @@ def test_phase_for_wave_unreadable_is_none(tmp_path) -> None:
     assert ts._phase_for_wave("1", tmp_path / "does-not-exist.json") is None
 
 
+# ===========================================================================
+# Phase-local wave ordinal (#117): the {wave} token must render the phase-local
+# ordinal (wave_<id>_phase_ordinal), not the global wave seq. The sibling of
+# #100 one layer down — #100 fixed {phase}, this fixes {wave}.
+# ===========================================================================
+
+
+# --------------------------------------------------------------- _wave_ordinal_for_wave
+
+
+def test_wave_ordinal_reads_state(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    # Global wave 2 is the FIRST wave of phase 4 (ordinal 1); global wave 3 the
+    # second (ordinal 2) — the exact Phase 4 shape the retro tripped over.
+    state.write_text(
+        json.dumps({"wave_2_phase_ordinal": 1, "wave_3_phase_ordinal": 2})
+    )
+    assert ts._wave_ordinal_for_wave("2", state) == 1
+    assert ts._wave_ordinal_for_wave("3", state) == 2
+
+
+def test_wave_ordinal_missing_key_is_none(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_2_phase_ordinal": 1}))
+    assert ts._wave_ordinal_for_wave("9", state) is None
+
+
+def test_wave_ordinal_no_status_path_is_none() -> None:
+    assert ts._wave_ordinal_for_wave("2", None) is None
+
+
+def test_wave_ordinal_unreadable_is_none(tmp_path) -> None:
+    assert ts._wave_ordinal_for_wave("2", tmp_path / "does-not-exist.json") is None
+
+
+# --------------------------------------------------------------- _integration_base ordinal
+
+
+def test_integration_base_uses_phase_local_ordinal() -> None:
+    # THE #117 bug: global wave id 2 is phase 4 ordinal 1 → the branch is
+    # deployments/phase4/wave-1, NOT deployments/phase4/wave-2 (the global id).
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    assert (
+        ts._integration_base(cfg, "2", phase=4, wave_ordinal=1)
+        == "deployments/phase4/wave-1"
+    )
+
+
+def test_integration_base_ordinal_falls_back_to_wave_id() -> None:
+    # Generic (non-phased) project: no ordinal stamped → the global wave id fills
+    # {wave}, so deployments/wave-9 still renders for wave 9.
+    cfg = _Cfg({})
+    assert ts._integration_base(cfg, "9") == "deployments/wave-9"
+    assert ts._integration_base(cfg, "9", wave_ordinal=None) == "deployments/wave-9"
+
+
 # --------------------------------------------------------------- end-to-end wiring
 
 
@@ -419,3 +622,36 @@ def test_base_resolved_from_state_end_to_end(tmp_path) -> None:
     cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
     phase = ts._phase_for_wave("1", state)
     assert ts._integration_base(cfg, "1", phase=phase) == "deployments/phase4/wave-1"
+
+
+def test_base_resolves_phase4_wave1_from_global_wave_2(tmp_path) -> None:
+    """The confirmed regression, end to end: scoring global wave 2 (Phase 4 Wave
+    1) must target deployments/phase4/wave-1 — resolving BOTH tokens from state
+    (phase=4, ordinal=1) — so the retro finds the wave's PRs with no override."""
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "wave_2_phase": 4,
+                "wave_2_phase_ordinal": 1,
+                "wave_3_phase": 4,
+                "wave_3_phase_ordinal": 2,
+            }
+        )
+    )
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    base = ts._integration_base(
+        cfg,
+        "2",
+        phase=ts._phase_for_wave("2", state),
+        wave_ordinal=ts._wave_ordinal_for_wave("2", state),
+    )
+    assert base == "deployments/phase4/wave-1"
+    # And the current wave (global 3) is the second phase-4 branch.
+    base3 = ts._integration_base(
+        cfg,
+        "3",
+        phase=ts._phase_for_wave("3", state),
+        wave_ordinal=ts._wave_ordinal_for_wave("3", state),
+    )
+    assert base3 == "deployments/phase4/wave-2"

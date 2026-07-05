@@ -373,7 +373,34 @@ def _phase_for_wave(wave: str, status_path: Path | None) -> str | int | None:
     return val if val is not None else None
 
 
-def _integration_base(cfg, wave: str, phase: str | int | None = None) -> str:
+def _wave_ordinal_for_wave(wave: str, status_path: Path | None) -> str | int | None:
+    """The phase-local ordinal of a wave (``wave_<id>_phase_ordinal``), or None.
+
+    PROJECT-COUPLING: keyed on a state-file entry named
+    ``wave_<id>_phase_ordinal`` stamped by the wave allocator alongside
+    ``wave_<id>_phase`` (see ``lifecycle.py``). A phase-namespaced project numbers
+    its integration branches by the position of the wave *within its phase*
+    (``deployments/phase4/wave-1`` is the first wave of phase 4), not by the
+    monotonic global wave id, so the ``{wave}`` token must resolve to this
+    ordinal. Absent in a generic (non-phased) project — or when the state file is
+    missing/unreadable — → None, and the caller falls back to the global wave id.
+    """
+    if status_path is None:
+        return None
+    try:
+        data = json.loads(Path(status_path).read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    val = data.get(f"wave_{wave}_phase_ordinal")
+    return val if val is not None else None
+
+
+def _integration_base(
+    cfg,
+    wave: str,
+    phase: str | int | None = None,
+    wave_ordinal: str | int | None = None,
+) -> str:
     """The merged-PR base branch for *wave*, from the integration-branch template.
 
     PROJECT-COUPLING: the original tool scoped the base to a phase+wave path
@@ -383,12 +410,21 @@ def _integration_base(cfg, wave: str, phase: str | int | None = None) -> str:
     declares. Both ``{phase}`` and ``{wave}`` tokens are substituted; a project
     that namespaces waves by phase (``deployments/phase{phase}/wave-{wave}``) is
     resolved correctly when *phase* is supplied (from ``wave_<id>_phase`` state).
+
+    The ``{wave}`` token resolves to the **phase-local ordinal** when
+    *wave_ordinal* is supplied (from ``wave_<id>_phase_ordinal`` state), NOT the
+    global wave id: a phase-namespaced project names its first phase-4 branch
+    ``deployments/phase4/wave-1`` even when that is global wave 2. Falling back to
+    the global *wave* id keeps generic (non-phased) projects — which do not stamp
+    an ordinal — rendering ``deployments/wave-<id>`` unchanged.
+
     A project whose merges target the default branch directly should set
     ``branch.integration`` to that branch name. Unknown/unresolved tokens are
     left literal rather than raising.
     """
     template = cfg.get("branch.integration", "deployments/wave-{wave}")
-    tokens: dict[str, str | int] = {"wave": wave}
+    wave_token = wave_ordinal if wave_ordinal is not None else wave
+    tokens: dict[str, str | int] = {"wave": wave_token}
     if phase is not None:
         tokens["phase"] = phase
     return _render_branch_template(str(template), **tokens)
@@ -474,7 +510,12 @@ def merged_prs(
     """
     cfg = cfg or config()
     repos = _resolve_repos(cfg)
-    base = _integration_base(cfg, wave, phase=_phase_for_wave(wave, status_path))
+    base = _integration_base(
+        cfg,
+        wave,
+        phase=_phase_for_wave(wave, status_path),
+        wave_ordinal=_wave_ordinal_for_wave(wave, status_path),
+    )
     kickoff = _kickoff_ts(wave, status_path)
 
     out: list[dict] = []
@@ -520,6 +561,64 @@ def merged_prs(
     return out
 
 
+# A trailing role/annotation parenthetical on a captured name, e.g. the
+# ``(QA)`` in ``Tariq Morales (QA)`` or ``(Principal SWE)``. Stripped before a
+# name is matched against the roster so the role does not fork the identity.
+_ROLE_SUFFIX_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _name_key(name: str) -> str:
+    """Fold a captured name to a roster-match key.
+
+    Collapses the ways one person's name is written across a wave's PRs and
+    verdict comments to a single key: a trailing role parenthetical is dropped
+    (``Tariq Morales (QA)`` → ``Tariq Morales``), dotted separators become spaces
+    (``Tariq.Morales`` → ``Tariq Morales``) while hyphens are preserved
+    (``Ibrahim.El-Amin`` → ``Ibrahim El-Amin``), interior whitespace is collapsed,
+    and the result is lower-cased. Pure — no I/O.
+    """
+    name = _ROLE_SUFFIX_RE.sub("", name)
+    name = name.replace(".", " ")
+    return re.sub(r"\s+", " ", name).strip().lower()
+
+
+def _roster_names(cfg) -> list[str]:
+    """Canonical team names (the roster JSON's keys), or ``[]`` if unavailable.
+
+    Reads ``identity.roster_source`` (default ``.claude/team/roster.json``)
+    relative to the repo root (``cfg.path.parent.parent`` — the config lives at
+    ``<repo>/.claude/framework.config.json``). Fail-open: a missing/unreadable or
+    non-object roster yields ``[]`` so normalization simply passes names through.
+    """
+    if getattr(cfg, "path", None) is None:
+        return []
+    roster_source = cfg.get("identity.roster_source", ".claude/team/roster.json")
+    roster_path = cfg.path.parent.parent / roster_source
+    try:
+        data = json.loads(roster_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [str(k) for k in data]
+
+
+def _canonicalizer(cfg):
+    """Return a ``name -> canonical_name`` mapper keyed off the roster.
+
+    Builds ``{_name_key(roster_name): roster_name}`` once, then returns a closure
+    that maps any captured name to its canonical roster identity via
+    :func:`_name_key`. A name absent from the roster is returned unchanged
+    (fail-open) — never dropped, never crashes.
+    """
+    canon_by_key = {_name_key(n): n for n in _roster_names(cfg)}
+
+    def canon(name: str) -> str:
+        return canon_by_key.get(_name_key(name), name)
+
+    return canon
+
+
 def extract_signals(
     wave: str,
     status_path: Path | None = None,
@@ -533,13 +632,20 @@ def extract_signals(
     Reviewer identity is the ``Requestor:`` field of the verdict comment, because
     the SCM principal that posts the comment is typically the orchestrator, not
     the reviewer.
+
+    Both identities are normalized against the roster before bucketing
+    (:func:`_canonicalizer`): a person written ``Tariq.Morales`` in one comment,
+    ``Tariq Morales`` in another, and ``Tariq Morales (QA)`` in a third folds to a
+    single ledger entry instead of splitting their signals across variants. A
+    name absent from the roster passes through unchanged (fail-open).
     """
     cfg = cfg or config()
     prs = merged_prs(wave, status_path, label=label, cfg=cfg)
+    canon = _canonicalizer(cfg)
     signals: dict[str, Signals] = {}
 
     def _bucket(name: str) -> Signals:
-        return signals.setdefault(name, Signals())
+        return signals.setdefault(canon(name), Signals())
 
     for pr in prs:
         author = pr.get("commit_author_name") or "(unknown)"

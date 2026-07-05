@@ -10,6 +10,76 @@ Track all feedback events here. Format:
 
 ---
 
+## Retrospective: Wave 3 (Phase 4 Wave 2, "quality-machinery hardening & tech-debt floor") — 2026-07-05
+
+> **Phase 4's final wave.** Ran fully through the live state machine; the retro also closed the
+> Wave 1 (Phase 4 Wave 1) authoritative re-score commitment. First wave to score clean with **zero
+> manual overrides on its own signals** — the machinery is now trustworthy on itself.
+
+### Wave Metrics
+- **10 PRs merged** into `deployments/phase4/wave-2`: #121 (#117, Paloma), #122 (#77, Nia),
+  #123 (#90, Ibrahim), #124 (#119, Paloma), #125 (#74, Ibrahim), #126 (#118, Tariq),
+  #127 (#82, Nia), #128 (#75, Tariq), #129 (#116, Ibrahim), #130 (#94, Tariq). 10 issues closed.
+- **0 changes-requested cycles** — all 10 cross-assigned charter reviews returned `Replied`/clean.
+  Integrated tip: `ruff` clean, **373 tests** (331→373). Reinstall-parity gate (#116) in sync.
+- **Counter drift: zero** — recorded (10 / 0 / 30%) == recomputed (10 / 0 / 30%).
+- Tech-debt filed: **#131** (false-positive heuristic — the last isolated re-score artifact).
+
+### Top-Implementer Concentration
+Ibrahim 3 / Tariq 3 / Paloma 2 / Nia 2 → **max 3 / 10 = 30%**. Balanced; no fragility flag.
+
+### Wave 1 (Phase 4 Wave 1) authoritative re-score — commitment CLOSED
+Prereqs #117/#119/#118 all landed this wave. The three mis-tagged approval comments
+(#113/#114/#115 wrote `Request` for approvals with `Must-fix: None`) were corrected in place to
+`Replied` per #118; **#112 (Paloma → Ibrahim), a genuine `Request` with a real blocking must-fix,
+was left intact.** Re-score: Ibrahim/Paloma/Tariq delta 0 (authoritative, clean); Nia held 0 (raw
+−1 = confirmed #131 artifact: `review_false_positives` fired on a "false-positive watch" phrase she
+filed under `Tech-debt:`, though she raised zero must-fixes). Durable scores unchanged (Nia 4,
+others 3) — now **earned, not held**. 2 of 3 contamination sources eliminated; the 3rd isolated
+as #131. This validates the Phase 4 thesis end-to-end: surface defects in W1 → fix in W2 →
+re-score W1 clean.
+
+### Per-Engineer Assessments (Wave 3)
+All four earn delta **+1** (≥2 clean PRs, must_fix_received=0, ci_red=0, fp=0). Nia's arithmetic
+5 is capped to 4 by distribution discipline (not the singular top performer; top output only
+reached 4). **New durable scores: Ibrahim 3→4, Tariq 3→4, Paloma 3→4, Nia 4 (held at cap).** The
+team converges at 4 — steady-state high trust, exactly the Phase 4 target. Forced negative-signal
+lines: three "metrics clean" (with receipts) + Tariq's real gap (must_fix_caught=0 despite QA
+role). No retirement triggers fire (no score ≤2 or CI-red streaks).
+
+### Top 3 Going Well
+1. **The machinery self-scores clean** — first wave with an uncontaminated signal set; the
+   #118-corrected review grammar produced zero phantom must-fixes and zero false-positives.
+2. **Re-score commitment honored end-to-end** — the two-wave loop (surface → fix → re-score)
+   closed, converting Wave 1 from "held-flat pending" to authoritative with a single documented
+   residual (#131).
+3. **Balanced, clean delivery** — 10/10 PRs, 30% concentration, 0 CR cycles, 373 green, reinstall
+   parity gate live.
+
+### Top 3 Pain Points
+1. **One residual scorer defect (#131)** — the false-positive heuristic fires on vocabulary, not
+   on an actually-raised must-fix; still forces a documented override for Nia's Wave 1 line.
+2. **QA caught nothing mechanically (must_fix_caught=0 team-wide)** — the wave genuinely had no
+   real defects, but reviews were lighter-touch approvals; watch that review pressure doesn't
+   decay as the tech-debt floor clears.
+3. **Live-charter drift lingers** (#122 tech-debt) — `.claude/team/charter/charter.md:26` still
+   reads `--force`; the modular-vs-monolithic dogfood gap (Nia) is unresolved.
+
+### Proposed Process Changes (approval-gated — not yet applied)
+1. **Fix #131** — gate `review_false_positives` on an actually-raised `Must-fix:` item (reuse
+   `_has_must_fix_items`). *Rationale: the last known false signal in the scorer.*
+2. **Reconcile live-charter drift** — reinstall/refresh the monolithic dogfood charter, or file
+   the modular-charter migration. *Rationale: closes the source↔runtime gap #116 targets.*
+3. **Phase 4 is complete** (tech-debt floor reached; only exploratory #101–#110 and the fresh
+   #131 remain). Promote `deployments/phase4/wave-2` → `main` + release, then open a Phase 5
+   theme decision. *Rationale: nothing Phase-4-scoped remains open.*
+
+### Re-score status
+Wave 1 (P4W1): **CLOSED** — authoritative, #131 caveat noted. Wave 3 (P4W2): clean, no pending
+re-score.
+
+---
+
 ## Retrospective: Wave 2 (Phase 4 Wave 1, "self-hosting & quality machinery") — 2026-07-05
 
 > **First live retro.** State machine drove the wave (via #99); counters recorded live at wrapup,
