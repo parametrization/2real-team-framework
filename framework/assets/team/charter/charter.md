@@ -25,7 +25,9 @@ documents (CLAUDE.md, roster cards, skills) should link here rather than restate
   baked into these documents were substituted from that config at install time — if
   the config changes, re-run the framework bootstrap with `--force` to refresh them.
 - **Owner:** `{{owner}}` · **Default branch:** `{{default_branch}}` ·
-  **Merge model:** `{{merge_model}}` · **Reviews required per PR:** {{reviewers_required}}
+  **Merge model:** `{{merge_model}}` (configured default; the effective model per
+  wave is declared at kickoff via `lifecycle.py wave kickoff --merge-model …` and
+  recorded in the state file) · **Reviews required per PR:** {{reviewers_required}}
 - **User approval gates.** Merging to `{{default_branch}}`, creating releases, and
   kicking off a new wave all require explicit approval from the project owner. No
   team member may bypass these gates.

@@ -97,6 +97,36 @@ def test_force_refreshes_from_template(tmp_path: Path) -> None:
     assert "{{" not in text  # force path substitutes too
 
 
+def test_pr_creation_wording_is_merge_model_conditional(tmp_path: Path) -> None:
+    """Issue #94: the § PR Creation base-branch sentence must NOT render as a
+    self-contradiction under direct-to-main ("never `main` directly (merge
+    model: `direct-to-main`)"). It must describe BOTH models and cite the
+    per-wave kickoff mechanism, so it reads coherently for either config value."""
+    r = _install(tmp_path, "--merge-model", "direct-to-main")
+    assert r.returncode == 0, r.stderr
+    pr = (_charter_dir(tmp_path) / "pull-requests.md").read_text(encoding="utf-8")
+    # The old, self-contradictory phrasing is gone.
+    assert "directly (merge model:" not in pr
+    # Both models are described, and the per-wave declaration is cited.
+    assert "Under `wave-branch`" in pr
+    assert "Under `direct-to-main`" in pr
+    assert "lifecycle.py wave kickoff --merge-model" in pr
+    # No unreplaced placeholder survived the conditional rewrite.
+    assert "{{" not in pr and "}}" not in pr
+
+
+def test_ground_rules_merge_model_acknowledges_per_wave_declaration(tmp_path: Path) -> None:
+    """Issue #94: the charter.md ground-rules 'Merge model:' line must note that
+    the effective model is declared per wave at kickoff, so a `direct-to-main`
+    configured default does not mislead a reader in a repo that runs waves."""
+    r = _install(tmp_path, "--merge-model", "direct-to-main")
+    assert r.returncode == 0, r.stderr
+    charter = (_charter_dir(tmp_path) / "charter.md").read_text(encoding="utf-8")
+    assert "direct-to-main" in charter  # the configured default still renders
+    assert "declared at kickoff" in charter
+    assert "lifecycle.py wave kickoff --merge-model" in charter
+
+
 def test_dry_run_writes_nothing(tmp_path: Path) -> None:
     r = _install(tmp_path, "--dry-run")
     assert r.returncode == 0, r.stderr
