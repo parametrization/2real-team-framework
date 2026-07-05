@@ -410,6 +410,62 @@ def test_phase_for_wave_unreadable_is_none(tmp_path) -> None:
     assert ts._phase_for_wave("1", tmp_path / "does-not-exist.json") is None
 
 
+# ===========================================================================
+# Phase-local wave ordinal (#117): the {wave} token must render the phase-local
+# ordinal (wave_<id>_phase_ordinal), not the global wave seq. The sibling of
+# #100 one layer down — #100 fixed {phase}, this fixes {wave}.
+# ===========================================================================
+
+
+# --------------------------------------------------------------- _wave_ordinal_for_wave
+
+
+def test_wave_ordinal_reads_state(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    # Global wave 2 is the FIRST wave of phase 4 (ordinal 1); global wave 3 the
+    # second (ordinal 2) — the exact Phase 4 shape the retro tripped over.
+    state.write_text(
+        json.dumps({"wave_2_phase_ordinal": 1, "wave_3_phase_ordinal": 2})
+    )
+    assert ts._wave_ordinal_for_wave("2", state) == 1
+    assert ts._wave_ordinal_for_wave("3", state) == 2
+
+
+def test_wave_ordinal_missing_key_is_none(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_2_phase_ordinal": 1}))
+    assert ts._wave_ordinal_for_wave("9", state) is None
+
+
+def test_wave_ordinal_no_status_path_is_none() -> None:
+    assert ts._wave_ordinal_for_wave("2", None) is None
+
+
+def test_wave_ordinal_unreadable_is_none(tmp_path) -> None:
+    assert ts._wave_ordinal_for_wave("2", tmp_path / "does-not-exist.json") is None
+
+
+# --------------------------------------------------------------- _integration_base ordinal
+
+
+def test_integration_base_uses_phase_local_ordinal() -> None:
+    # THE #117 bug: global wave id 2 is phase 4 ordinal 1 → the branch is
+    # deployments/phase4/wave-1, NOT deployments/phase4/wave-2 (the global id).
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    assert (
+        ts._integration_base(cfg, "2", phase=4, wave_ordinal=1)
+        == "deployments/phase4/wave-1"
+    )
+
+
+def test_integration_base_ordinal_falls_back_to_wave_id() -> None:
+    # Generic (non-phased) project: no ordinal stamped → the global wave id fills
+    # {wave}, so deployments/wave-9 still renders for wave 9.
+    cfg = _Cfg({})
+    assert ts._integration_base(cfg, "9") == "deployments/wave-9"
+    assert ts._integration_base(cfg, "9", wave_ordinal=None) == "deployments/wave-9"
+
+
 # --------------------------------------------------------------- end-to-end wiring
 
 
@@ -419,3 +475,36 @@ def test_base_resolved_from_state_end_to_end(tmp_path) -> None:
     cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
     phase = ts._phase_for_wave("1", state)
     assert ts._integration_base(cfg, "1", phase=phase) == "deployments/phase4/wave-1"
+
+
+def test_base_resolves_phase4_wave1_from_global_wave_2(tmp_path) -> None:
+    """The confirmed regression, end to end: scoring global wave 2 (Phase 4 Wave
+    1) must target deployments/phase4/wave-1 — resolving BOTH tokens from state
+    (phase=4, ordinal=1) — so the retro finds the wave's PRs with no override."""
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "wave_2_phase": 4,
+                "wave_2_phase_ordinal": 1,
+                "wave_3_phase": 4,
+                "wave_3_phase_ordinal": 2,
+            }
+        )
+    )
+    cfg = _Cfg({"branch.integration": "deployments/phase{phase}/wave-{wave}"})
+    base = ts._integration_base(
+        cfg,
+        "2",
+        phase=ts._phase_for_wave("2", state),
+        wave_ordinal=ts._wave_ordinal_for_wave("2", state),
+    )
+    assert base == "deployments/phase4/wave-1"
+    # And the current wave (global 3) is the second phase-4 branch.
+    base3 = ts._integration_base(
+        cfg,
+        "3",
+        phase=ts._phase_for_wave("3", state),
+        wave_ordinal=ts._wave_ordinal_for_wave("3", state),
+    )
+    assert base3 == "deployments/phase4/wave-2"
