@@ -263,12 +263,18 @@ def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
         ree_m = _FIELD_RE["requestee"].search(body)
         verdict_str = verdict_m.group(1).strip()
         changes_requested = _is_changes_requested(verdict_str, body)
-        # A retraction only counts when the reviewer actually raised a
-        # finding — approvals are never retractions.  Also strip code
-        # spans and fenced blocks first so symbol/test names that contain
-        # the retraction vocabulary (e.g. `test_no_false_positive_*`) are
-        # not matched.
-        if verdict_str.lower() == "approved":
+        # A review false-positive is, by definition (see the module
+        # docstring), a ``Must-fix:`` item the reviewer *raised* that was
+        # later withdrawn — so a retraction only counts when THIS SAME
+        # comment actually enumerated >=1 must-fix finding. A comment with
+        # ``Must-fix: None`` / no must-fix section raised zero findings, so
+        # retraction vocabulary elsewhere in its body (e.g. a forward-looking
+        # Tech-debt "false-positive watch" note) is not a retraction and must
+        # not score. Approvals never raise must-fix items. Code spans /
+        # fenced blocks are stripped first so symbol/test names that contain
+        # the retraction vocabulary (e.g. `test_no_false_positive_*`) are not
+        # matched.
+        if verdict_str.lower() == "approved" or not _has_must_fix_items(body):
             is_false_positive = False
         else:
             is_false_positive = bool(
