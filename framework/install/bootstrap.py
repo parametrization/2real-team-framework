@@ -66,6 +66,10 @@ Flags
   --interactive          Prompt for missing required fields (scm.owner) if a TTY.
   --with-ontology / --no-ontology   Override ontology.enabled from the config.
   --force                Overwrite existing hook/lib files and framework.config.json.
+  --refresh-charter      Re-render the charter with the current config, overwriting
+                         only modules you have NOT hand-edited (three-way; hand-
+                         evolved modules preserved). Use this — not --force — to
+                         refresh a config change into an evolved charter.
   --dry-run              Print the plan; write nothing.
 
 Exit codes: 0 ok / dry-run, 1 on a hard error (e.g. assets missing, invalid config).
@@ -74,6 +78,7 @@ Exit codes: 0 ok / dry-run, 1 on a hard error (e.g. assets missing, invalid conf
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -518,30 +523,121 @@ def _iter_charter_files():
     yield from sorted(base.glob("*.md"))
 
 
-def install_charter(target_claude: Path, cfg: dict, *, force: bool, dry_run: bool) -> dict[str, list[str]]:
+def _sha256(text: str) -> str:
+    """Stable content hash of rendered charter text (used by the refresh manifest)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _charter_manifest_path(target_claude: Path) -> Path:
+    """Location of the charter render manifest (dotfile beside the charter dir).
+
+    Kept OUTSIDE ``team/charter/`` so it never appears in the ``*.md`` charter glob
+    and never becomes a spurious charter module.
+    """
+    return target_claude / "team" / ".charter-manifest.json"
+
+
+def _load_charter_manifest(target_claude: Path) -> dict[str, str]:
+    """Read the per-file checksums of the last-rendered charter. Fail-open to ``{}``.
+
+    Maps ``charter-module-name -> sha256`` of the text this installer last wrote. A
+    missing/corrupt manifest (e.g. installs predating this feature) degrades to an
+    empty baseline, which makes every existing file look hand-evolved and therefore
+    *preserved* on refresh — the safe default.
+    """
+    path = _charter_manifest_path(target_claude)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        files = data.get("files")
+        return files if isinstance(files, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_charter_manifest(target_claude: Path, files: dict[str, str]) -> None:
+    path = _charter_manifest_path(target_claude)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"version": 1, "files": files}, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def install_charter(
+    target_claude: Path, cfg: dict, *, force: bool, refresh: bool = False, dry_run: bool
+) -> dict[str, list[str]]:
     """Render the modular charter into <target>/.claude/team/charter/. Idempotent.
 
     Substitutes the ``{{key}}`` placeholders documented in :func:`_charter_context`
-    with config-derived values. Skip-if-exists by default so a consumer's
-    hand-evolved charter is never clobbered; ``--force`` refreshes from the template.
+    with config-derived values. Three write modes:
+
+    * **default** (skip-if-exists): a consumer's hand-evolved charter is never
+      touched once it exists; only missing modules are written.
+    * ``refresh=True`` (three-way): re-render every module from the template with
+      the *current* config and overwrite **only** modules the consumer has NOT
+      hand-edited (on-disk text still matches the last-rendered checksum in the
+      manifest). Hand-evolved modules are *preserved* and reported, so a config
+      change can be propagated without clobbering local edits (issue #77).
+    * ``force=True`` (blanket): overwrite every module unconditionally.
+
+    Every write/refresh records the rendered checksum in ``team/.charter-manifest.json``
+    so a later refresh can tell "unmodified since we rendered it" from "hand-evolved".
     """
-    report: dict[str, list[str]] = {"written": [], "skipped": [], "would_write": []}
+    report: dict[str, list[str]] = {
+        "written": [], "refreshed": [], "preserved": [], "skipped": [], "would_write": []
+    }
     context = _charter_context(cfg)
+    manifest = _load_charter_manifest(target_claude)
+    manifest_dirty = False
+
     for src in _iter_charter_files():
         dest = target_claude / "team" / "charter" / src.name
         rel = f"team/charter/{src.name}"
-        if dest.exists() and not force:
-            report["skipped"].append(rel)
-            continue
-        if dry_run:
-            report["would_write"].append(rel)
-            continue
         text = src.read_text(encoding="utf-8")
         for key, value in context.items():
             text = text.replace("{{" + key + "}}", value)
+
+        exists = dest.exists()
+        current = dest.read_text(encoding="utf-8") if exists else None
+
+        if exists and not force:
+            if refresh:
+                if current == text:
+                    # Already current — nothing to write, but keep the baseline fresh.
+                    report["skipped"].append(rel)
+                    manifest[src.name] = _sha256(text)
+                    manifest_dirty = True
+                    continue
+                baseline = manifest.get(src.name)
+                if baseline is None or _sha256(current or "") != baseline:
+                    # No baseline, or on-disk text diverged from what we last rendered
+                    # => hand-evolved. Preserve it; leave its baseline untouched.
+                    report["preserved"].append(rel)
+                    continue
+                # Unmodified since our last render => safe to propagate config change.
+                if dry_run:
+                    report["would_write"].append(rel)
+                    continue
+                dest.write_text(text, encoding="utf-8")
+                report["refreshed"].append(rel)
+                manifest[src.name] = _sha256(text)
+                manifest_dirty = True
+                continue
+            # Default skip-if-exists.
+            report["skipped"].append(rel)
+            continue
+
+        # Missing module, or blanket --force: (re)write from template.
+        if dry_run:
+            report["would_write"].append(rel)
+            continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
         report["written"].append(rel)
+        manifest[src.name] = _sha256(text)
+        manifest_dirty = True
+
+    if manifest_dirty and not dry_run:
+        _write_charter_manifest(target_claude, manifest)
     return report
 
 
@@ -1157,6 +1253,12 @@ def main() -> int:
                                 help="Skip the ontology seed + structural index (ontology.enabled=false)")
     ap.add_argument("--no-permissions", action="store_true", help="Do NOT install the curated permissions.allow allowlist into settings.json (hook wiring still merges)")
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
+    ap.add_argument(
+        "--refresh-charter", action="store_true",
+        help="Re-render the team charter from the template with the current config, overwriting "
+             "ONLY modules you have not hand-edited (three-way; hand-evolved modules are preserved). "
+             "Use this — not --force — to propagate a config change into an evolved charter.",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
     args = ap.parse_args()
 
@@ -1292,7 +1394,9 @@ def main() -> int:
     settings_status = merge_settings(
         target_claude, dry_run=args.dry_run, install_permissions=not args.no_permissions
     )
-    charter = install_charter(target_claude, cfg, force=args.force, dry_run=args.dry_run)
+    charter = install_charter(
+        target_claude, cfg, force=args.force, refresh=args.refresh_charter, dry_run=args.dry_run
+    )
     # Pre-push hook mode is config-driven: the RESOLVED pre_push.mode
     # (flag > user YAML > shipped default noop).
     pre_push_mode = install_config.get_key(inst, "pre_push.mode", "noop")
@@ -1346,11 +1450,22 @@ def main() -> int:
     print(f"install snapshot:  {snapshot_status}")
     print(f"settings.json:     {settings_status}")
     charter_laid = charter["would_write"] if args.dry_run else charter["written"]
-    print(
+    charter_line = (
         f"team charter:      {len(charter_laid)} file(s) "
         f"{'would be written' if args.dry_run else 'written'}; "
         f"{len(charter['skipped'])} skipped"
     )
+    if charter["refreshed"] or charter["preserved"]:
+        charter_line += (
+            f"; {len(charter['refreshed'])} refreshed"
+            f"; {len(charter['preserved'])} preserved (hand-evolved)"
+        )
+    print(charter_line)
+    if charter["preserved"]:
+        print(
+            "  note: hand-evolved charter module(s) preserved on refresh — "
+            f"{', '.join(charter['preserved'])}. Use --force to overwrite."
+        )
     print(f"pre-push hook:     {pre_push_status}")
     children = inst.get("children") or []
     if children:

@@ -23,7 +23,9 @@ documents (CLAUDE.md, roster cards, skills) should link here rather than restate
 - **The configuration is authoritative.** Repo-specific values (owner, branch schemes,
   reviewer count, merge model) live in `.claude/framework.config.json`. The values
   baked into these documents were substituted from that config at install time — if
-  the config changes, re-run the framework bootstrap with `--force` to refresh them.
+  the config changes, re-run the framework bootstrap with `--refresh-charter` to
+  refresh them. Refresh re-renders only the modules you have not hand-edited;
+  hand-evolved modules are preserved (use `--force` to overwrite those too).
 - **Owner:** `{{owner}}` · **Default branch:** `{{default_branch}}` ·
   **Merge model:** `{{merge_model}}` · **Reviews required per PR:** {{reviewers_required}}
 - **User approval gates.** Merging to `{{default_branch}}`, creating releases, and
