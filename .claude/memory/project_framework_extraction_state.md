@@ -11,13 +11,28 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-05): Phase 4 COMPLETE, no active work in flight.** Released at
-**v0.4.2** on both registries. Phase 4 ("self-hosting & quality machinery") ran two waves that
-made the framework trustworthy when run on itself; the retro dogfooded the scoring machinery on
-its own PRs and produced the first fully-clean mechanical trust score. Next: **Phase 5 theme
-decision** (stub #133 reserved; candidate = installer robustness + cross-repo audit + test
-harness, folding #131). See [[handoff]] for the exact pickup. The foundation (PR #41) shipped
-long ago; Phase 3 installer overhaul (v0.4.0) is below.
+**Current baseline (2026-07-05): released v0.4.2; Phase 5 Wave 1 COMPLETE on its wave branch
+(unmerged — stacking for Wave 2).** Phase 4 ("self-hosting & quality machinery", two waves)
+made the framework trustworthy when run on itself. **Phase 5** ("installer robustness") is now
+underway — theme set by owner. See [[handoff]] for the exact pickup. The foundation (PR #41)
+shipped long ago; Phase 3 installer overhaul (v0.4.0) is below.
+
+**Phase 5 (2026-07-05, `deployments/phase5/wave-1`) — installer robustness:**
+- **Wave 1 (global wave 4) COMPLETE — discovery tranche, NOT merged to main.** 4 issues, all
+  charter-reviewed cross-assigned, 0 must-fix, 0 CR cycles, 376 tests: **#131** scorer
+  false-positive gate (the last Phase-4 artifact — gate `review_false_positives` on
+  `_has_must_fix_items`); **#106** `~/.claude` user-space audit → found load-bearing gap **G1**
+  (installer never writes the agent-teams env flag, so a fresh install can't spawn a team);
+  **#103** install-quality test-repo taxonomy (B1–B12) + ~31 metrics; **#104** install/test/teardown
+  methodology + metric-record schema. Three new design docs live in `framework/recipes/`
+  (`INSTALL_QUALITY_HARNESS.md`, `INSTALL_TEST_METHODOLOGY.md`, `USER_SPACE_AUDIT.md`).
+- **Integration decision (owner)**: stack Wave 2 on Wave 1; roll up Phase 5 as a unit with ONE
+  release (~v0.5.0) when the user-facing installer features land. Wave 1 = discovery (docs + one
+  dev-tooling fix) → no standalone release. main untouched this phase so far.
+- **Wave 2 (global wave 5, meta #140) = BUILD tranche**, gated on 6 owner-decisions (see [[handoff]]):
+  **#105** harness impl, **#107** consented user-level install (closes G1), **#108** repo-level
+  consent+backup/restore; folds tech-debt **#138** (record_id collision) + **#139** (metric vocab).
+  Team trust holds at **4 across the board** (steady state).
 
 **Phase 4 (2026-07-05, two waves off `deployments/phase4/wave-{1,2}`):**
 - **Wave 1 → v0.4.1** (#98 trust-vocab, #99 dogfood lifecycle into wave skills, #100 phase-aware
@@ -95,9 +110,10 @@ project-coupled, it's config-decouplable:
    and subprocesses the Python bootstrap (`node/src/framework-install.ts`).
 5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
 6. ~~Phase 3 tech-debt #74/#75/#77/#82/#90/#94~~ — **all shipped in Phase 4 Wave 2 (v0.4.2)**.
-7. **Phase 5 candidates**: #131 (scorer false-positive gate) + exploratory #101–#110
-   (installer consent/backup/restore, cross-repo audit, install/test/teardown harness) — clustered
-   in stub #133.
+7. **Phase 5 (installer robustness) — in progress.** Wave 1 shipped #131 (scorer gate) + #103/#104/#106
+   (harness design + user-space audit). Remaining: **#105** harness impl, **#107/#108** consented
+   backup/restore installs (Wave 2, meta #140), then exploratory #101/#102 (reverse-map noorinalabs),
+   #109 (botfarm before/after), #110 (ship as CC skill). Tech-debt carry: #138/#139.
 
 **Architecture overview:** [[reference_config_driven_architecture]].
 **Commit/PR mechanics for this repo:** [[feedback_framework_commit_pr_mechanics]].
