@@ -52,10 +52,30 @@ _IGNORE_DIRS = frozenset(
 )
 # Always skipped even under git discovery (scratch checkouts of other branches).
 _ALWAYS_SKIP_PREFIXES = (".claude/worktrees/",)
+# The framework's OWN installed runtime in a consumer repo (issue #74). A bootstrap install
+# lays ~35 framework internals under .claude/hooks/ + .claude/lib/; indexing them floods a
+# target repo's structural index with framework noise instead of the user's code. Skipped in
+# consumer repos only — the framework SOURCE repo's .claude/ is a live dogfood copy worth
+# indexing, so it keeps the current behaviour (see _is_framework_source_repo).
+_INSTALLED_RUNTIME_PREFIX = ".claude/"
 # Vendored deps / build output — skipped in BOTH discovery modes, even when committed.
 # git ls-files trusts tracked files, so repos that commit node_modules/dist/coverage would
 # otherwise flood the index with thousands of vendored/generated files.
 _ALWAYS_SKIP_DIRS = frozenset({"node_modules", "dist", "build", "coverage"})
+
+
+def _is_framework_source_repo(repo_root: Path) -> bool:
+    """True when ``repo_root`` is the framework SOURCE checkout, not a consumer install.
+
+    The source repo ships the canonical install dirs (``framework/assets`` +
+    ``framework/install``); a repo that merely *installed* the framework has a populated
+    ``.claude/`` but none of that source tree. This gate decides whether the installed
+    ``.claude/`` runtime is the framework's own dogfood (index it) or deployed noise in a
+    consumer repo (skip it — issue #74).
+    """
+    return (repo_root / "framework" / "assets").is_dir() and (
+        repo_root / "framework" / "install"
+    ).is_dir()
 
 
 def _git_listed_files(repo_root: Path) -> list[str] | None:
@@ -89,9 +109,13 @@ def discover(repo_root: Path) -> list[str]:
     """Repo-relative POSIX paths of supported source files, sorted, dedup-stable."""
     listed = _git_listed_files(repo_root)
     candidates = listed if listed is not None else _walk_files(repo_root)
+    skip_prefixes = _ALWAYS_SKIP_PREFIXES
+    if not _is_framework_source_repo(repo_root):
+        # Consumer repo: drop the framework's own installed .claude/ runtime (#74).
+        skip_prefixes = skip_prefixes + (_INSTALLED_RUNTIME_PREFIX,)
     out: list[str] = []
     for rel in candidates:
-        if rel.startswith(_ALWAYS_SKIP_PREFIXES):
+        if rel.startswith(skip_prefixes):
             continue
         # Exclude vendored/build dirs at any depth, even when git-tracked.
         if any(part in _ALWAYS_SKIP_DIRS for part in rel.split("/")[:-1]):
