@@ -42,6 +42,8 @@ node/*.tgz
 # NOTE: gitignore has no inline comments — keep patterns on their own lines.
 .claude/framework/
 .claude/settings.local.json
+# Agent worktree checkouts (isolation dirs, never committed)
+.claude/worktrees/
 
 # ---- Editor / OS ----
 .DS_Store

@@ -1,0 +1,17 @@
+{
+  "last_completed_wave": "wave-1",
+  "current_wave": "wave-1",
+  "global_wave_seq": 1,
+  "wave_1_phase": 3,
+  "wave_1_phase_ordinal": 1,
+  "wave_1_active": false,
+  "wave_1_started_at": "2026-07-02T16:00:00Z",
+  "wave_1_repos_in_scope": ["2real-team-framework"],
+  "wave_1_scope_reconciled_at": "2026-07-02T16:00:00Z",
+  "wave_1_kicked_off_at": "2026-07-02T16:00:00Z",
+  "wave_1_merge_model": "wave-branch",
+  "wave_1_completed_at": "2026-07-02T22:30:00Z",
+  "wave_1_final_pr_count": 13,
+  "wave_1_changes_requested_cycles": 4,
+  "wave_1_top_concentration_pct": 38
+}

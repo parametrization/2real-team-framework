@@ -28,6 +28,12 @@
   "paths": {
     "ontology": "ontology"
   },
+  "branch": {
+    "integration": "deployments/phase{phase}/wave-{wave}"
+  },
+  "labels": {
+    "wave": "phase{phase}-wave-{wave}"
+  },
   "hooks": {
     "pre_bash": [
       "validate_commit_identity",
