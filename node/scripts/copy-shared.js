@@ -17,7 +17,7 @@
  * __pycache__/ or tool cache directories.
  */
 
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,9 +48,20 @@ for (const dir of DIRS) {
     continue;
   }
 
-  if (existsSync(dest)) {
-    // Already copied or symlinked — skip
+  // Symlink escape hatch: a developer may symlink e.g. node/framework -> ../framework
+  // for a live checkout. Never clobber that — leave the link in place.
+  const link = lstatSync(dest, { throwIfNoEntry: false });
+  if (link && link.isSymbolicLink()) {
+    console.log(`Skipped ${dest} (symlink — live checkout)`);
     continue;
+  }
+
+  // A real directory left over from an earlier local pack is a STALE snapshot:
+  // these bundled trees (framework/ in particular) change every wave, and a
+  // skip-if-exists would silently re-publish the old copy (issue #82). Remove and
+  // recopy so every prepack ships the current tree.
+  if (existsSync(dest)) {
+    rmSync(dest, { recursive: true, force: true });
   }
 
   mkdirSync(dest, { recursive: true });
