@@ -67,7 +67,11 @@ An orphan is an open issue that:
 Cross-reference the two lists. Also check for issues that were implemented but whose PR forgot
 the `Closes` reference — match by feature-branch name (config `branch.feature`, default
 `{FirstInitial}.{LastName}/{IIII}-{slug}`): a merged PR whose `headRefName` contains
-`/{ISSUE_NUMBER}-` implements that issue.
+`/{ISSUE_NUMBER}-` implements that issue. Match the issue number **zero-padded per the
+`{IIII}` branch grammar** — real branches pad, so issue 65's branch is
+`P.Gupta/0065-meta-child-install`, which contains `/0065-`, not `/65-`. Use `0*{ISSUE}-`
+as the regex (e.g. `0*74-` hits both `/74-` and `/0074-`) so an executor matching the raw
+number verbatim does not miss every padded branch.
 
 ### 5. Report findings to user — MANDATORY confirmation gate
 
