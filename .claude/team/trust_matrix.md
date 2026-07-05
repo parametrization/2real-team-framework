@@ -117,3 +117,32 @@ Rows = the team member rating. Columns = the team member being rated.
 | Tariq Morales | Authored the verdict-grammar semantics (#118) that made the re-score possible; 3 clean PRs | metrics clean numbers, but must_fix_caught=0 as reviewer despite the QA role — watch review depth as the tech-debt floor clears |
 | Paloma Gupta | Both re-score prerequisites (#117/#119); pre-empted the test-file conflict with disjoint hunks | metrics clean: prs_merged=2, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
 | Nia Rossi | TL cross-issue coordination — the #77↔#116 refresh-vs-force call that kept two PRs from fighting | capped from an arithmetic 5: prs_merged=2, no singular-standout composite this wave |
+
+## Wave 4 Trust Updates (2026-07-05) — Phase 5 Wave 1: "Installer robustness — discovery tranche"
+
+> **Steady state confirmed — a second consecutive fully-clean mechanical score.** A discovery
+> wave: two `[Explore]` spikes (#103 taxonomy+metrics, #106 user-space audit), one design/spec
+> (#104 methodology), one code fix (#131 scorer false-positive gate). 4 PRs, 0 changes-requested
+> cycles, 25% top concentration (one PR each — perfectly even load), counter drift zero. The
+> #131 fix landed this wave, so the scorer's own last artifact is now closed: the signal set is
+> clean *by construction*, no override needed. Every engineer scores **delta 0** — a single clean
+> PR is not a bump (policy) — so the team holds at **4 across the board**. No decay (all had signal
+> this wave). Reviews were substantive (Nia raised 4 tracked follow-ups on #103; Tariq caught a
+> real `record_id` join-key collision on #104) but all non-blocking → filed as tech-debt (#138/#139),
+> so `must_fix_caught=0` mechanically for every reviewer. Clean work, not shallow review.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Ibrahim El-Amin | 4 | 4 | delta 0: prs_merged=1 (#135/#106), must_fix_received=0, ci_red=0, fp=0 — clean, but a single clean PR is not a bump. |
+| Nia Rossi | 4 | 4 | delta 0: prs_merged=1 (#137/#104), clean; single clean PR, no bump. Substantive review of #103 (4 tech-debt) registers non-blocking. |
+| Paloma Gupta | 4 | 4 | delta 0: prs_merged=1 (#134/#131), clean; single clean PR, no bump. |
+| Tariq Morales | 4 | 4 | delta 0: prs_merged=1 (#136/#103), clean; single clean PR, no bump. Caught the #104 record_id collision (tech-debt #138). |
+
+### Done Well / Needs Improvement (Wave 4 / Phase 5 Wave 1)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Ibrahim El-Amin | Audit surfaced the load-bearing **G1** invisible dependency (agent-teams flag never written by the installer) — the finding that justifies #107 | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+| Nia Rossi | Methodology consumed #103's B1–B12 + metric ids verbatim; flagged `cli_bridge_soft_degrade` as an explicit fold-in rather than silently redefining | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 (review depth good but all non-blocking) |
+| Paloma Gupta | Shipped the #131 scorer gate with a real coupling test (the exact #115 shape) + positive guard; independently confirmed G1 as #135 reviewer via grep | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
+| Tariq Morales | Taxonomy + ~31 metrics grounded in real installer exit codes; as #137 reviewer caught the `record_id` join-key collision (a genuine spec defect → #138) | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
