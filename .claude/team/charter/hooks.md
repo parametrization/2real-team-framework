@@ -25,6 +25,12 @@ stdlib-only and fail open — a broken hook never blocks unrelated work.
 | Shell safety | `warn_zsh_wordsplit` | PreToolUse (Bash) | Advisory on bash-isms under zsh (when `shell: zsh`) |
 | Ontology stays fresh | `ontology_tracker` / `ontology_refresh` | PostToolUse / SessionStart | Tracks semantic-overlay drift; regenerates the structural index (inert until an ontology dir exists) |
 
+Not every gate is a runtime hook. Some charter rules are enforced by the CI test suite
+(`framework/tests/`) instead — notably **reinstall-on-change**
+([pull-requests.md](pull-requests.md)): `test_reinstall_parity.py` fails a PR that edits a
+canonical mirrored Claude asset (`framework/assets/**`) without regenerating its live
+`.claude/**` copy via `python3 framework/install/reinstall.py` (#116).
+
 ## Changing Enforcement
 
 - **Enable/disable a check:** edit the relevant `hooks.pre_bash` / `hooks.post_bash`
