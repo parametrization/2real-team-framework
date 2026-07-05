@@ -19,6 +19,7 @@ stdlib-only and fail open — a broken hook never blocks unrelated work.
 | Don't merge red CI ([pull-requests.md](pull-requests.md)) | `validate_pr_ci_status` | PreToolUse (Bash) | Blocks `gh pr merge` when any status check is failing/pending |
 | Identity survives the merge ([commits.md](commits.md)) | `block_squash_wave_merge` | PreToolUse (Bash) | Blocks `gh pr merge --squash` into an integration branch when identity is enforced (squash rewrites the author) |
 | Labels must exist ([issues.md](issues.md)) | `validate_labels` | PreToolUse (Bash) | Validates `--label` values before `gh issue create` |
+| Verdict-comment grammar ([issues.md](issues.md)) | `validate_review_comment_format` | PreToolUse (Bash) | Blocks a `gh pr comment` / `gh issue comment` whose body attempts the charter header but is malformed (missing field or unknown `RequestOrReplied` token) — keeps the shape `trust_signals.py` parses reliable (#98) |
 | CI covers what a PR touches ([pull-requests.md](pull-requests.md)) | `validate_workflow_paths_coverage` | PreToolUse (Bash) | Blocks `gh pr create` when changed workflow-relevant paths escape every CI `paths:` filter |
 | Push unpiped ([pull-requests.md](pull-requests.md)) | `warn_pipe_mask_rc` | PostToolUse (Bash) | Flags `git push` / `gh pr merge` piped through rc-masking commands |
 | Shell safety | `warn_zsh_wordsplit` | PreToolUse (Bash) | Advisory on bash-isms under zsh (when `shell: zsh`) |

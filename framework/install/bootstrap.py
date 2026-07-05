@@ -127,6 +127,7 @@ def _schema_defaults() -> dict:
                 "no_worktree_self_delete",
                 "warn_zsh_wordsplit",
                 "validate_labels",
+                "validate_review_comment_format",
                 "validate_workflow_paths_coverage",
                 "validate_pr_ci_status",
                 "block_squash_wave_merge",
