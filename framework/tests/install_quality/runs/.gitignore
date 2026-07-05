@@ -1,0 +1,3 @@
+# Harness run envelopes (#105) are generated artifacts — the run-over-run comparison reads
+# them from here at runtime, but they are not source and must not be committed. Keep the dir.
+*.json
