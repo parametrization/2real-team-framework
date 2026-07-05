@@ -10,6 +10,7 @@ table, and the interactive children multi-select (input stubbed).
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,10 +20,23 @@ import pytest
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 _BOOTSTRAP = _FRAMEWORK_ROOT / "install" / "bootstrap.py"
 sys.path.insert(0, str(_FRAMEWORK_ROOT / "install"))
+sys.path.insert(0, str(_FRAMEWORK_ROOT / "assets" / "lib"))
 
 import bootstrap  # noqa: E402
 import child_install  # noqa: E402
 import roster_gen  # noqa: E402
+from ontology_gen.generate import generate as _generate_index  # noqa: E402
+
+
+def _seed_child_index(repo_root: Path, name: str) -> dict[str, int]:
+    """Pre-generate a child's per-repo structural index (simulating a COMMITTED
+    child index). During a meta install the parent aggregates whatever per-repo
+    indices are present on disk; children do not self-generate at install time,
+    so this is how a real child index reaches the roll-up.
+    """
+    out = repo_root / "ontology" / "structural"
+    out.mkdir(parents=True, exist_ok=True)
+    return _generate_index(repo_root, out, name)
 
 
 def _run(*argv: str) -> subprocess.CompletedProcess:
@@ -440,6 +454,123 @@ def test_declared_empty_repo_list_never_falls_back_to_detection(tmp_path: Path) 
         tmp_path, declared_model="meta-and-children", declared_repos=[]
     )
     assert [r.name for r in intro.repos] == [tmp_path.name]
+
+
+# ------------------------------------------------ meta ontology at install time
+#
+# Issue #75: generate_structural() threads project.model through to
+# ontology_gen.refresh, which handles the meta-and-children cross-repo
+# aggregation — but coverage existed only for single-repo installs. These
+# end-to-end tests exercise the meta path at install time and assert the
+# cross-repo aggregate artifact + the "cross-repo N nodes across M repo(s)"
+# report line.
+
+_CROSS_REPO_RE = re.compile(r"cross-repo\s+(\d+)\s+nodes across\s+(\d+)\s+repo\(s\)")
+
+
+class TestMetaOntologyInstall:
+    def _install_meta_with_seeded_children(
+        self, tmp_path: Path
+    ) -> tuple[Path, subprocess.CompletedProcess]:
+        meta = tmp_path / "meta"
+        meta.mkdir()
+        # The parent's OWN source, so its per-repo index (generated during the
+        # install's refresh) contributes nodes to the roll-up too.
+        (meta / "core.py").write_text("def parent_fn():\n    return 1\n", encoding="utf-8")
+        # Two child git repos, each with source AND a pre-seeded per-repo index.
+        for child, fn in (("api", "api_fn"), ("web", "web_fn")):
+            _git_repo(meta / child)
+            (meta / child / f"{child}.py").write_text(
+                f"def {fn}():\n    return 2\n", encoding="utf-8"
+            )
+            _seed_child_index(meta / child, child)
+        yaml = _meta_yaml(tmp_path, (
+            "repo:\n  expect: any\n"
+            "scm:\n  owner: acme\n"
+            "project:\n  model: meta\n"
+            "children:\n"
+            "  - path: api\n"
+            "  - path: web\n"
+        ))
+        r = _run(str(meta), "--install-config", str(yaml), "--non-interactive")
+        return meta, r
+
+    def test_meta_install_emits_cross_repo_aggregate(self, tmp_path: Path) -> None:
+        meta, r = self._install_meta_with_seeded_children(tmp_path)
+        assert r.returncode == 0, r.stderr or r.stdout
+
+        # -- the config carried model=meta-and-children into generate_structural --
+        meta_cfg = json.loads((meta / ".claude" / "framework.config.json").read_text())
+        assert meta_cfg["project"]["model"] == "meta-and-children"
+
+        # -- the install reports the cross-repo roll-up on the structural line --
+        m = _CROSS_REPO_RE.search(r.stdout)
+        assert m, f"missing 'cross-repo … nodes across … repo(s)' line:\n{r.stdout}"
+        nodes, repos = int(m.group(1)), int(m.group(2))
+        # parent + api + web = 3 in-scope repos, all with indices present.
+        assert repos == 3, r.stdout
+        assert nodes > 0, r.stdout
+
+        # -- the central aggregate artifact is on disk at the meta root --
+        central = meta / "ontology" / "structural" / "cross-repo-graph.json"
+        assert central.is_file(), "cross-repo aggregate was not written"
+        graph = json.loads(central.read_text())
+        assert isinstance(graph.get("nodes"), list) and graph["nodes"]
+
+        # -- every id is namespaced by its repo; both children AND the parent
+        #    (keyed by its dir name) appear in the roll-up --
+        namespaces = {n["path"].split("/", 1)[0] for n in graph["nodes"]}
+        assert {"api", "web"} <= namespaces, namespaces
+        assert "meta" in namespaces, namespaces  # parent, keyed by root.name
+        # The aggregate node count matches the reported count.
+        assert len(graph["nodes"]) == nodes
+
+    def test_meta_install_aggregate_is_idempotent(self, tmp_path: Path) -> None:
+        meta, r1 = self._install_meta_with_seeded_children(tmp_path)
+        assert r1.returncode == 0, r1.stderr or r1.stdout
+        central = meta / "ontology" / "structural" / "cross-repo-graph.json"
+        first = central.read_text()
+
+        # Re-run: the per-repo index is fresh, so the structural line reports
+        # "fresh" and the aggregate is not rewritten differently (deterministic).
+        r2 = _run(str(meta), "--install-config", str(meta.parent / "install.yaml"),
+                  "--non-interactive")
+        assert r2.returncode == 0, r2.stderr or r2.stdout
+        assert "structural index:  fresh" in r2.stdout
+        assert central.read_text() == first
+
+    def test_meta_install_missing_child_index_degrades_gracefully(
+        self, tmp_path: Path
+    ) -> None:
+        # A child git repo with NO per-repo index must not abort the meta install
+        # nor the aggregate — it is simply skipped and not counted.
+        meta = tmp_path / "meta"
+        meta.mkdir()
+        (meta / "core.py").write_text("def p():\n    return 1\n", encoding="utf-8")
+        _git_repo(meta / "api")
+        (meta / "api" / "api.py").write_text("def a():\n    return 2\n", encoding="utf-8")
+        _seed_child_index(meta / "api", "api")
+        _git_repo(meta / "web")  # NO index seeded for web → absent, skipped
+        (meta / "web" / "web.py").write_text("def w():\n    return 3\n", encoding="utf-8")
+        yaml = _meta_yaml(tmp_path, (
+            "repo:\n  expect: any\n"
+            "scm:\n  owner: acme\n"
+            "project:\n  model: meta\n"
+            "children:\n"
+            "  - path: api\n"
+            "  - path: web\n"
+        ))
+        r = _run(str(meta), "--install-config", str(yaml), "--non-interactive")
+        assert r.returncode == 0, r.stderr or r.stdout
+        m = _CROSS_REPO_RE.search(r.stdout)
+        assert m, r.stdout
+        # parent + api have indices; web is absent → 2 repos, not 3.
+        assert int(m.group(2)) == 2, r.stdout
+        namespaces = {
+            n["path"].split("/", 1)[0]
+            for n in json.loads((meta / "ontology" / "structural" / "cross-repo-graph.json").read_text())["nodes"]
+        }
+        assert "web" not in namespaces, namespaces
 
 
 if __name__ == "__main__":
