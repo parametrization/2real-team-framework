@@ -67,6 +67,45 @@ def test_generate_skips_committed_vendored_dirs(tmp_path: Path) -> None:
     assert "node_modules" not in llms and "/dist/" not in llms
 
 
+def test_generate_skips_installed_runtime_in_consumer_repo(tmp_path: Path) -> None:
+    """Issue #74: a target repo's index must exclude the framework's installed .claude/ runtime."""
+    _git_init(tmp_path)
+    (tmp_path / "app.py").write_text("def main():\n    return 0\n")
+    # The framework install lays ~35 internals under .claude/hooks + .claude/lib.
+    for rel in ("hooks/dispatcher.py", "lib/ontology_gen/generate.py"):
+        f = tmp_path / ".claude" / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("def _framework_internal():\n    return 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    counts = generate(tmp_path, tmp_path / "out", "demo")
+
+    assert counts["files"] == 1  # only app.py — the installed runtime is skipped
+    llms = (tmp_path / "out" / "llms.txt").read_text()
+    assert "## app.py [python]" in llms
+    assert ".claude/hooks" not in llms and ".claude/lib" not in llms
+
+
+def test_generate_indexes_dogfood_claude_in_framework_source_repo(tmp_path: Path) -> None:
+    """The framework SOURCE repo's own .claude/ is a live dogfood copy — keep indexing it (#74)."""
+    _git_init(tmp_path)
+    (tmp_path / "app.py").write_text("def main():\n    return 0\n")
+    # Marker of the source checkout: the canonical install dirs it ships.
+    for src_dir in ("framework/assets", "framework/install"):
+        (tmp_path / src_dir).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "framework" / "install" / "bootstrap.py").write_text("def main():\n    return 0\n")
+    dogfood = tmp_path / ".claude" / "hooks" / "dispatcher.py"
+    dogfood.parent.mkdir(parents=True, exist_ok=True)
+    dogfood.write_text("def dispatch():\n    return 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    counts = generate(tmp_path, tmp_path / "out", "demo")
+
+    llms = (tmp_path / "out" / "llms.txt").read_text()
+    assert "## .claude/hooks/dispatcher.py [python]" in llms  # dogfood copy indexed
+    assert counts["files"] == 3  # app.py + bootstrap.py + the dogfood hook
+
+
 def test_generate_import_edge_resolves(tmp_path: Path) -> None:
     _git_init(tmp_path)
     (tmp_path / "a.py").write_text("import b\n")
