@@ -1,6 +1,6 @@
 [project]
 name = "2real-team-framework"
-version = "0.4.2"
+version = "0.5.0"
 description = "Drop-in AI agent team framework for Claude Code projects"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
