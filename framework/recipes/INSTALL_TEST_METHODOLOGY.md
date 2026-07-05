@@ -216,9 +216,16 @@ acceptable alternative), written to a harness-owned results dir (path owned by #
 
 ### 3b. Metric record (one per fixture × installer × metric)
 
+> **#138 fix (implemented in #105).** The join key carries a **permutation discriminant** —
+> `record_id = "<bucket>/<installer>/<permutation>/<metric>"` — because a single bucket can assert
+> the same metric across multiple permutations (e.g. B4's gate matrix records
+> `repo_state_gate_correct` on both the *refuse* leg and the *proceed* leg). The old three-part key
+> `<bucket>/<installer>/<metric>` collided on those, so run-over-run diffs (§4) overwrote each other.
+> The colliding key is no longer emitted.
+
 ```json
 {
-  "record_id": "B4/bootstrap/repo_state_gate_correct",
+  "record_id": "B4/bootstrap/refuse/repo_state_gate_correct",
   "bucket": "B4",
   "fixture": "existing-foreign-no-claude",
   "installer": "bootstrap",
@@ -247,7 +254,7 @@ acceptable alternative), written to a harness-owned results dir (path owned by #
 
 | field | meaning |
 |-------|---------|
-| `record_id` | stable join key across runs: `"<bucket>/<installer>/<metric>"`. The comparison (§4) diffs by this key. |
+| `record_id` | stable join key across runs: `"<bucket>/<installer>/<permutation>/<metric>"` (the `<permutation>` discriminant is the #138 fix — see the callout above). The comparison (§4) diffs by this key. |
 | `bucket` / `fixture` | #103 bucket id (B1–B12) + the human fixture label the harness synthesized. |
 | `installer` | `"bootstrap"` or `"cli"`. |
 | `permutation` | the resolved install knobs for this cell (real flag names). Records *why* two cells with the same metric can differ. |
