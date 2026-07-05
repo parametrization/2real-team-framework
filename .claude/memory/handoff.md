@@ -52,6 +52,7 @@ Wave 2 branch **on `deployments/phase5/wave-1`** (waves stack — see integratio
 - Branch: **`deployments/phase5/wave-1`** @ `af4ca9f` (pushed, **unmerged** — stays open for Wave 2 to stack on).
 - **main** @ `014ea8e` (unchanged this session). No release cut this session (per stacking decision).
 - Open PRs: (none). Feature branches deleted; worktrees pruned.
-- Open issues: #138, #139 (W2 tech-debt) · #140 (W2 meta) · #101/#102/#105/#107/#108/#109/#110 (Phase 5 backlog).
+- Open issues: #138, #139, #141 (tech-debt) · #140 (W2 meta) · #101/#102/#105/#107/#108/#109/#110 (Phase 5 backlog).
+  (#141 = pre-existing ontology-freshness flaky test surfaced in Ibrahim's #134 review; unrelated to #131.)
 - Lifecycle: `last_completed_wave=wave-4` (phase 5, wave-branch, 4 PRs, cr_cycles=0, concentration=25%);
   `global_wave_seq=4`; next allocate = **wave 5** (Phase 5 Wave 2, reserved meta-issue **#140**).

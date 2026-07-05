@@ -25,7 +25,8 @@ Track all feedback events here. Format:
   Integrated tip: `ruff` clean, **376 tests** (373→376, +3 from the #131 regression suite). Reinstall-parity in sync.
 - **Counter drift: zero** — recorded (4 / 0 / 25%) == recomputed (4 / 0 / 25%).
 - Tech-debt filed: **#138** (metric-record `record_id` collision across permutations → #105),
-  **#139** (install-quality metric-vocabulary reconciliation in #103's doc).
+  **#139** (install-quality metric-vocabulary reconciliation in #103's doc), **#141** (pre-existing
+  flaky `test_meta_install_aggregate_is_idempotent` under full-suite load — surfaced by Ibrahim's #134 review).
 
 ### Top-Implementer Concentration
 Paloma 1 / Ibrahim 1 / Tariq 1 / Nia 1 → **max 1 / 4 = 25%**. Perfectly even; no fragility flag.
