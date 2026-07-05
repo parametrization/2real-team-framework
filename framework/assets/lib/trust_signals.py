@@ -10,8 +10,15 @@ Two cleanly separated layers:
   * **Extraction** (SCM-dependent) — :func:`extract_signals` builds a
     ``{engineer_name: Signals}`` map from the merged-PR set, reading the repo
     list and integration-branch convention from the framework config and parsing
-    each PR's verdict comments for the ``Requestor:`` / ``RequestOrReplied:``
-    review-verdict shape.
+    each PR's verdict comments for the charter's ``Requestor:`` /
+    ``Requestee:`` / ``RequestOrReplied:`` shape. The charter carries review
+    *severity* in the comment **body** — an enumerated ``Must-fix:`` list — not
+    in the verdict token, so a ``Request`` verdict whose body lists must-fix
+    items is the changes-requested signal, while ``Replied`` (and a ``Request``
+    with ``Must-fix: None`` / no must-fix section) is clean. The legacy
+    explicit-token vocabulary (``ChangesRequested`` / ``Approved``) is still
+    recognized so a project that emits a machine verdict token directly also
+    scores.
 
   * **Scoring** (pure, no I/O) — :func:`score_delta`, :func:`decay`,
     :func:`apply_distribution_discipline`, :func:`negative_signal_line`,
@@ -24,15 +31,18 @@ Signals per engineer (all integers, all countable from the merged-PR set):
   ===========================  ============================================
   prs_merged                   PRs merged this iteration with them as commit
                                author.
-  must_fix_received            ChangesRequested verdicts on PRs they
-                               authored (negative — author signal).
-  must_fix_caught              ChangesRequested verdicts they issued as the
+  must_fix_received            changes-requested verdicts on PRs they
+                               authored (negative — author signal). A
+                               changes-requested verdict is a ``Request`` with
+                               body must-fix items, or a legacy
+                               ``ChangesRequested`` token.
+  must_fix_caught              changes-requested verdicts they issued as the
                                Requestor/reviewer (positive — review
                                signal).
   ci_red_merges                PRs they authored that merged with a failing
                                required check (negative — hard ding).
   rework_cycles                PRs they authored that needed >=1 rework
-                               round (received >=1 ChangesRequested).
+                               round (received >=1 changes-requested verdict).
   review_false_positives       must-fix items they raised that were later
                                marked withdrawn/false-positive (negative —
                                review-quality signal).
@@ -98,6 +108,16 @@ _FALSE_POSITIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The charter carries review severity in the comment BODY, not the verdict token:
+# a ``Must-fix:`` label (optionally bold) introduces an enumerated list of
+# blocking findings. ``_MUST_FIX_LABEL_RE`` matches that label line and captures
+# any same-line remainder; ``_LIST_ITEM_RE`` recognizes an enumerated / bulleted
+# item; ``_EMPTY_MUST_FIX_RE`` recognizes an explicit "no findings" value
+# (``None`` / ``N/A`` / ``-`` / ``0``, e.g. ``Must-fix: None (all resolved)``).
+_MUST_FIX_LABEL_RE = re.compile(r"^\s*\**must[\s-]?fix\**:\s*(.*?)\s*$", re.IGNORECASE)
+_LIST_ITEM_RE = re.compile(r"^\s*(?:\d+[.)]|[-*+])\s+\S")
+_EMPTY_MUST_FIX_RE = re.compile(r"^(none|n/?a|-+|0)(?:\W|$)", re.IGNORECASE)
+
 
 def _strip_code_markup(text: str) -> str:
     """Remove fenced code blocks and inline code spans from *text*.
@@ -154,12 +174,75 @@ class Signals:
 
 @dataclass
 class Verdict:
-    """A parsed verdict comment: who reviewed whom, the call, and retraction."""
+    """A parsed verdict comment: who reviewed whom, the call, and retraction.
+
+    ``changes_requested`` is the resolved blocking-review signal — it is derived
+    at parse time from the verdict token *and* the comment body (the charter
+    keeps severity in the body, so the token alone is not enough). Downstream
+    scoring reads this flag, never the raw token.
+    """
 
     requestor: str | None
     requestee: str | None
     verdict: str | None
     false_positive: bool
+    changes_requested: bool = False
+
+
+def _has_must_fix_items(body: str) -> bool:
+    """True when *body* carries a ``Must-fix:`` section with >=1 real item.
+
+    The charter's review convention writes severity in the comment body: a
+    ``Must-fix:`` label (bare or bold) followed by an enumerated list of blocking
+    findings. An explicit empty value (``Must-fix: None`` / ``N/A`` / ``-`` /
+    ``0``, including ``Must-fix: None (all resolved)``) is NOT a must-fix. Code
+    spans / fenced blocks are stripped first so a ``must-fix`` token inside code
+    or a test name is never counted.
+    """
+    lines = _strip_code_markup(body).splitlines()
+    for i, line in enumerate(lines):
+        label_m = _MUST_FIX_LABEL_RE.match(line)
+        if not label_m:
+            continue
+        inline = label_m.group(1).strip()
+        if inline:
+            # Value on the label line itself: an item unless it's an explicit
+            # "no findings" marker.
+            if not _EMPTY_MUST_FIX_RE.match(inline):
+                return True
+            continue
+        # Bare label: the value is on the following line(s). Skip blank lines,
+        # then require the next non-blank line to be an enumerated/bulleted item.
+        j = i + 1
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        if j < len(lines) and _LIST_ITEM_RE.match(lines[j]):
+            return True
+    return False
+
+
+def _is_changes_requested(verdict: str | None, body: str = "") -> bool:
+    """True when a verdict comment represents a changes-requested / must-fix call.
+
+    Two accepted vocabularies:
+      * **charter convention** — a ``Request`` verdict whose *body* enumerates
+        one or more ``Must-fix:`` items. Severity lives in the body, so a
+        ``Request`` with ``Must-fix: None`` (or no must-fix section) is a clean
+        review, not a changes-requested.
+      * **legacy machine token** — a literal ``ChangesRequested`` verdict (the
+        GitHub review-state vocabulary), kept so a project that emits the token
+        directly still scores.
+
+    ``Replied`` / ``Approved`` are clean unless carrying the legacy token.
+    """
+    if verdict is None:
+        return False
+    token = verdict.strip().lower()
+    if token == "changesrequested":
+        return True
+    if token == "request":
+        return _has_must_fix_items(body)
+    return False
 
 
 def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
@@ -167,7 +250,9 @@ def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
 
     Pure function — no I/O. Accepts both the bare (``Requestor: Name``) and bold
     (``**Requestor:** Name``) forms. A comment with no ``RequestOrReplied`` line
-    is not a verdict and is skipped.
+    is not a verdict and is skipped. The blocking-review call is resolved here
+    (:func:`_is_changes_requested`) because the charter carries severity in the
+    body, not the verdict token.
     """
     out: list[Verdict] = []
     for body in comment_bodies:
@@ -177,6 +262,7 @@ def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
         req_m = _FIELD_RE["requestor"].search(body)
         ree_m = _FIELD_RE["requestee"].search(body)
         verdict_str = verdict_m.group(1).strip()
+        changes_requested = _is_changes_requested(verdict_str, body)
         # A retraction only counts when the reviewer actually raised a
         # finding — approvals are never retractions.  Also strip code
         # spans and fenced blocks first so symbol/test names that contain
@@ -194,13 +280,10 @@ def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
                 requestee=ree_m.group(1).strip() if ree_m else None,
                 verdict=verdict_str,
                 false_positive=is_false_positive,
+                changes_requested=changes_requested,
             )
         )
     return out
-
-
-def _is_changes_requested(verdict: str | None) -> bool:
-    return verdict is not None and verdict.lower() == "changesrequested"
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +514,7 @@ def extract_signals(
         verdicts = parse_verdicts(_pr_comment_bodies(repo, number))
         pr_had_changes_requested = False
         for v in verdicts:
-            if _is_changes_requested(v.verdict):
+            if v.changes_requested:
                 pr_had_changes_requested = True
                 author_sig.must_fix_received += 1
                 if v.requestor:
