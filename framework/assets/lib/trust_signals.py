@@ -520,6 +520,64 @@ def merged_prs(
     return out
 
 
+# A trailing role/annotation parenthetical on a captured name, e.g. the
+# ``(QA)`` in ``Tariq Morales (QA)`` or ``(Principal SWE)``. Stripped before a
+# name is matched against the roster so the role does not fork the identity.
+_ROLE_SUFFIX_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _name_key(name: str) -> str:
+    """Fold a captured name to a roster-match key.
+
+    Collapses the ways one person's name is written across a wave's PRs and
+    verdict comments to a single key: a trailing role parenthetical is dropped
+    (``Tariq Morales (QA)`` → ``Tariq Morales``), dotted separators become spaces
+    (``Tariq.Morales`` → ``Tariq Morales``) while hyphens are preserved
+    (``Ibrahim.El-Amin`` → ``Ibrahim El-Amin``), interior whitespace is collapsed,
+    and the result is lower-cased. Pure — no I/O.
+    """
+    name = _ROLE_SUFFIX_RE.sub("", name)
+    name = name.replace(".", " ")
+    return re.sub(r"\s+", " ", name).strip().lower()
+
+
+def _roster_names(cfg) -> list[str]:
+    """Canonical team names (the roster JSON's keys), or ``[]`` if unavailable.
+
+    Reads ``identity.roster_source`` (default ``.claude/team/roster.json``)
+    relative to the repo root (``cfg.path.parent.parent`` — the config lives at
+    ``<repo>/.claude/framework.config.json``). Fail-open: a missing/unreadable or
+    non-object roster yields ``[]`` so normalization simply passes names through.
+    """
+    if getattr(cfg, "path", None) is None:
+        return []
+    roster_source = cfg.get("identity.roster_source", ".claude/team/roster.json")
+    roster_path = cfg.path.parent.parent / roster_source
+    try:
+        data = json.loads(roster_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [str(k) for k in data]
+
+
+def _canonicalizer(cfg):
+    """Return a ``name -> canonical_name`` mapper keyed off the roster.
+
+    Builds ``{_name_key(roster_name): roster_name}`` once, then returns a closure
+    that maps any captured name to its canonical roster identity via
+    :func:`_name_key`. A name absent from the roster is returned unchanged
+    (fail-open) — never dropped, never crashes.
+    """
+    canon_by_key = {_name_key(n): n for n in _roster_names(cfg)}
+
+    def canon(name: str) -> str:
+        return canon_by_key.get(_name_key(name), name)
+
+    return canon
+
+
 def extract_signals(
     wave: str,
     status_path: Path | None = None,
@@ -533,13 +591,20 @@ def extract_signals(
     Reviewer identity is the ``Requestor:`` field of the verdict comment, because
     the SCM principal that posts the comment is typically the orchestrator, not
     the reviewer.
+
+    Both identities are normalized against the roster before bucketing
+    (:func:`_canonicalizer`): a person written ``Tariq.Morales`` in one comment,
+    ``Tariq Morales`` in another, and ``Tariq Morales (QA)`` in a third folds to a
+    single ledger entry instead of splitting their signals across variants. A
+    name absent from the roster passes through unchanged (fail-open).
     """
     cfg = cfg or config()
     prs = merged_prs(wave, status_path, label=label, cfg=cfg)
+    canon = _canonicalizer(cfg)
     signals: dict[str, Signals] = {}
 
     def _bucket(name: str) -> Signals:
-        return signals.setdefault(name, Signals())
+        return signals.setdefault(canon(name), Signals())
 
     for pr in prs:
         author = pr.get("commit_author_name") or "(unknown)"
