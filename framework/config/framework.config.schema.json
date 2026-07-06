@@ -167,7 +167,9 @@
         "memory": { "type": "string", "default": ".claude/memory", "description": "Version-controlled project memory." },
         "ontology": { "type": "string", "default": "ontology", "description": "Two-layer ontology root (omit if unused)." },
         "state_file": { "type": "string", "default": ".claude/state.json", "description": "The wave/iteration state file the lifecycle skills read/write." },
-        "events_log": { "type": "string", "default": ".claude/framework/events.jsonl", "description": "Where hooks append block/event records (the generic observability stream)." }
+        "events_log": { "type": "string", "default": ".claude/framework/events.jsonl", "description": "Where hooks append block/event records (the generic observability stream)." },
+        "generic_prompt_ledger": { "type": "string", "default": ".claude/generic_prompt_ledger.json", "description": "The durable per-artifact genericize/skip decision ledger (#102) the suggest_generic_prompt hook feeds and the promotion-audit skill reads." },
+        "promotion_audit_log": { "type": "string", "default": ".claude/team/promotion_audit_log", "description": "Directory the promotion-audit skill writes its per-wave audit log into (wave_<id>.md)." }
       }
     },
     "hooks": {
@@ -190,7 +192,7 @@
         "post_file": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["ontology_tracker"],
+          "default": ["ontology_tracker", "suggest_generic_prompt"],
           "description": "Ordered PostToolUse checks for file-mutating tools (Edit/Write/MultiEdit/NotebookEdit). Advisory only — never block."
         },
         "session_start": {
