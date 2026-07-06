@@ -148,6 +148,13 @@ def archive_assets(repo_root: Path | str, *, now: datetime | None = None) -> Arc
     Deliberately relocates (moves, not copies) each asset OUT of Claude's load scope so
     the archived copy is inert. The archive dir is non-clobbering (a numeric suffix is
     added if the same-second dir exists). ``now`` is injectable for deterministic tests.
+
+    The manifest is written **before** the first ``shutil.move`` — it is the archive's
+    recovery index, so it must happen-before the point of no return. If the process crashes
+    mid-move, the manifest already names every intended member; :func:`restore_assets` then
+    moves back whatever reached the archive and skips members that never left the repo root
+    (they are still in place, untouched), so a partial archive is always recoverable rather
+    than stranded/unrestorable. (#149 durability finding 3.)
     """
     root = Path(repo_root)
     present = _present_assets(root)
@@ -164,16 +171,10 @@ def archive_assets(repo_root: Path | str, *, now: datetime | None = None) -> Arc
         n += 1
     archive_dir.mkdir(parents=True)
 
-    entries: list[dict] = []
-    moved: list[str] = []
-    for name in present:
-        src = root / name
-        dst = archive_dir / name
-        is_dir = src.is_dir()
-        shutil.move(str(src), str(dst))
-        entries.append({"name": name, "type": "dir" if is_dir else "file"})
-        moved.append(name)
-
+    # Record types from the still-in-place assets, then persist the manifest BEFORE moving.
+    entries = [
+        {"name": name, "type": "dir" if (root / name).is_dir() else "file"} for name in present
+    ]
     manifest = {
         "version": MANIFEST_VERSION,
         "archived_utc": stamp,
@@ -182,6 +183,12 @@ def archive_assets(repo_root: Path | str, *, now: datetime | None = None) -> Arc
     }
     manifest_path = archive_dir / MANIFEST_NAME
     atomic_write_text(manifest_path, json.dumps(manifest, indent=2) + "\n")
+
+    moved: list[str] = []
+    for name in present:
+        shutil.move(str(root / name), str(archive_dir / name))
+        moved.append(name)
+
     return ArchiveResult(archive_dir=archive_dir, moved=moved, manifest_path=manifest_path)
 
 
@@ -195,6 +202,14 @@ def restore_assets(
     e.g. a fresh install laid down after the archive); without it the member is left in
     the archive and reported as a conflict. Restoring is idempotent for already-restored
     members (a missing archive member is skipped).
+
+    **Scope is deliberately exact — the managed assets only.** Restore moves back exactly the
+    manifest's members (``.claude/`` + ``CLAUDE.md``) and touches nothing else. It does NOT
+    return the working tree to a globally pristine state: out-of-scope artifacts a fresh
+    install may have left (e.g. ``.git/hooks/pre-push``) and the now-emptied
+    ``.claude-backups/<UTC>/`` container are intentionally left in place — pruning them is a
+    separate "return to pristine" concern, not this restore's contract (#149 finding 4). The
+    ``test_restore_scope_is_exactly_managed_assets`` test asserts this boundary.
     """
     root = Path(repo_root)
     archive_dir = Path(archive_dir)
