@@ -8,7 +8,8 @@ bucket→permutation-flags, bucket→[metric-id]. Metric ids are #103 verbatim.
 Owner decisions bound into this wave:
   * Default run = hermetic **B1-B9** + **B12 dogfood INLINE** (reinstall --check on this repo).
   * **B10/B11** are DEFINED but flag-gated OFF (``real=True``); ``--include-real`` opts in, and
-    their provisioning (clone-at-pinned-SHA into scratch) is a guarded stub, never the live repo.
+    their provisioning clones the live source at a pinned SHA into scratch, read-only w.r.t. the
+    source (never the live working tree). See ``real_provision`` (#153).
 Stdlib only.
 """
 

@@ -153,6 +153,35 @@ def test_source_fingerprint_none_for_nonlocal() -> None:
     assert source_fingerprint("git@github.com:noorinalabs/noorinalabs-main.git") is None
 
 
+def test_source_mutation_mid_provision_raises_source_mutated(tmp_path: Path, monkeypatch) -> None:
+    """Negative-path guard for the load-bearing invariant: if the source is mutated BETWEEN the
+    before/after fingerprints, provision_real MUST raise SourceMutatedError. Injects a real
+    concurrent-writer mutation mid-provision (a stand-in for another session dirtying the live
+    tree) by wrapping clone_at. This is NOT a tautology — with the invariant check removed,
+    provision_real would return normally and this test would FAIL."""
+    src = tmp_path / "src"
+    _existing_repo(src)
+    before = source_fingerprint(str(src))
+
+    real_clone = real_provision.clone_at
+
+    def mutating_clone(source: str, sha: str, dest: Path) -> None:
+        # another session writes into the live source AFTER the `before` fingerprint is taken
+        (Path(source) / "intruder.txt").write_text("written mid-provision\n", encoding="utf-8")
+        real_clone(source, sha, dest)  # the clone itself still succeeds
+
+    monkeypatch.setattr(real_provision, "clone_at", mutating_clone)
+
+    spec = RealFixtureSpec(bucket="B11", source=str(src), ref="refs/heads/main")
+    with pytest.raises(real_provision.SourceMutatedError) as ei:
+        provision_real(spec, tmp_path / "wd")
+
+    # the raise is driven by the after-fingerprint mismatch, and names the mutated source
+    assert str(src) in str(ei.value)
+    after = source_fingerprint(str(src))
+    assert after != before and after is not None  # the source genuinely changed (guard is real)
+
+
 # --------------------------------------------------------------- --include-real wiring
 
 
