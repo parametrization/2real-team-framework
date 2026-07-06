@@ -64,6 +64,10 @@ _DEFAULTS: dict[str, Any] = {
         "reviewers_required": 1,
         "merge_model": "direct-to-main",
         "admin_merge_exceptions": {},
+        # Load-bearing-test pre-review gate (#167): map of <class> -> rationale
+        # naming the only bypass classes require_load_bearing_test.py accepts via
+        # LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale>. Empty = no bypass.
+        "load_bearing_test_exceptions": {},
         # Lifecycle-skill knobs (#86): per-wave tech-debt intake (/plan-phase),
         # phase-exit tech-debt gate (/phase-review), retro counter-drift
         # tolerances (/wave-retro).
@@ -95,6 +99,7 @@ _DEFAULTS: dict[str, Any] = {
             "validate_labels",
             "validate_review_comment_format",
             "validate_workflow_paths_coverage",
+            "require_load_bearing_test",
             "validate_pr_ci_status",
             "block_squash_wave_merge",
         ],
