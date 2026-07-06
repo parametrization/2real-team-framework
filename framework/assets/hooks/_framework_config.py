@@ -88,6 +88,11 @@ _DEFAULTS: dict[str, Any] = {
         "tech_debt_exit_ratio_pct": 10,
         "retro_counter_drift_abs": 2,
         "retro_counter_drift_pct": 5,
+        # Branch-freshness gate (#179): commits-behind (+ optional age) staleness
+        # thresholds read by validate_branch_freshness.py. Both 0 == DISABLED
+        # (opt-in, off by default); the gate does nothing until a knob is set > 0.
+        "branch_freshness_max_commits_behind": 0,
+        "branch_freshness_max_age_days": 0,
     },
     "ci": {
         "merge_requires_green": True,
@@ -115,6 +120,7 @@ _DEFAULTS: dict[str, Any] = {
             "validate_review_comment_format",
             "validate_workflow_paths_coverage",
             "require_load_bearing_test",
+            "validate_branch_freshness",
             "validate_pr_ci_status",
             "block_squash_wave_merge",
         ],
