@@ -102,6 +102,8 @@ _DEFAULTS: dict[str, Any] = {
         "ontology": "ontology",
         "state_file": ".claude/state.json",
         "events_log": ".claude/framework/events.jsonl",
+        "generic_prompt_ledger": ".claude/generic_prompt_ledger.json",
+        "promotion_audit_log": ".claude/team/promotion_audit_log",
     },
     "hooks": {
         "pre_bash": [
@@ -117,7 +119,7 @@ _DEFAULTS: dict[str, Any] = {
             "block_squash_wave_merge",
         ],
         "post_bash": ["warn_pipe_mask_rc"],
-        "post_file": ["ontology_tracker"],
+        "post_file": ["ontology_tracker", "suggest_generic_prompt"],
         "session_start": ["ontology_refresh", "session_start"],
         "agent": [],
         "stop": ["session_handoff"],

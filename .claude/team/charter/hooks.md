@@ -33,6 +33,7 @@ on its own crash too (#175).
 | Push unpiped ([pull-requests.md](pull-requests.md)) | `warn_pipe_mask_rc` | PostToolUse (Bash) | Flags `git push` / `gh pr merge` piped through rc-masking commands |
 | Shell safety | `warn_zsh_wordsplit` | PreToolUse (Bash) | Advisory on bash-isms under zsh (when `shell: zsh`) |
 | Ontology stays fresh | `ontology_tracker` / `ontology_refresh` | PostToolUse / SessionStart | Tracks semantic-overlay drift; regenerates the structural index (inert until an ontology dir exists) |
+| Promotion pipeline stays fed ([skills.md](skills.md)) | `suggest_generic_prompt` | PostToolUse | Silently records touched `.claude/{memory,skills,hooks,lib,team/charter}/**` artifacts into the generic-prompt ledger as pending promotion candidates — no nudge, no message; `/promotion-audit` is the periodic surface |
 
 Not every gate is a runtime hook. Some charter rules are enforced by the CI test suite
 (`framework/tests/`) instead — notably **reinstall-on-change**

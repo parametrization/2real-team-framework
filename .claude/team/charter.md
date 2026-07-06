@@ -4,8 +4,8 @@ The process rules for this repository live in the **modular charter** under
 [`charter/`](charter/charter.md), installed and config-substituted by the framework
 bootstrap (`python3 framework/install/bootstrap.py . …`). Start at
 [`charter/charter.md`](charter/charter.md) — it indexes the modules (agents, branching,
-commits, pull-requests, issues, hooks) and carries the ground rules, feedback system,
-and precedence policy.
+commits, pull-requests, issues, hooks, skills) and carries the ground rules, feedback
+system, and precedence policy.
 
 **The modules are the single source of truth for process rules.** This file does not
 restate them; it only adds the repo-specific rules below, which supplement (and never
