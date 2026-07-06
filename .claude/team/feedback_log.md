@@ -378,3 +378,51 @@ are a **supplementary manual tally** of the `Must-fix:` markers; the pure scorin
 3. **Make lifecycle kickoff persistence non-optional** — `/wave-start` (or kickoff) should fail
    loudly if `state.json` doesn't advance `current_wave`, so a wave can't run un-stamped.
    **Rationale:** avoids the retroactive reconciliation this retro needed.
+
+---
+
+## Wave 7 Retro (2026-07-06) — Phase 6 Wave 2: "Close the quality/process loop" → v0.7.0
+
+All three W6 process proposals above were **owner-approved 2026-07-06 and delivered this wave**:
+proposal 1 → #164 (PR #171), proposal 2 → #167 (PR #172, hard gate), proposal 3 → #168 (PR #169).
+
+### Metrics
+- **4 PRs, 0 changes-requested cycles, 25% top concentration, 0 CI-red.** One clean PR per engineer.
+- 466 → **507 tests** (+41), ruff clean, `.claude/` in sync with canonical assets.
+- Reviews: Tariq (QA) on S1/S3/S4, Nia (Tech Lead) on Tariq's S2 — all `Replied`/Must-fix: None,
+  each load-bearing claim independently mutation-checked (revert→fail) before clearing.
+- Shipped as **v0.7.0** (minor: new hard-gate hook is a backward-compatible feature) — published to
+  PyPI + npm via OIDC; `deployments-phase6-wave-2` lightweight tag on the merge commit.
+
+### Top 3 Going Well
+1. **Closed the loop the framework opened on itself:** the scorer that mis-read W6 (#164) is fixed
+   and merged; kickoff can no longer run un-stamped (#168, proven this very wave — kickoff was
+   stamped live and `assert-kickoff` now gates it); the load-bearing-test discipline is now a
+   fail-closed machine gate (#167), not just a convention.
+2. **Two W6 negative-signal patterns visibly corrected:** Paloma shipped #164 *with* its test +
+   fixture (no repeat of ship-without-test); Ibrahim's #163 durability test is load-bearing this
+   time (no repeat of the tautological fsync test).
+3. **Clean delivery at speed:** 4 parallel worktree stories, all green first-pass, zero rework.
+
+### Top 3 Pain Points / Watch
+1. **A clean wave hides scorer coverage:** the #164 ledger fix can't be validated by a wave with no
+   amendments — first contested wave (likely #102) is its real test. Don't assume it works until then.
+2. **Reviewer found a real gap filed only as tech-debt (#175):** `dispatcher.py` swallows uncaught
+   hook exceptions as ALLOW, undermining the very fail-closed intent of #167. A genuine
+   fail-closed-guarantee hole shipped in the same wave that introduced the fail-closed hook.
+3. **S2 gate is v1-scoped:** diff-wide `test_touched` (#174) and empty exception policy (#176) mean
+   the gate both under-enforces (one unrelated test edit satisfies the diff) and over-blocks (pure
+   refactors) until hardened. It is live in this repo — watch for friction.
+
+### Process proposals from THIS retro (approval-gated — NOT yet applied)
+1. **Harden the fail-closed guarantee before relying on it:** resolve #175 (dispatcher must not
+   ALLOW on uncaught exception) as a prerequisite before the #167 gate is trusted org-wide.
+   **Rationale:** a fail-closed hook behind a fail-open dispatcher is fail-open.
+2. **Weigh block-vs-tech-debt at review time:** Nia's dispatcher finding was real but filed as
+   tech-debt, so it scored nothing and doesn't hold the merge. Consider a norm: a finding that
+   defeats a shipping feature's core guarantee is a Must-fix, not tech-debt.
+
+### Next wave (owner decision — not started)
+No wave reserved. Standing flagship candidate: **#102** (mined-asset port / fork reconciliation) —
+explicitly deferred to run on the scorer this wave fixed. Also open: S2 hardening tranche
+(#174/#175/#176), Phase-5 debt (#142/#148/#141), #162 (installer wave), #110.

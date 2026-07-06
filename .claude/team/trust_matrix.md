@@ -207,3 +207,28 @@ Rows = the team member rating. Columns = the team member being rated.
 | Paloma Gupta | Highest-value build work (real-repo provisioner #153 with the source-unchanged safety invariant; noorinalabs fork-reconciliation audit #101) — both substantial and correct | **Repeated pattern**: shipped new behavior without its test **twice** (#154 safety invariant, #156 zero-children warn), each caught by QA. Same root cause in one wave — write the test with the behavior. |
 | Ibrahim El-Amin | Flagship durability hardening from the *real* findings this wave surfaced (parent-dir fsync, manifest-before-move, no_backup_litter baseline); clean botfarm upgrade study | must_fix_received=1: the fsync-dir test was tautological (passed with the durability syscall gutted) — a subtle but real coverage gap in the exact fix that mattered most. |
 | Nia Rossi | Accurate, safety-correct installer docs verified flag-by-flag against source; correctly scoped the atomicity-vs-durability claim so it doesn't overclaim the open #149 gap | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — lowest output this wave (single docs PR); watch for decay if signal stays quiet. |
+
+## Wave 7 Trust Updates (2026-07-06) — Phase 6 Wave 2: "Close the quality/process loop"
+
+> **Clean wave, deltas 0 across the board.** 4 PRs (one per engineer), **0 changes-requested
+> cycles**, 25% top concentration, 0 CI-red. Every load-bearing test was independently
+> mutation-checked by the reviewer (revert→fail confirmed) before clearing — the bar held, and
+> because the wave produced no defects there were no `must_fix_caught` to credit anyone. The #164
+> durable review-catch ledger is now merged (v0.7.0) but isn't exercised by a no-amendment wave; it
+> arms for the next contested wave. `trust_signals.py score 7` returned delta 0 for all four.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | delta 0. **No decay:** the W6 reserved-5 decays only if signal goes quiet — instead he carried the wave's most complex story (S2 #167, the fail-closed `require_load_bearing_test` hard gate: 18 tests, dual-deploy across 5 config points, praised in Nia's review) AND reviewed all 3 other PRs to the mutation-proof bar. No new catches, but a clean wave offers none. prs_merged=1, must_fix_received=0, ci_red=0, fp=0. Held at 5. |
+| Paloma Gupta | 4 | 4 | delta 0: prs_merged=1 (#171, flagship S1 #164 — durable review-catch ledger, the fix that motivated the wave), clean, must_fix_received=0. Notably **no repeat of the W6 ship-without-test pattern** — the amend-scoring fix shipped with a Wave-6 re-scoring fixture and a hand-verified load-bearing test. A single clean PR is not a bump (policy). Held at 4. |
+| Ibrahim El-Amin | 4 | 4 | delta 0: prs_merged=1 (#170, S4 — 3 tech-debt items), clean, must_fix_received=0. **Redeemed the W6 tautological-fsync-test ding**: this wave's #163 `_fsync_dir` guard test is genuinely load-bearing (reviewer confirmed the OSError propagates when the guard is reverted). Held at 4. |
+| Nia Rossi | 4 | 4 | delta 0: prs_merged=1 (#169, S3 #168 kickoff-persistence guard), clean, must_fix_received=0; also served as independent reviewer on Tariq's S2 PR, surfacing 3 substantive tech-debt items (incl. the dispatcher fail-closed gap #175). Output up from W6's docs-only PR. A single clean PR is not a bump. Held at 4. |
+
+### Done Well / Needs Improvement (Wave 7 / Phase 6 Wave 2)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | Flagship fail-closed hard gate (#167) built to the exact bar he enforces on others (mutation-verified 18-test suite); 3 clean, genuine reviews as the wave's QA backbone | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — a clean wave gave no catches; the reserved-5 is per-wave, decay still applies if a future wave goes quiet. |
+| Paloma Gupta | Closed the wave's motivating bug (#164) with a durable state-file ledger + a synthetic Wave-6 re-scoring fixture; broke her own W6 ship-without-test pattern | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — single PR; keep the test-with-behavior discipline as the default. |
+| Ibrahim El-Amin | Turned the W6 tautological-test lesson around — #163's durability guard test is load-bearing this time; also restored #158 source↔runtime parity cleanly | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — lowest-complexity story bundle this wave; reach for a flagship next wave. |
+| Nia Rossi | Made un-stamped waves impossible (#168 guard, dual-deployed); as S2 reviewer found a real fail-closed gap in the shared dispatcher (#175) the author missed | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — the dispatcher catch was strong but filed as tech-debt, not a blocking Must-fix, so it doesn't score; when a finding is real, weigh whether it blocks. |
