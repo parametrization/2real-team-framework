@@ -38,7 +38,9 @@
       "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
       "emergency": "[EMERGENCY]-prefixed restore work"
     },
-    "load_bearing_test_exceptions": {},
+    "load_bearing_test_exceptions": {
+      "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed."
+    },
     "tech_debt_intake_pct": 20,
     "tech_debt_exit_ratio_pct": 10,
     "retro_counter_drift_abs": 2,
@@ -58,7 +60,9 @@
     "memory": ".claude/memory",
     "ontology": "ontology",
     "state_file": ".claude/state.json",
-    "events_log": ".claude/framework/events.jsonl"
+    "events_log": ".claude/framework/events.jsonl",
+    "generic_prompt_ledger": ".claude/generic_prompt_ledger.json",
+    "promotion_audit_log": ".claude/team/promotion_audit_log"
   },
   "hooks": {
     "pre_bash": [
@@ -75,6 +79,7 @@
       "block_squash_wave_merge"
     ],
     "post_bash": ["warn_pipe_mask_rc"],
+    "post_file": ["ontology_tracker", "suggest_generic_prompt"],
     "session_start": ["ontology_refresh", "session_start"],
     "agent": [],
     "stop": ["session_handoff"],

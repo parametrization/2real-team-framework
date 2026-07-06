@@ -46,6 +46,11 @@ from _shell_parse import (  # noqa: E402
     walk_flag_values,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command rather than blocking on the
+#: hook's own bug.
+FAIL_OPEN = True
+
 # Flags whose VALUE is a label (comma-separated allowed by gh).
 _LABEL_FLAGS = {"--label", "-l"}
 

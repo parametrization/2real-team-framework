@@ -15,6 +15,7 @@ documents (CLAUDE.md, roster cards, skills) should link here rather than restate
 | [pull-requests.md](pull-requests.md) | PR creation, review workflow, merge gates, definition of done |
 | [issues.md](issues.md) | Delegation, work gates, assignment labels, comment protocol |
 | [hooks.md](hooks.md) | Which charter rules are enforced automatically, and how |
+| [skills.md](skills.md) | Skill-writing conventions; the promotion-pipeline marker convention |
 
 ## Ground Rules (apply everywhere)
 
