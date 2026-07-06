@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.5.0 (Phase 5 complete: installer robustness), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.6.0 (Phase 6 Wave 1: real-repo validation + durability hardening), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,12 +11,35 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-06): released v0.5.0 — Phase 5 (installer robustness) COMPLETE,
-merged to main, published to PyPI + npm.** Phase 4 ("self-hosting & quality machinery", two
-waves) made the framework trustworthy when run on itself. **Phase 5** ("installer robustness")
-made the installer trustworthy on repos *other than this one*. See [[handoff]] for the exact
-pickup (next = owner picks Wave 6 theme, reserved stub #150). The foundation (PR #41) shipped
-long ago; Phase 3 installer overhaul (v0.4.0) is below.
+**Current baseline (2026-07-06): released v0.6.0 — Phase 6 Wave 1 (real-repo validation +
+durability hardening) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
+("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
+**Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks and hardened what
+that surfaced. See [[handoff]] for the exact pickup (next = owner picks Phase 6 Wave 2 theme,
+reserved stub #165, OR a new phase). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 1 → v0.6.0 (2026-07-06, rollup PR #166 → main @ `8da3562`, bump `da1b705`) —
+"Prove it on real repos" (validation).** Owner rolled up after one wave (no Wave 2 stack). OIDC
+published (npm `latest`=0.6.0; PyPI `/0.6.0/json`=200, index CDN-lagged). Lightweight tag
+`deployments-phase6-wave-1` (no Release → no double-publish). **5 PRs, 3 CR cycles (all Tariq,
+load-bearing), 40% concentration, 466 tests.**
+- **#153/PR#154** real-repo provisioner: clone-at-pinned-SHA (`git clone --no-local` + detached),
+  **read-only** (HEAD+porcelain fingerprint → `SourceMutatedError`), wired as harness `--include-real`
+  (B10/B11, opt-in). **#109/PR#157** botfarm upgrade-over-live-install study (byte-identical restore
+  on 150-file diverged fork). **#101/PR#156** noorinalabs fork-reconciliation audit
+  (`NOORINALABS_RECONCILE.md`). **#152/PR#159** installer docs (README/framework README/CONTRIBUTING).
+  **#149/PR#160** durability hardening: `atomic_io` parent-dir fsync (mutation-proven test),
+  `archive_assets` manifest-before-move, `no_backup_litter` baseline, `.claude-backups` gitignore.
+- Scope = `framework/` dev-tooling + install fixes + docs; **no `framework/assets/**` runtime changes
+  → #116 dual-deploy did NOT apply.** Both fixtures turned out to be **diverged forks** of this
+  framework, which reframed #101 as fork-reconciliation and #109 as upgrade-over-live-install.
+- **Trust: Tariq 4→5 (first earned 5 in project history** — `must_fix_caught=3` vs 0 for all others,
+  distribution-discipline reserved 5); others hold at 4. **Process finding #164:** the verdict
+  amend-in-place convention erases per-reviewer `must_fix_caught` from `trust_signals` (recompute
+  reads current comment state) — W6 signals were reconstructed from historic evidence; `cr-cycles=3`
+  preserved via `wave_6_counter_corrections`. Deferred (OPEN): **#102** (18-asset port, its own wave),
+  tech-debt **#161/#162/#163/#164**, plus Phase-5 **#142/#148/#141**, exploratory **#110**.
 
 **Phase 5 → v0.5.0 (2026-07-06, rollup PR #151 → main @ `7e6fe8b`) — installer robustness.**
 Both waves rolled up as a unit (owner decision: stack W2 on W1, one release). Published via OIDC
