@@ -33,6 +33,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                     help="comma-separated installers to run (bootstrap,cli)")
     ap.add_argument("--include-real", action="store_true",
                     help="opt in to the [real] B10/B11 buckets (owner-gated; OFF by default)")
+    ap.add_argument("--real-config", type=Path, default=None,
+                    help="sidecar JSON overriding the B10/B11 real-fixture source/pin registry "
+                         "(see framework.harness.real_provision.RealFixtureSpec)")
     ap.add_argument("--no-dogfood", action="store_true", help="skip the B12 reinstall --check leg")
     ap.add_argument("--scale", type=int, default=None, help="B9 file count (default: 300)")
     ap.add_argument("--out", type=Path, default=_DEFAULT_RUNS_DIR,
@@ -64,6 +67,8 @@ def _opts(args: argparse.Namespace) -> dict:
     }
     if args.scale is not None:
         opts["scale"] = args.scale
+    if args.real_config is not None:
+        opts["real_config"] = str(args.real_config)
     return opts
 
 

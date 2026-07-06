@@ -1,0 +1,304 @@
+"""Hermetic tests for the #153 real-repo provisioner (clone-at-pinned-SHA + --include-real).
+
+Everything is proven against a throwaway LOCAL git repo built in ``tmp_path`` — no network, no
+real noorinalabs/botfarm fixtures (those runs are #101/#109). We assert the load-bearing safety
+property (the live source is byte-identical before/after a provision), that a dirty source still
+clones clean at the pin, that ``--include-real`` actually executes the B10/B11 real-bucket path
+(not ``NotImplementedError``), that a genuinely unresolvable fixture degrades to a skip, and that
+teardown leaves zero residue on both the scratch clone and the source. Stdlib + pytest only.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+_FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _FRAMEWORK_ROOT.parent
+sys.path.insert(0, str(_REPO_ROOT))  # make `framework.harness` importable (namespace package)
+
+from framework.harness import real_provision  # noqa: E402
+from framework.harness.real_provision import (  # noqa: E402
+    MissingFixtureError,
+    RealChildSpec,
+    RealFixtureSpec,
+    provision_real,
+    resolve_pin,
+    source_fingerprint,
+)
+from framework.harness.runner import run_matrix  # noqa: E402
+
+
+# --------------------------------------------------------------- synthetic git fixtures
+
+
+def _git(cwd: Path, *args: str) -> str:
+    cp = subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
+    return cp.stdout
+
+
+def _commit(cwd: Path, msg: str) -> str:
+    subprocess.run(
+        ["git", "-C", str(cwd), "-c", "user.name=Fixture", "-c", "user.email=fx@example.com",
+         "commit", "-q", "-m", msg],
+        check=True, capture_output=True,
+    )
+    return _git(cwd, "rev-parse", "HEAD").strip()
+
+
+def _make_repo(path: Path, files: dict[str, str]) -> str:
+    """Build a tiny real git repo on branch ``main``; return the HEAD sha."""
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    for rel, content in files.items():
+        fp = path / rel
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(content, encoding="utf-8")
+    _git(path, "add", "-A")
+    sha = _commit(path, "init")
+    _git(path, "branch", "-M", "main")
+    return sha
+
+
+def _existing_repo(path: Path) -> str:
+    """A foreign existing project (no .claude) — the B11 standalone clone source."""
+    return _make_repo(path, {"src/main.py": "print('app')\n", "README.md": "# real project\n"})
+
+
+# --------------------------------------------------------------- pin resolution
+
+
+def test_resolve_pin_explicit_is_verbatim(tmp_path: Path) -> None:
+    assert resolve_pin("ignored", pin="deadbeef") == "deadbeef"  # no ls-remote when pinned
+
+
+def test_resolve_pin_reads_remote_main_not_local_checkout(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    main_sha = _existing_repo(src)
+    # move the local checkout onto a feature branch with a NEW commit — main must NOT follow it
+    _git(src, "checkout", "-q", "-b", "feature/wip")
+    (src / "src" / "extra.py").write_text("x = 1\n", encoding="utf-8")
+    _git(src, "add", "-A")
+    feature_sha = _commit(src, "wip on a feature branch")
+
+    resolved = resolve_pin(str(src), "refs/heads/main")
+    assert resolved == main_sha        # the remote ref, not the checked-out feature branch
+    assert resolved != feature_sha
+
+
+def test_resolve_pin_unresolvable_source_raises_missing(tmp_path: Path) -> None:
+    with pytest.raises(MissingFixtureError):
+        resolve_pin(str(tmp_path / "nope"), "refs/heads/main")
+
+
+# --------------------------------------------------------------- clone-at-pin
+
+
+def test_clone_at_pin_checks_out_the_pinned_commit(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    first = _existing_repo(src)
+    # a second commit that adds a file — pinning to `first` must NOT include it
+    (src / "later.py").write_text("y = 2\n", encoding="utf-8")
+    _git(src, "add", "-A")
+    second = _commit(src, "second")
+    assert first != second
+
+    dest = tmp_path / "clone"
+    real_provision.clone_at(str(src), first, dest)
+
+    assert (dest / "src" / "main.py").is_file()
+    assert not (dest / "later.py").exists()                 # pinned before the 2nd commit
+    assert _git(dest, "rev-parse", "HEAD").strip() == first  # detached at the pin
+
+
+def test_dirty_source_clones_clean_at_pin(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    pin = _existing_repo(src)
+    # dirty the live source: an uncommitted edit + an untracked file
+    (src / "src" / "main.py").write_text("print('LOCAL EDIT')\n", encoding="utf-8")
+    (src / "scratch.tmp").write_text("junk\n", encoding="utf-8")
+    assert _git(src, "status", "--porcelain").strip()  # source IS dirty
+
+    dest = tmp_path / "clone"
+    real_provision.clone_at(str(src), pin, dest)
+
+    assert _git(dest, "status", "--porcelain").strip() == ""       # clone is clean
+    assert (dest / "src" / "main.py").read_text() == "print('app')\n"  # committed content, not dirt
+    assert not (dest / "scratch.tmp").exists()                     # untracked dirt not carried
+
+
+# --------------------------------------------------------------- source-unchanged invariant
+
+
+def test_provision_leaves_source_byte_identical(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    _existing_repo(src)
+    # put the source on a feature branch AND make it dirty — the exact real-world condition
+    _git(src, "checkout", "-q", "-b", "W.Mwangi/0322-spec")
+    (src / "dirty.py").write_text("d = 1\n", encoding="utf-8")
+
+    before = source_fingerprint(str(src))
+    spec = RealFixtureSpec(bucket="B11", source=str(src), ref="refs/heads/main")
+    ctx = provision_real(spec, tmp_path / "wd")
+    after = source_fingerprint(str(src))
+
+    assert before == after                       # HEAD + porcelain byte-identical (the invariant)
+    assert ctx["extra"]["source_unchanged"] is True
+
+
+def test_source_fingerprint_none_for_nonlocal() -> None:
+    assert source_fingerprint("git@github.com:noorinalabs/noorinalabs-main.git") is None
+
+
+# --------------------------------------------------------------- --include-real wiring
+
+
+def _b11_opts(source: Path, *, pin: str | None = None) -> dict:
+    return {
+        "buckets": ["B11"], "installers": ["bootstrap"], "dogfood": False,
+        "include_real": True,
+        "real_fixtures": {"B11": RealFixtureSpec(
+            bucket="B11", source=str(source), pin=pin, ref="refs/heads/main")},
+    }
+
+
+def test_include_real_executes_b11_real_path_all_green(tmp_path: Path) -> None:
+    src = tmp_path / "botfarm-synthetic"
+    _existing_repo(src)
+    before = source_fingerprint(str(src))
+
+    env = run_matrix(_b11_opts(src))
+    b11 = [r for r in env.records if r.bucket == "B11"]
+
+    assert b11, "B11 produced no records — real path did not run"
+    # the real path RAN (not the pre-#153 stub skip): install_exit_status graded, not observed.stub
+    exit_rec = next(r for r in b11 if r.metric == "install_exit_status")
+    assert exit_rec.passed is True
+    assert not (exit_rec.observed or {}).get("stub")
+    graded = [r for r in b11 if r.passed is not None and r.kind in ("pass_fail", "scored")]
+    assert graded and all(r.passed for r in graded), \
+        f"real B11 failures: {[r.record_id for r in graded if not r.passed]}"
+    # teardown residue metric proves the symmetric-diff is empty for a real bucket
+    residue = next(r for r in b11 if r.metric == "teardown_residue_zero")
+    assert residue.passed is True
+    # the live source is byte-identical after the whole matrix run
+    assert source_fingerprint(str(src)) == before
+
+
+def test_include_real_with_explicit_pin(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    pin = _existing_repo(src)
+    (src / "drift.py").write_text("z = 3\n", encoding="utf-8")  # advance main past the pin
+    _git(src, "add", "-A")
+    _commit(src, "drift")
+
+    env = run_matrix(_b11_opts(src, pin=pin))
+    exit_rec = next(r for r in env.records if r.bucket == "B11" and r.metric == "install_exit_status")
+    assert exit_rec.passed is True
+
+
+def test_missing_fixture_degrades_to_skip_not_crash(tmp_path: Path) -> None:
+    opts = {
+        "buckets": ["B11"], "installers": ["bootstrap"], "dogfood": False, "include_real": True,
+        "real_fixtures": {"B11": RealFixtureSpec(bucket="B11", source=str(tmp_path / "absent"))},
+    }
+    env = run_matrix(opts)  # must not raise
+    b11 = [r for r in env.records if r.bucket == "B11"]
+    assert len(b11) == 1
+    assert b11[0].passed is None
+    assert (b11[0].expected or {}).get("stub") is True  # runner's stub-skip record
+    assert "ls-remote" in (b11[0].observed or {}).get("reason", "")
+
+
+def test_scratch_clone_fully_removed_after_run(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    _existing_repo(src)
+    scratch = tmp_path / "scratch"
+    opts = _b11_opts(src)
+    opts.update({"scratch": str(scratch), "cleanup_scratch": True})
+    run_matrix(opts)
+    # explicit scratch is preserved by run_matrix, but every per-cell workdir clone is gone
+    leftovers = [p for p in scratch.glob("harness-B11-*")]
+    assert leftovers == [], f"scratch clone residue: {leftovers}"
+
+
+# --------------------------------------------------------------- B10 meta (parent + children)
+
+
+def test_meta_provision_clones_parent_and_children(tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    api = tmp_path / "api-src"
+    _make_repo(api, {"pyproject.toml": "[project]\nname='api'\n"})
+    web = tmp_path / "web-src"
+    _make_repo(web, {"index.html": "<h1>web</h1>\n"})
+
+    spec = RealFixtureSpec(
+        bucket="B10", source=str(parent), model="meta-and-children",
+        children=(RealChildSpec("api", str(api), flavor="product"),
+                  RealChildSpec("web", str(web), flavor="infra")),
+    )
+    wd = tmp_path / "wd"
+    ctx = provision_real(spec, wd)
+
+    assert (wd / "pyproject.toml").is_file()          # parent clone
+    assert (wd / "api" / ".git").is_dir()             # child clones, independently git'd
+    assert (wd / "web" / ".git").is_dir()
+    assert (wd / "install.meta.yaml").is_file()
+    yaml = (wd / "install.meta.yaml").read_text()
+    assert "path: api" in yaml and "path: web" in yaml and "flavor: infra" in yaml
+    labels = {c["path"]: c["flavor"] for c in ctx["child"]["children"]}
+    assert labels == {"api": "product", "web": "infra"}
+
+
+def test_include_real_executes_b10_meta_path_all_green(tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    api = tmp_path / "api-src"
+    _make_repo(api, {"pyproject.toml": "[project]\nname='api'\n"})
+    web = tmp_path / "web-src"
+    _make_repo(web, {"pyproject.toml": "[project]\nname='web'\n"})
+    sources = [parent, api, web]
+    before = [source_fingerprint(str(p)) for p in sources]
+
+    opts = {
+        "buckets": ["B10"], "installers": ["bootstrap"], "dogfood": False, "include_real": True,
+        "real_fixtures": {"B10": RealFixtureSpec(
+            bucket="B10", source=str(parent), model="meta-and-children",
+            children=(RealChildSpec("api", str(api), flavor="product"),
+                      RealChildSpec("web", str(web), flavor="infra")))},
+    }
+    env = run_matrix(opts)
+    b10 = [r for r in env.records if r.bucket == "B10"]
+    assert b10, "B10 produced no records"
+    graded = [r for r in b10 if r.passed is not None and r.kind in ("pass_fail", "scored")]
+    assert graded and all(r.passed for r in graded), \
+        f"real B10 failures: {[r.record_id for r in graded if not r.passed]}"
+    assert [source_fingerprint(str(p)) for p in sources] == before  # every source untouched
+
+
+# --------------------------------------------------------------- registry as data
+
+
+def test_registry_default_and_sidecar_override(tmp_path: Path) -> None:
+    default = real_provision.real_registry({})
+    assert set(default) == {"B10", "B11"}
+    assert default["B10"].model == "meta-and-children"
+    assert default["B11"].pin is None  # resolve live main at run time by default
+
+    sidecar = tmp_path / "real.json"
+    sidecar.write_text(
+        '{"B11": {"source": "/x", "pin": "abc123", "ref": "refs/heads/release"}}',
+        encoding="utf-8",
+    )
+    reg = real_provision.real_registry({"real_config": str(sidecar)})
+    assert reg["B11"].source == "/x" and reg["B11"].pin == "abc123"
+    assert reg["B11"].ref == "refs/heads/release"
+    assert reg["B10"].model == "meta-and-children"  # untouched default survives
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q"]))

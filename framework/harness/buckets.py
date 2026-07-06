@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .real_provision import make_real_provisioner
+
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 _BOOTSTRAP = _FRAMEWORK_ROOT / "install" / "bootstrap.py"
 
@@ -202,12 +204,9 @@ def _prov_large(wd: Path, opts: dict) -> dict:
     return {"extra": {"expect_source_path": "gen/f00000.py"}, "n_files": n}
 
 
-def _prov_real_stub(wd: Path, opts: dict) -> dict:
-    raise NotImplementedError(
-        "B10/B11 real-world provisioning is flag-gated and NOT wired in this wave. When enabled "
-        "it must CLONE the remote default branch at a pinned SHA into this scratch dir — never "
-        "copy/worktree the live working repo (other sessions operate there). See owner-decision 1."
-    )
+# B10/B11 real-world provisioning (clone-at-pinned-SHA into scratch, read-only w.r.t. the live
+# source) lives in ``real_provision`` and is bound per-bucket by ``make_real_provisioner`` — the
+# source/pin registry is DATA there (#153), overridable via ``--real-config`` for #101/#109.
 
 
 # --------------------------------------------------------------------- the matrix
@@ -333,14 +332,26 @@ def build_buckets() -> list[Bucket]:
                 # out of the way — B9 stresses scale/timing, not the fresh-vs-existing verdict.
                 _bootstrap_flags("--with-ontology", "--expect", "any", "--owner", "acme")),
         ]),
-        # --- [real] flag-gated OFF by default (owner-decision 1) ---
-        Bucket("B10", "meta-real-world", _prov_real_stub, [
-            Leg("meta-real", ("bootstrap",), ["install_exit_status"],
-                {"model": "meta-and-children", "real": True}),
+        # --- [real] flag-gated OFF by default (owner-decision 1); provisioned by cloning the
+        # live source at a pinned SHA into scratch (#153) only under --include-real. ---
+        Bucket("B10", "meta-real-world", make_real_provisioner("B10"), [
+            Leg("meta-real", ("bootstrap",),
+                ["install_exit_status", "non_interactive_zero_prompts",
+                 "child_wiring_portable", "child_flavor_filtered", "no_unexpected_files",
+                 "reinstall_idempotent", "no_backup_litter", "teardown_residue_zero",
+                 "install_duration_s"],
+                {"model": "meta-and-children", "expect": "any", "team": True, "real": True},
+                lambda wd: ["--install-config", str(wd / "install.meta.yaml"), "--model",
+                            "meta-and-children"],
+                teardown_proof=True),
         ], real=True),
-        Bucket("B11", "standalone-real-world", _prov_real_stub, [
-            Leg("existing-real", ("bootstrap",), ["install_exit_status"],
-                {"model": "single-repo", "real": True}),
+        Bucket("B11", "standalone-real-world", make_real_provisioner("B11"), [
+            Leg("existing-real", ("bootstrap",),
+                _CORE_STANDALONE + ["repo_state_gate_correct", "reinstall_idempotent",
+                                    "no_backup_litter", "teardown_residue_zero"],
+                {"model": "single-repo", "expect": "existing", "team": True, "real": True},
+                _bootstrap_flags("--expect", "existing", "--owner", "acme", "--no-ontology"),
+                gate_expect="proceed", teardown_proof=True),
         ], real=True),
     ]
 
