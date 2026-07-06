@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.6.0 (Phase 6 Wave 1: real-repo validation + durability hardening), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.7.0 (Phase 6 Wave 2: quality/process-loop hardening), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,13 +11,39 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-06): released v0.6.0 — Phase 6 Wave 1 (real-repo validation +
-durability hardening) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
-("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
-("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
-**Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks and hardened what
-that surfaced. See [[handoff]] for the exact pickup (next = owner picks Phase 6 Wave 2 theme,
-reserved stub #165, OR a new phase). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+**Current baseline (2026-07-06): released v0.7.0 — Phase 6 Wave 2 (close the quality/process loop)
+COMPLETE, merged to main, published to PyPI + npm.** Phase 4 ("self-hosting & quality machinery")
+made the framework trustworthy run on itself; **Phase 5** ("installer robustness", v0.5.0) made the
+installer trustworthy on repos *other than this one*; **Phase 6 Wave 1** (v0.6.0) *proved it in the
+wild* against real diverged forks; **Phase 6 Wave 2** (v0.7.0) *closed the loop on the framework's
+own quality machinery* (the W1 scorer blind spot + process gaps). See [[handoff]] for the exact
+pickup (next = owner picks the next wave/phase theme — no wave reserved; standing flagship candidate
+is #102). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 2 → v0.7.0 (2026-07-06, rollup PR #173 → main @ merge `33c6388`, bump `b82939d`,
+retro `6eee7b5`) — "Close the quality/process loop."** Clean wave: **4 PRs, 0 CR cycles, 25%
+concentration, 0 CI-red, 507 tests** (+41). OIDC published (npm `latest`=0.7.0; PyPI `/0.7.0/json`
+=200); lightweight tag `deployments-phase6-wave-2` on the merge commit (no Release → no
+double-publish). Delivered all 3 owner-approved W6-retro process proposals:
+- **#164/PR#171** (Paloma, flagship) — durable issue-time `wave_{W}_review_catches` ledger in
+  `trust_signals.py` so `must_fix_caught`/`must_fix_received` survive the verdict amend-in-place
+  convention; legacy live-comment fallback = zero regression. **Fixes the W1 scorer blind spot**
+  but is NOT exercised by a no-amendment wave → first real test is the next contested wave.
+- **#167/PR#172** (Tariq) — fail-closed `require_load_bearing_test` PreToolUse hook **hard-blocks**
+  `gh pr create`/`gh pr ready` when a diff adds behavior without a test; auditable
+  `LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale>` override (policy empty by default). Live in this
+  repo. Dual-deployed across 5 config sync points + charter docs.
+- **#168/PR#169** (Nia) — `lifecycle.py wave assert-kickoff` + `kickoff_persisted` guard; wave-start
+  skill (both dual-deploy copies) now fails loud if `state.json` doesn't advance `current_wave`.
+- **#158/#163/#161/PR#170** (Ibrahim, S4) — restored `review-pr` asset↔runtime parity (#158),
+  guarded `_fsync_dir` `os.close` fail-open path (#163, load-bearing this time), CONTRIBUTING doc (#161).
+- **Trust: all delta 0** (clean wave). Tariq **holds 5** (reserved-5 not decayed — carried flagship
+  S2 + all 3 reviews, signal not quiet); Paloma/Ibrahim/Nia hold **4**. Both W6 negative patterns
+  visibly corrected (Paloma shipped #164 with test+fixture; Ibrahim's #163 test is load-bearing).
+- **New tech-debt (OPEN):** **#174** S2 `test_touched` is diff-wide not per-file · **#175**
+  `dispatcher.py` swallows uncaught hook exceptions as ALLOW (undermines #167's fail-closed intent —
+  resolve before trusting the gate org-wide) · **#176** pre-seed a `load_bearing_test_exceptions`
+  class (empty default hard-blocks pure refactors). 2 process proposals in feedback_log (unapplied).
 
 **Phase 6 Wave 1 → v0.6.0 (2026-07-06, rollup PR #166 → main @ `8da3562`, bump `da1b705`) —
 "Prove it on real repos" (validation).** Owner rolled up after one wave (no Wave 2 stack). OIDC

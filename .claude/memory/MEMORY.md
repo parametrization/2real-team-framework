@@ -5,7 +5,7 @@ memory: create/edit `<kebab-slug>.md` with frontmatter (`name`, `description`, `
 add a pointer line here, link related memories with `[[slug]]`, and commit it so it travels with
 the branch. Update an existing file rather than duplicating; delete memories that turn out wrong.
 
-- [Framework extraction state](project_framework_extraction_state.md) — baseline: released v0.6.0 (Phase 6 W1 real-repo validation: read-only clone-at-pinned-SHA provisioner + `--include-real`, botfarm/noorinalabs fork studies, durability hardening; 466 tests), OIDC on both registries; deferred: #102 asset port, tech-debt #161/#162/#163/#164 + #142/#148/#141, #110, review-gate tranche. Read first.
+- [Framework extraction state](project_framework_extraction_state.md) — baseline: released v0.7.0 (Phase 6 W2 quality/process-loop: durable review-catch ledger #164, fail-closed load-bearing-test gate #167, kickoff-persistence #168, parity/durability #158/#163/#161; clean wave, 507 tests), OIDC on both registries; deferred: #102 asset port (flagship next), S2 hardening #174/#175/#176, tech-debt #162 + #142/#148/#141, #110, review-gate tranche. Read first.
 - [Config-driven architecture](reference_config_driven_architecture.md) — config→assets→bootstrap→dispatcher; one shared-config object, stdlib-only fail-open, hook contract, `cfg.path.parent.parent` = repo root.
 - [Lifecycle state machine](reference_lifecycle_state_machine.md) — lifecycle.py: monotonic wave allocator, merge models, classify_reachability, transitions + CLI.
 - [Per-child union rosters](reference_per_child_union_rosters.md) — roster_gen partition (meta=org roles, child=lead+domain engineers); identity gate enforces meta∪child via parent-merge.
