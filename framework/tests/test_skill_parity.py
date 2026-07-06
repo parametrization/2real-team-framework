@@ -30,6 +30,9 @@ DUAL_DEPLOY_REQUIRED = (
     "retro",
     "wave-retro",
     "phase-review",
+    # PR-review skill (#158) — promoted from runtime-only to canonical to close the
+    # source↔runtime drift (#116 parity).
+    "review-pr",
 )
 
 # Strings that must never appear in a canonical (assets) skill.
