@@ -921,6 +921,15 @@ def install_children(
         statuses = {"settings": settings_status, "config": cfg_status, "CLAUDE.md": md_status}
         if pre_push_mode != "none":  # pushes happen FROM the children — same mode as the meta
             statuses["pre-push"] = install_pre_push(child_root, pre_push_mode, ccfg, dry_run=dry_run)
+        # Each selected child is its own git repo (discover_repos scans for a
+        # nested .git) and inherits the parent's hooks.post_file list verbatim,
+        # so it can accumulate its own ledger too — same #187 gitignore default.
+        child_ledger_rel = ccfg.get("paths", {}).get(
+            "generic_prompt_ledger", ".claude/generic_prompt_ledger.json"
+        )
+        statuses["gitignore"] = ensure_gitignore_entries(
+            child_root, (child_ledger_rel,), dry_run=dry_run
+        )
         reports.append((c["path"], c["flavor"], statuses))
     return reports
 
@@ -1009,6 +1018,13 @@ def install_child_mode(args: argparse.Namespace, inst: dict, user_keys: set[str]
     pre_push_mode = install_config.get_key(inst, "pre_push.mode", "noop")
     pre_push_status = install_pre_push(target, pre_push_mode, cfg, dry_run=args.dry_run)
 
+    # A child is its own git repo (see the pre-push comment above) and inherits
+    # the parent's `hooks.post_file` list verbatim — including
+    # `suggest_generic_prompt` — so it can accumulate its OWN ledger. Same #187
+    # gitignore-default dual-deploy as the standalone/meta path.
+    ledger_rel = cfg.get("paths", {}).get("generic_prompt_ledger", ".claude/generic_prompt_ledger.json")
+    gitignore_status = ensure_gitignore_entries(target, (ledger_rel,), dry_run=args.dry_run)
+
     roster_status = "skipped (team disabled)"
     if roster_plan is not None:
         rep = roster_gen.write_roster(target_claude / "team", roster_plan, force=args.force, dry_run=args.dry_run)
@@ -1029,6 +1045,7 @@ def install_child_mode(args: argparse.Namespace, inst: dict, user_keys: set[str]
     print(f"framework.config:  {cfg_status} (project.model=child, parent={rel}, flavor={flavor})")
     print(f"install snapshot:  {snapshot_status}")
     print(f"pre-push hook:     {pre_push_status}")
+    print(f".gitignore:        {gitignore_status}")
     print(f"team roster:       {roster_status}")
     print(f"CLAUDE.md:         {md_status}")
     if roster_plan is not None and not args.no_enforce_identity:
@@ -1161,6 +1178,48 @@ def _git_hooks_dir(target: Path) -> tuple[Path | None, str | None]:
     except OSError:
         pass
     return None, "unrecognised .git layout"
+
+
+#: Header comment stamped once above the installer-managed block, so a re-run
+#: (or a hand-edited .gitignore that already has it) never duplicates it.
+_GITIGNORE_HEADER = "# 2real framework: transient runtime output (installer-managed, #187)"
+
+
+def ensure_gitignore_entries(target: Path, entries: tuple[str, ...], *, dry_run: bool) -> str:
+    """Idempotently append *entries* to the target repo's ``.gitignore``.
+
+    Settles the #187 ledger-policy follow-up: the ``generic_prompt_ledger`` path
+    (a transient per-repo working queue the ``suggest_generic_prompt`` feeder
+    hook writes) is gitignored as a matter of policy — see the ledger's own
+    docstring and ``framework/assets/skills/promotion-audit/SKILL.md``. THIS
+    repo's own ``.gitignore`` carries that entry by hand (precedent:
+    ``.claude-backups/``, ``.claude/framework/`` — also framework-owned runtime
+    output that must never be committed); every OTHER installed repo hit the
+    same untracked-noise surprise with no installer help. This closes that gap.
+
+    Creates ``.gitignore`` if missing. Only entries not ALREADY present as an
+    exact line anywhere in the file are appended (under a stable header,
+    written once) — a hand-authored ``.gitignore`` is never rewritten or
+    reordered, and a re-run adds nothing new. ``dry_run`` reports what would be
+    added without touching the file.
+    """
+    gi_path = target / ".gitignore"
+    existing_lines = gi_path.read_text(encoding="utf-8").splitlines() if gi_path.is_file() else []
+    existing_set = set(existing_lines)
+    missing = [e for e in entries if e not in existing_set]
+    if not missing:
+        return "up to date (0 added)"
+    plural = "y" if len(missing) == 1 else "ies"
+    if dry_run:
+        return f"would add {len(missing)} entr{plural}: {', '.join(missing)}"
+    block: list[str] = []
+    if existing_lines and existing_lines[-1] != "":
+        block.append("")
+    if _GITIGNORE_HEADER not in existing_set:
+        block.append(_GITIGNORE_HEADER)
+    block.extend(missing)
+    gi_path.write_text("\n".join(existing_lines + block) + "\n", encoding="utf-8")
+    return f"added {len(missing)} entr{plural}: {', '.join(missing)}"
 
 
 def install_pre_push(target: Path, mode: str, cfg: dict | None = None, *, dry_run: bool) -> str:
@@ -1443,6 +1502,12 @@ def main() -> int:
     pre_push_mode = install_config.get_key(inst, "pre_push.mode", "noop")
     pre_push_status = install_pre_push(target, pre_push_mode, cfg, dry_run=args.dry_run)
 
+    # Dual-deploy the ledger's gitignore policy (#187): the target's own
+    # .gitignore gets the transient generic-prompt-ledger path so downstream
+    # adopters don't hit the same untracked-noise surprise this repo hit first.
+    ledger_rel = cfg.get("paths", {}).get("generic_prompt_ledger", ".claude/generic_prompt_ledger.json")
+    gitignore_status = ensure_gitignore_entries(target, (ledger_rel,), dry_run=args.dry_run)
+
     # Ontology (seed overlay + generated structural index) is config-driven:
     # the RESOLVED ontology.enabled (flags > user YAML > shipped default ON).
     overlay = None
@@ -1508,6 +1573,7 @@ def main() -> int:
             f"{', '.join(charter['preserved'])}. Use --force to overwrite."
         )
     print(f"pre-push hook:     {pre_push_status}")
+    print(f".gitignore:        {gitignore_status}")
     children = inst.get("children") or []
     if children:
         print(f"children:          {len(children)} recorded ({', '.join(c.get('path', '?') for c in children[:4])}{' …' if len(children) > 4 else ''})")
