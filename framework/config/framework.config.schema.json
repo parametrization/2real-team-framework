@@ -107,6 +107,12 @@
           "default": {},
           "description": "Map of <class> -> <human rationale> naming the only admin-merge bypass classes the CI gate accepts via ADMIN_MERGE_EXCEPTION=<class>:<rationale>. Empty = no admin bypass allowed."
         },
+        "load_bearing_test_exceptions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Map of <class> -> <human rationale> naming the only bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Empty = no bypass allowed (the gate is a hard, unconditional block until a class is configured)."
+        },
         "tech_debt_intake_pct": {
           "type": "integer",
           "default": 20,
@@ -172,7 +178,7 @@
         "pre_bash": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "validate_pr_ci_status", "block_squash_wave_merge"],
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_pr_ci_status", "block_squash_wave_merge"],
           "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
         },
         "post_bash": {

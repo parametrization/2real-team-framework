@@ -39,6 +39,7 @@ CLI::
   lifecycle.py wave start    <W> [--at TS] [--state PATH]
   lifecycle.py wave scope    <W> --repos a,b,c [--phase P] [--at TS] [--state PATH]
   lifecycle.py wave kickoff  <W> [--merge-model M] [--at TS] [--state PATH]
+  lifecycle.py wave assert-kickoff <W> [--state PATH]
   lifecycle.py wave wrapup   <W> [--pr-count N] [--cr-cycles N]
                                   [--concentration P] [--at TS] [--state PATH]
   lifecycle.py merge-model get <W> [--state PATH]
@@ -375,6 +376,50 @@ def kickoff_wave(
     return persist(path, pairs)
 
 
+def kickoff_persisted(state: dict, wave: str) -> tuple[bool, str]:
+    """Verify ``kickoff_wave``'s state write actually landed (issue #168).
+
+    Guards the exact Wave 1 failure mode: a wave can be officially kicked off
+    (team spawned, branch cut, work underway) while the ``kickoff_wave`` state
+    write is skipped or lost — so ``current_wave`` never advances and
+    ``state.json`` sits un-stamped for the wave's entire life, discovered only
+    at retro/wrapup reconciliation. Checks the three facts ``kickoff_wave``
+    persists together: the ``current_wave`` pointer, the wave's ``_active``
+    flag, and its ``_kicked_off_at`` timestamp. Pure — no I/O — so it is a real
+    unit-testable guard; the CLI (``wave assert-kickoff``) and the wave-start
+    skill's kickoff step both call it to fail loudly rather than silently
+    proceeding un-stamped. Returns ``(ok, message)``; never raises.
+    """
+    label = _wave_label(wave)
+    key_active = f"wave_{wave}_active"
+    key_kicked = f"wave_{wave}_kicked_off_at"
+
+    current = state.get("current_wave")
+    active = state.get(key_active)
+    kicked_at = state.get(key_kicked)
+
+    problems = []
+    if current != label:
+        problems.append(f"current_wave is {current!r}, expected {label!r}")
+    if active is not True:
+        problems.append(f"{key_active} is {active!r}, expected true")
+    if not kicked_at:
+        problems.append(f"{key_kicked} is missing")
+
+    if problems:
+        return False, (
+            f"wave {wave} kickoff was NOT persisted to state.json: "
+            + "; ".join(problems)
+            + ". A wave cannot proceed un-stamped (this is the Wave 1 failure mode — "
+            "officially kicked off while state.json never advanced). Re-run "
+            f"`lifecycle.py wave kickoff {wave}` and re-check with `wave assert-kickoff`."
+        )
+    return True, (
+        f"wave {wave} kickoff persisted "
+        f"(current_wave={label}, {key_active}=true, {key_kicked}={kicked_at})"
+    )
+
+
 def wrapup_wave(
     path: Path,
     wave: str,
@@ -443,6 +488,16 @@ def _cmd_wave_kickoff(args: argparse.Namespace) -> int:
     return kickoff_wave(
         resolve_state_path(args.state), args.wave, merge_model=args.merge_model, at=args.at
     )
+
+
+def _cmd_wave_assert_kickoff(args: argparse.Namespace) -> int:
+    state = load_state(resolve_state_path(args.state))
+    ok, message = kickoff_persisted(state, args.wave)
+    if ok:
+        print(message)
+        return 0
+    print(f"ERROR: {message}", file=sys.stderr)
+    return 1
 
 
 def _cmd_wave_wrapup(args: argparse.Namespace) -> int:
@@ -528,6 +583,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--at", default=None)
     _state_opt(p)
     p.set_defaults(func=_cmd_wave_kickoff)
+
+    p = wsub.add_parser(
+        "assert-kickoff",
+        help="fail loudly (exit 1) if kickoff's state write did not persist (#168)",
+    )
+    p.add_argument("wave")
+    _state_opt(p)
+    p.set_defaults(func=_cmd_wave_assert_kickoff)
 
     p = wsub.add_parser("wrapup", help="close a wave: counters + completed_at")
     p.add_argument("wave")

@@ -55,7 +55,10 @@ def _fsync_dir(directory: Path) -> None:
     except OSError:
         pass  # some filesystems reject fsync on a directory fd — durability stays best-effort
     finally:
-        os.close(dir_fd)
+        try:
+            os.close(dir_fd)
+        except OSError:
+            pass  # e.g. fd already closed elsewhere — the close itself must stay fail-open too
 
 
 def atomic_write_text(path: Path | str, text: str, *, encoding: str = "utf-8") -> None:

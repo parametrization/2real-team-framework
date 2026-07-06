@@ -135,6 +135,7 @@ def _schema_defaults() -> dict:
                 "validate_labels",
                 "validate_review_comment_format",
                 "validate_workflow_paths_coverage",
+                "require_load_bearing_test",
                 "validate_pr_ci_status",
                 "block_squash_wave_merge",
             ],

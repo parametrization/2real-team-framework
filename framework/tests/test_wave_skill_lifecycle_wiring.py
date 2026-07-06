@@ -80,6 +80,27 @@ def test_wave_start_drives_allocate_start_scope_kickoff(tree: Path) -> None:
 
 
 @pytest.mark.parametrize("tree", _SKILL_TREES, ids=lambda p: f"{p.parent.name}/{p.name}")
+def test_wave_start_gates_kickoff_on_assert_kickoff(tree: Path) -> None:
+    """#168: the kickoff step must be immediately followed by the persistence guard.
+
+    Wave 1's failure was silent — `wave kickoff` ran (or didn't) and nothing checked
+    whether the write actually landed. Both dual-deploy copies must invoke
+    `lifecycle.py wave assert-kickoff` right after `wave kickoff`, and STOP (non-zero
+    exit) rather than silently continuing when it fails.
+    """
+    text = _skill_text(tree, "wave-start")
+    assert 'lifecycle.py" wave assert-kickoff' in text, (
+        "wave-start does not invoke the `lifecycle.py wave assert-kickoff` guard"
+    )
+    kickoff_idx = text.index('lifecycle.py" wave kickoff')
+    guard_idx = text.index('lifecycle.py" wave assert-kickoff')
+    assert guard_idx > kickoff_idx, "assert-kickoff guard must come AFTER the kickoff write"
+    # The guard must actually stop the step, not just print a warning.
+    guard_block = text[guard_idx : guard_idx + 300]
+    assert "exit 1" in guard_block, "assert-kickoff failure does not exit non-zero"
+
+
+@pytest.mark.parametrize("tree", _SKILL_TREES, ids=lambda p: f"{p.parent.name}/{p.name}")
 def test_wave_end_drives_wrapup_and_merge_model(tree: Path) -> None:
     text = _skill_text(tree, "wave-end")
     assert 'lifecycle.py" wave wrapup' in text, "wave-end does not invoke `lifecycle.py wave wrapup`"

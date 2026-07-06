@@ -56,6 +56,7 @@
     ".claude/skills/phase-review/SKILL.md",
     ".claude/skills/plan-phase/SKILL.md",
     ".claude/skills/retro/SKILL.md",
+    ".claude/skills/review-pr/SKILL.md",
     ".claude/skills/session-start/SKILL.md",
     ".claude/skills/team-reset/SKILL.md",
     ".claude/skills/wave-audit/SKILL.md",

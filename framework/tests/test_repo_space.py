@@ -397,6 +397,41 @@ def test_atomic_write_dir_fsync_is_fail_open(tmp_path: Path, monkeypatch) -> Non
     assert target.read_text() == "data"  # write still succeeded
 
 
+def test_atomic_write_dir_fsync_close_is_fail_open(tmp_path: Path, monkeypatch) -> None:
+    """A ``close()`` failure on the dir fd inside ``_fsync_dir`` must not escape (#163).
+
+    Non-tautological guard: an ``os.open`` spy records the SPECIFIC fd opened for the
+    parent directory, then ``os.close`` is rigged to raise ``OSError`` only for that fd
+    (e.g. "Bad file descriptor" from a fd closed twice) while every other close (the temp
+    file, etc.) goes through the real syscall untouched. Reverting the ``try/except``
+    around ``os.close(dir_fd)`` in ``_fsync_dir`` makes THIS test fail with the OSError
+    propagating out of ``atomic_write_text`` — the fail-open contract must cover the
+    close, not just the open/fsync.
+    """
+    target = tmp_path / "out.json"
+    real_open = atomic_io.os.open
+    real_close = atomic_io.os.close
+    dir_fd_holder: list[int] = []
+
+    def _open_spy(path, *a, **k):
+        fd = real_open(path, *a, **k)
+        if Path(path) == target.parent:
+            dir_fd_holder.append(fd)
+        return fd
+
+    def _close_raising(fd, *a, **k):
+        if dir_fd_holder and fd == dir_fd_holder[-1]:
+            raise OSError("Bad file descriptor (simulated double-close)")
+        return real_close(fd, *a, **k)
+
+    monkeypatch.setattr(atomic_io.os, "open", _open_spy)
+    monkeypatch.setattr(atomic_io.os, "close", _close_raising)
+
+    atomic_io.atomic_write_text(target, "data")  # must not raise despite close() failing
+    assert target.read_text() == "data"  # write still succeeded
+    assert dir_fd_holder, "the directory fd was never opened — test setup is broken"
+
+
 def _dir_fsync_supported(directory: Path) -> bool:
     """True iff this platform can open+fsync a directory fd (fail-open guard, mirrors the code)."""
     try:

@@ -159,13 +159,23 @@ go-ahead. **Only after** the User approves, record the kickoff transition live:
 
 ```bash
 python3 "$LIB/lifecycle.py" wave kickoff "$W" --merge-model "$MERGE_MODEL"
+
+# Guard (#168): fail loudly if the write above did not actually land — the exact Wave 1
+# failure was a wave running its entire life un-stamped (state.json stuck at the prior
+# wave) because this step silently didn't persist. Do NOT proceed past a non-zero exit.
+python3 "$LIB/lifecycle.py" wave assert-kickoff "$W" || {
+  echo "STOP: kickoff did NOT persist to state.json — the wave cannot proceed un-stamped."
+  echo "Re-run the kickoff command above, then re-check with 'wave assert-kickoff' before continuing."
+  exit 1
+}
 ```
 
 This stamps `wave_{W}_kicked_off_at`, declares `wave_{W}_merge_model`, and re-points
 `current_wave`. Confirm the model with the User first: a wave whose per-issue PRs base on
 the integration branch is `wave-branch`; one whose PRs base straight on the default branch
 is `direct-to-main`. Do **not** run this before the go-ahead — it marks the wave as
-officially started and work beginning.
+officially started and work beginning. The `assert-kickoff` guard immediately after is not
+optional — it is what makes the un-stamped-wave failure mode impossible.
 
 ### 8. Report
 
@@ -187,3 +197,5 @@ officially started and work beginning.
   re-runs
 - Wave kickoff (Step 7) is an approval gate: the plan is presented and the `wave kickoff`
   lifecycle transition fires only on the User's explicit go-ahead
+- Kickoff persistence is enforced, not manual: `wave assert-kickoff` (#168) fails the step
+  loudly if `current_wave` did not actually advance — no more silent un-stamped waves
