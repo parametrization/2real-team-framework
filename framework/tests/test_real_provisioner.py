@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -281,6 +282,41 @@ def test_meta_provision_clones_parent_and_children(tmp_path: Path) -> None:
     assert "path: api" in yaml and "path: web" in yaml and "flavor: infra" in yaml
     labels = {c["path"]: c["flavor"] for c in ctx["child"]["children"]}
     assert labels == {"api": "product", "web": "infra"}
+
+
+def test_meta_zero_children_warns(tmp_path: Path) -> None:
+    """#155 item 4: a ``meta-and-children`` spec that resolves to ZERO children is a degenerate
+    meta install — ``provision_real`` must surface it with a warning (not silently degrade). This
+    is a real guard: with the ``warnings.warn`` removed, ``pytest.warns`` finds no match and FAILS.
+    """
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    spec = RealFixtureSpec(bucket="B10", source=str(parent), model="meta-and-children", children=())
+
+    with pytest.warns(UserWarning, match=r"meta-and-children with zero children"):
+        ctx = provision_real(spec, tmp_path / "wd")
+
+    # the degenerate install still succeeds (a childless meta is valid, just trivial)
+    assert (parent / "pyproject.toml").is_file() or (tmp_path / "wd" / "pyproject.toml").is_file()
+    assert ctx["child"]["children"] == []  # no children provisioned
+    assert ctx["extra"]["source_unchanged"] is True
+
+
+def test_meta_with_children_does_not_warn(tmp_path: Path) -> None:
+    """Symmetric control: a populated ``meta-and-children`` spec must NOT emit the zero-children
+    warning — proves the guard is scoped to the degenerate case, not every meta provision."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    api = tmp_path / "api-src"
+    _make_repo(api, {"pyproject.toml": "[project]\nname='api'\n"})
+    spec = RealFixtureSpec(
+        bucket="B10", source=str(parent), model="meta-and-children",
+        children=(RealChildSpec("api", str(api), flavor="product"),),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning would raise → test fails if the guard misfires
+        ctx = provision_real(spec, tmp_path / "wd")
+    assert [c["path"] for c in ctx["child"]["children"]] == ["api"]
 
 
 def test_include_real_executes_b10_meta_path_all_green(tmp_path: Path) -> None:
