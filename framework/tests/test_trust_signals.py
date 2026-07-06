@@ -233,6 +233,70 @@ def test_parse_skips_non_verdict_comments():
 
 
 # ---------------------------------------------------------------------------
+# review_false_positives must-fix gate (#131).
+#
+# A review false-positive is, by contract, a Must-fix item the reviewer RAISED
+# that was later withdrawn. Retraction vocabulary in a comment that raised no
+# must-fix item is not a retraction and must not score.
+# ---------------------------------------------------------------------------
+
+# PR #115 — Nia's approval, posted as a `Replied` with `Must-fix: None`. Its
+# Tech-debt line carries the phrase "false-positive watch" — a forward-looking
+# note about a hypothetical gate weakness, NOT a retraction of anything she
+# raised. Exact shape from the live #131 repro.
+PR115_CLEAN_APPROVAL = """Requestor: Nia Rossi
+Requestee: Paloma Gupta
+RequestOrReplied: Replied
+
+**Review: LGTM — APPROVE.** CI green; the trust-gate change reads correctly.
+
+Must-fix: None
+Tech-debt: Minor false-positive watch (accept as-is) — the retraction heuristic
+could over-match forward-looking prose; worth a follow-up but not blocking here.
+"""
+
+# A comment that DID raise a Must-fix finding and, in the same comment, retracts
+# it as a false-positive → still a genuine review false-positive (don't
+# over-correct and break the real signal).
+PR_RETRACTED_MUST_FIX = """Requestor: Tariq Morales (QA)
+Requestee: Ibrahim El-Amin
+RequestOrReplied: Request
+
+Must-fix:
+1. The allowlist claim looks wrong here.
+
+On second read this was a false-positive — the README already matches. Withdrawing.
+"""
+
+
+def test_clean_approval_with_false_positive_watch_scores_zero():
+    # Regression for #131: `Must-fix: None` + "false-positive watch" prose must
+    # NOT be counted as a review false-positive.
+    (v,) = ts.parse_verdicts([PR115_CLEAN_APPROVAL])
+    assert v.verdict == "Replied"
+    assert v.changes_requested is False
+    assert v.false_positive is False
+
+
+def test_retracted_must_fix_still_counts_as_false_positive():
+    # Positive case: a comment that raised a must-fix and then retracts it in
+    # the same body still scores — the real signal is preserved.
+    (v,) = ts.parse_verdicts([PR_RETRACTED_MUST_FIX])
+    assert v.changes_requested is True
+    assert v.false_positive is True
+
+
+def test_extract_shape_clean_reviewer_no_false_positive():
+    # End-to-end over parse_verdicts: the #115 shape yields
+    # review_false_positives == 0 for the reviewer.
+    fp = 0
+    for v in ts.parse_verdicts([PR115_CLEAN_APPROVAL]):
+        if v.false_positive and v.requestor:
+            fp += 1
+    assert fp == 0
+
+
+# ---------------------------------------------------------------------------
 # End-to-end accounting: the per-PR loop extract_signals runs, exercised on the
 # real corpus without touching gh. Proves review signals now score non-zero.
 # ---------------------------------------------------------------------------

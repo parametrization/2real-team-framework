@@ -10,7 +10,106 @@ Track all feedback events here. Format:
 
 ---
 
-## Retrospective: Wave 3 (Phase 4 Wave 2, "quality-machinery hardening & tech-debt floor") — 2026-07-05
+## Retrospective: Wave 5 (Phase 5 Wave 2, "Installer robustness — build tranche") — 2026-07-05
+
+> **The build wave.** Implemented what Wave 1 designed: the install/test/teardown harness, the golden
+> manifest, and the consented backup/amend/restore installs at user + repo level. Closed the load-bearing
+> **G1** gap. Third consecutive fully-clean mechanical score.
+
+### Wave Metrics
+- **4 PRs merged** into `deployments/phase5/wave-2`: #144 (#107, Ibrahim), #143 (#139, Nia),
+  #147 (#105, Tariq), #146 (#108, Paloma). **6 issues closed** (#105/#107/#108/#138/#139/#145).
+- **0 changes-requested cycles** — all 4 cross-assigned charter reviews returned `Replied` / `Must-fix: None`.
+  Integrated tip: `ruff` clean, **442 tests** (376→442, +66); reinstall-parity + golden-manifest drift guards in sync.
+- **Counter drift: zero** — recorded (4 / 0 / 25%) == recomputed.
+- Post-merge activation verified: `files_installed_complete` grades on all cells (was a pending-#139 skip);
+  `install_success_rate 1.00`.
+- Tech-debt filed: **#148** (cli_bridge_soft_degrade impl + --compare CI gate), **#149** (durability/fidelity
+  hardening: parent-dir fsync, foreign-asset detection, child/meta manifest snapshot). Deferred: **#142** (product uninstall).
+
+### Top-Implementer Concentration
+Ibrahim 1 / Nia 1 / Tariq 1 / Paloma 1 → **max 1 / 4 = 25%**. Perfectly even; no fragility flag.
+
+### Per-Engineer Assessments
+All four: `prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0` → **delta 0** (single clean PR
+is not a bump). Hold at **4 across the board**. See `trust_matrix.md` Wave 5.
+
+### Top 3 Going Well
+1. **Cross-PR contracts held exactly** — Nia's `expected_install_set` seam and Ibrahim's consent/backup
+   module API were both consumed verbatim (#105 auto-wired with zero change; #108 reused the module). Pinning
+   the contracts in the kickoff brief paid off — parallel tracks converged without divergence.
+2. **The quality oracle caught a bug in itself, pre-merge** — a latent config-shape mismatch (flat permutation
+   dict vs #139's nested dotted config) would have silently mis-graded child/meta/no-team installs. Both #105
+   reviewers flagged it independently; the pre-merge fix surfaced a deeper model-token spelling mismatch neither
+   caught. Fixed correct-by-construction rather than shipped correct-by-coincidence.
+3. **G1 closed** — the load-bearing invisible dependency (agent-teams flag) is now a consented, idempotent,
+   backup-safe user-level install; a fresh clone can be made team-capable without hand-editing `~/.claude`.
+
+### Top 3 Pain Points
+1. **"Correct by coincidence" nearly shipped** — the seam bug was non-blocking only because the current matrix
+   happens to run the metric solely on single-repo+team cells. Lesson: for a *measurement* tool, a metric that
+   silently defaults is worse than one that errors. Consider: metrics should fail-loud on unresolved config,
+   not fall back to a default set. (Process note, not a charter change yet.)
+2. **`must_fix_caught` still under-credits QA** — the reviewers' most valuable find (the seam) registered as
+   tech-debt, and its fix as orchestrator-directed hardening, so no reviewer scored a "catch." Third wave running
+   this pattern; worth a scoring-model look in a later wave.
+3. **Harness completeness deferred** — `cli_bridge_soft_degrade` unimplemented and `--compare` not yet a CI gate
+   (#148); the harness measures well but isn't yet a standing CI guard.
+
+### Proposed Process Changes
+1. **(Candidate, not applied)** Metrics in the harness should **fail-loud on unresolved/unknown config** rather
+   than silently returning a default expected-set — Rationale: Wave 5's seam bug. Fold into #148 when the harness
+   is hardened; surface for owner approval then.
+2. *(No charter amendments proposed — the review process worked: the seam was caught by review, escalated, fixed.)*
+
+> **Phase 5 opens.** First wave of the installer-robustness phase: a *discovery* tranche that
+> defines what a good install looks like before Wave 2 builds the harness. Two `[Explore]` spikes
+> + one design spec + one code fix. Notably, the #131 scorer fix landed here — so this is the
+> **second consecutive fully-clean mechanical score** and the first where the machinery had *no*
+> known scoring artifacts left to override around.
+
+### Wave Metrics
+- **4 PRs merged** into `deployments/phase5/wave-1`: #134 (#131, Paloma), #135 (#106, Ibrahim),
+  #136 (#103, Tariq), #137 (#104, Nia). 4 issues closed (#103/#104/#106/#131).
+- **0 changes-requested cycles** — all 4 cross-assigned charter reviews returned `Replied` / `Must-fix: None`.
+  Integrated tip: `ruff` clean, **376 tests** (373→376, +3 from the #131 regression suite). Reinstall-parity in sync.
+- **Counter drift: zero** — recorded (4 / 0 / 25%) == recomputed (4 / 0 / 25%).
+- Tech-debt filed: **#138** (metric-record `record_id` collision across permutations → #105),
+  **#139** (install-quality metric-vocabulary reconciliation in #103's doc), **#141** (pre-existing
+  flaky `test_meta_install_aggregate_is_idempotent` under full-suite load — surfaced by Ibrahim's #134 review).
+
+### Top-Implementer Concentration
+Paloma 1 / Ibrahim 1 / Tariq 1 / Nia 1 → **max 1 / 4 = 25%**. Perfectly even; no fragility flag.
+Deliberate 1-issue-per-engineer split for a discovery wave.
+
+### Per-Engineer Assessments
+All four: `prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, rework=0` → **delta 0**
+(single clean PR is not a bump). Hold at **4 across the board**. Reviews substantive but all
+non-blocking (Nia's 4 #103 follow-ups, Tariq's #104 `record_id` catch → tech-debt #138/#139), so
+`must_fix_caught=0` mechanically. See `trust_matrix.md` Wave 4 for the full table.
+
+### Top 3 Going Well
+1. **The dogfood loop closed on itself** — #131 (surfaced by Phase 4's own re-score) fixed and
+   verified in this wave; the scorer now has zero known artifacts and scored the wave clean by construction.
+2. **Discovery-first sequencing paid off** — #103's metric vocabulary was reused verbatim by #104,
+   and cross-review caught real spec defects (record_id collision) *before* any harness code exists to inherit them.
+3. **The #106 audit found a load-bearing gap (G1)** — the agent-teams env flag the installer never
+   writes — independently confirmed by grep in review. This is the concrete justification for the Wave 2 user-level installer.
+
+### Top 3 Pain Points
+1. **Two design docs can silently diverge** — #103 and #104 nearly disagreed on `install_success_rate`
+   granularity; caught in review, tracked as #139. A shared metric glossary would prevent recurrence.
+2. **`must_fix_caught` under-credits QA on clean waves** — genuinely good review work (Nia/Tariq)
+   registers as tech-debt, not a scored catch. Not a bug, but the signal set gives reviewers no
+   upside on a clean wave. Watch across waves; consider a tracked-tech-debt review signal later.
+3. **Owner-decision items accumulate across spikes** — 11 OWNER-DECISION callouts across #103/#106/#104
+   now need wave-end sign-off in one batch (below). Manageable here; would not scale to a larger spike wave.
+
+### Proposed Process Changes
+1. **Batch owner-decision sign-off at wave-end** (done this wave) — Rationale: spikes intentionally
+   defer behavior-changing calls; collecting them into one approval gate keeps the owner in control
+   without blocking mid-wave. No charter change proposed; already the practice.
+2. *(No charter/skill amendments proposed this wave — the machinery behaved as designed.)*
 
 > **Phase 4's final wave.** Ran fully through the live state machine; the retro also closed the
 > Wave 1 (Phase 4 Wave 1) authoritative re-score commitment. First wave to score clean with **zero

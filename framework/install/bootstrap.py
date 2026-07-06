@@ -88,6 +88,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import child_install  # noqa: E402  (sibling module in install/)
 import install_config  # noqa: E402  (sibling module in install/)
+import repo_space  # noqa: E402  (sibling module in install/)
 import roster_gen  # noqa: E402  (sibling module in install/)
 
 # framework/install/bootstrap.py  ->  framework/
@@ -1252,6 +1253,14 @@ def main() -> int:
     ontology_group.add_argument("--no-ontology", action="store_true",
                                 help="Skip the ontology seed + structural index (ontology.enabled=false)")
     ap.add_argument("--no-permissions", action="store_true", help="Do NOT install the curated permissions.allow allowlist into settings.json (hook wiring still merges)")
+    ap.add_argument(
+        "--user-space", action="store_true",
+        help="Also run the CONSENTED user-level install step: idempotently add the "
+             "framework's harness-global settings (agent-teams flag, teammateMode, "
+             "worktree baseRef, ~/.claude permission globs) to ~/.claude/settings.json "
+             "(closes #106 G1). Opt-in prompt before any write; --non-interactive skips it; "
+             "existing/matching keys are a no-op; divergent values are surfaced, never clobbered.",
+    )
     ap.add_argument("--force", action="store_true", help="Overwrite existing files")
     ap.add_argument(
         "--refresh-charter", action="store_true",
@@ -1294,6 +1303,34 @@ def main() -> int:
     if not proceed:
         print("ERROR: refusing to install (repo expectation gate).", file=sys.stderr)
         return 1
+
+    # Repo-level disposition (#108): if the target already carries FOREIGN Claude
+    # assets (a .claude/ or CLAUDE.md we did NOT install), offer — with explicit
+    # consent — to ARCHIVE them out of Claude's scope for a fresh install, or amend
+    # them in place. Non-interactive / non-TTY / dry-run take the safe non-destructive
+    # path (amend), preserving today's behaviour for CI. Skipped on our own idempotent
+    # re-runs (state["installed"]) and when there is nothing existing to touch.
+    if not args.dry_run and not state["installed"] and repo_space.has_existing_assets(target):
+        prep = repo_space.prepare_for_install(target, non_interactive=args.non_interactive)
+        if prep.action == "cancel":
+            print(
+                "aborted: existing repo Claude assets left untouched "
+                "(no consent to archive; nothing written).",
+                file=sys.stderr,
+            )
+            return 1
+        if prep.action == "archived":
+            print("\n-- repo Claude assets archived (out of Claude's scope; restorable) --")
+            print(f"moved:   {', '.join(prep.archive.moved)} -> {prep.archive.archive_dir}")
+            print(
+                f"restore: python3 framework/install/repo_space.py restore "
+                f"{prep.archive.archive_dir}"
+            )
+        elif prep.action == "amend":
+            print(
+                "\nexisting repo Claude assets: amending in place "
+                "(idempotent; nothing archived)."
+            )
 
     # The CHILD install mode is a different layout (no hook code of its own) —
     # dedicated path.
@@ -1479,6 +1516,27 @@ def main() -> int:
     print(f"team roster:       {roster_status}")
     if team_enabled and roster_plan is not None and not args.no_enforce_identity:
         print("identity gate:     ENABLED (commits must use -c user.name/-c user.email from the roster)")
+
+    # CONSENTED user-level step (#107, closes #106 G1). Opt-in: only when --user-space
+    # is passed. Merge-only, idempotent, consent-gated; --non-interactive skips it and a
+    # dry-run never writes. Reads/writes ~/.claude, never the target repo — kept last so
+    # a repo install is complete before we touch user space.
+    if args.user_space:
+        import user_space  # noqa: E402  (sibling module in install/)
+
+        target_settings = user_space.user_settings_path()
+        if args.dry_run:
+            print("\n-- user-level install (~/.claude/settings.json) --")
+            print(f"would offer to add the framework's harness-global settings to {target_settings}")
+        else:
+            us_result = user_space.install_user_space(non_interactive=args.non_interactive)
+            print("\n" + user_space.report(us_result, target_settings))
+    elif not args.dry_run:
+        print(
+            "\nhint: harness-global team settings (agent-teams flag, worktree base) are a "
+            "USER-level concern. Re-run with --user-space (or `python3 "
+            "framework/install/user_space.py`) to install them into ~/.claude with consent."
+        )
 
     print("\nNext:")
     print("  1. Review .claude/framework.config.json (scm.owner / policy / ci.tooling) and .claude/team/roster.json.")
