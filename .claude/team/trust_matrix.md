@@ -175,3 +175,35 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | Golden-manifest contract held exact under head-to-head verification; derived-not-literal so it can't drift from the installer | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
 | Paloma Gupta | Archive-out-of-scope + byte-identical restore round-trip; single atomic-write fix (#145) hardened both user- and repo-space paths | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 |
 | Tariq Morales | Flagship harness (B1–B9 + B12 inline, teardown-proof, #138); pre-merge seam fix caught a model-token spelling mismatch both reviewers missed | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=0 (as #139 reviewer the real catch became the seam fix, tracked outside the scorer) |
+
+## Wave 6 Trust Updates (2026-07-06) — Phase 6 Wave 1: "Prove it on real repos" (validation)
+
+> **Signals RECONSTRUCTED from historic evidence — the mechanical scorer under-read this wave.**
+> This was the first wave with real changes-requested cycles since Wave 2: **3 must-fix cycles**
+> (#154, #156, #160 — all raised by Tariq, all proven load-bearing/non-tautological before clearing).
+> Because the charter's verdict-amendment convention requires editing the `ChangesRequested` comment
+> **in place** to `Replied`/`Must-fix: None` once fixed, `trust_signals.py` (which recomputes from
+> *current* comment state) saw `Must-fix: None` everywhere → reported `must_fix_caught=0`/`must_fix_received=0`
+> for all, and **dropped Tariq from the output entirely** (he authored no PRs). Filed as **#164**; the
+> aggregate `changes_requested_cycles=3` is preserved via the `wave_6_counter_corrections` measurement-
+> conflict entry (claimed stands; recompute=0 fully explained by in-place amendments). The per-engineer
+> lines below are reconstructed from the PR review timelines and amendment-comment text (evidence-anchored,
+> not narrative). Metrics: **5 PRs, 3 CR cycles, 40% top concentration** (Paloma 2, Ibrahim 2, Nia 1).
+> Also corrected this wave: my own reviewer-spawn instructions had `Requestor:`/`Requestee:` swapped on
+> #159/#160 (Tariq caught it) — PATCHed the 3 mis-attributed comments in place so scoring keys correctly.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 4 | **5** | delta +1: must_fix_caught=**3** (#154 read-only-invariant negative-path test, #156 zero-children warn test, #160 fsync-dir tautological-test gap) — every catch a genuine uncovered/tautological-test defect he mutation-proved. **Distribution-discipline 5**: the singular top relative performer (3 catches vs 0 for all others) with a strictly positive composite — the first earned 5 in project history. must_fix_received=0, ci_red=0, fp=0. |
+| Paloma Gupta | 4 | 4 | delta 0: prs_merged=2 (#154/#153, #156/#101) — strong output — **but must_fix_received=2** (both PRs shipped new behavior without its test; caught by Tariq). Not a clean wave ⇒ no bump; below the 3+ received −1 threshold ⇒ no ding. Held at 4. |
+| Ibrahim El-Amin | 4 | 4 | delta 0: prs_merged=2 (#157/#109 clean, #160/#149 durability), must_fix_received=1 (fsync test passed even with the syscall gutted). One clean + one rework ⇒ not a clean wave, no bump; single received, no ding. Held at 4. |
+| Nia Rossi | 4 | 4 | delta 0: prs_merged=1 (#159/#152 docs), clean, must_fix_received=0. A single clean PR is not a bump (policy). Held at 4. |
+
+### Done Well / Needs Improvement (Wave 6 / Phase 6 Wave 1)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | Three load-bearing QA catches in one wave, each mutation-proven non-tautological (revert-the-fix → test fails); also caught the orchestrator's Requestor/Requestee attribution swap. The QA backbone of the wave. | must_fix_received=0, ci_red=0, fp=0 — clean; watch that the reserved-5 is earned per-wave, not a new floor (decay applies if signal goes quiet). |
+| Paloma Gupta | Highest-value build work (real-repo provisioner #153 with the source-unchanged safety invariant; noorinalabs fork-reconciliation audit #101) — both substantial and correct | **Repeated pattern**: shipped new behavior without its test **twice** (#154 safety invariant, #156 zero-children warn), each caught by QA. Same root cause in one wave — write the test with the behavior. |
+| Ibrahim El-Amin | Flagship durability hardening from the *real* findings this wave surfaced (parent-dir fsync, manifest-before-move, no_backup_litter baseline); clean botfarm upgrade study | must_fix_received=1: the fsync-dir test was tautological (passed with the durability syscall gutted) — a subtle but real coverage gap in the exact fix that mattered most. |
+| Nia Rossi | Accurate, safety-correct installer docs verified flag-by-flag against source; correctly scoped the atomicity-vs-durability claim so it doesn't overclaim the open #149 gap | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — lowest output this wave (single docs PR); watch for decay if signal stays quiet. |
