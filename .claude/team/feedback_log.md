@@ -361,7 +361,13 @@ are a **supplementary manual tally** of the `Must-fix:` markers; the pure scorin
    `state.json` stuck at `wave-5`, requiring a full retroactive reconciliation at wrapup. The
    kickoff → state-write step is not enforced.
 
-### Proposed Process/Framework Changes (approval-gated — NOT yet applied)
+### Proposed Process/Framework Changes (APPROVED by owner 2026-07-06 — scheduled into a wave)
+
+> **Owner approval 2026-07-06:** all three approved. #1 and #3 are code changes (trust scoring +
+> lifecycle kickoff enforcement) to be scoped into a wave; #2 is a charter/review-process rule
+> (dual-deploy: `framework/assets/**` canonical + this repo, per #116). None applied yet — they
+> convert from "proposed" to "accepted backlog" and land through the normal wave/team flow.
+
 1. **Resolve #164** so per-reviewer `must_fix_caught` survives the amendment convention (read edit
    history, or record catches at issue-time into `state.json`, or post a distinct `Replied`
    follow-up instead of editing in place). Without this, every clean-after-fix wave under-credits QA.
