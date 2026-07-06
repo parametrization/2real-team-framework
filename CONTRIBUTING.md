@@ -24,7 +24,76 @@ cd python && pytest tests/
 
 # Node (83+ tests)
 cd node && npm test
+
+# Framework runtime tests (stdlib-only hooks/libs/installer)
+python3 -m pytest framework/tests/ -q
 ```
+
+### Install / test / teardown quality harness
+
+Beyond the unit tests, the installer surface has a dedicated install → assert → teardown
+harness that runs the **real** installers (`framework/install/bootstrap.py` and the
+`2real-team init` bridge) against synthesized repo-type fixtures, measures per-metric pass
+rates, and proves teardown leaves **zero residue**:
+
+```bash
+# Fast CI smoke — a subset (B1,B2,B4,B8b) through bootstrap only:
+python3 -m framework.harness --quick
+
+# Full hermetic matrix (default buckets B1-B9 + B12), gated against the prior run:
+python3 -m framework.harness --compare
+
+# Opt into the [real] B10/B11 buckets (see below):
+python3 -m framework.harness --include-real
+```
+
+It emits per-bucket / per-category pass rates plus `install_success_rate` and
+`reinstall_parity_clean`, writes a machine-readable run envelope JSON under
+`framework/tests/install_quality/runs/`, and **exits non-zero** on any failed graded metric (or
+a `REGRESSION` verdict under `--compare`), so CI can gate on it.
+
+Key flags:
+
+| Flag | Effect |
+|------|--------|
+| `--quick` | Fast subset (`B1,B2,B4,B8b`) through the bootstrap installer only — CI smoke |
+| `--compare` | Diff against the newest prior run in `--out` and gate on the run-over-run verdict |
+| `--include-real` | Opt in to the `[real]` B10/B11 buckets (owner-gated; **OFF by default**) |
+| `--real-config PATH` | Sidecar JSON overriding the B10/B11 real-fixture source/pin registry |
+| `--buckets IDS` | Comma-separated bucket ids to run (default: hermetic B1-B9 + B12) |
+| `--installers LIST` | Which installers to exercise (`bootstrap,cli`; default both) |
+| `--scale N` | B9 synthesized file count (default 300) |
+| `--no-dogfood` | Skip the B12 `reinstall --check` leg |
+| `--compare` + `--json` | Also print the full machine JSON to stdout |
+
+**Real-repo mode (`--include-real`, Phase 6).** B10 (`meta-real-world`) and B11
+(`standalone-real-world`) run the harness against **real checkouts** instead of synthesized
+fixtures. They are defined but **flag-gated OFF** — `--include-real` opts in. The provisioner
+(`framework/harness/real_provision.py`) is read-only w.r.t. the source: it `git clone
+--no-local`s the source at a **pinned SHA** (resolved via `git ls-remote`, or an explicit pin)
+into a scratch dir, and fingerprints the source `HEAD` + `git status --porcelain` before and
+after to assert the live tree is untouched. Which source/pin each bucket uses is DATA (a
+`RealFixtureSpec` registry) overridable via the `--real-config` sidecar, so the mechanism is
+proven hermetically against a throwaway git repo — the large real runs
+(`noorinalabs`/`botfarm`, #101/#109) are never cloned in CI.
+
+### Install-completeness & parity guards
+
+The harness relies on two standalone drift guards you can also run directly:
+
+```bash
+# Golden install manifest — verify the expected-install-set snapshot is in sync (exit 1 on drift):
+python3 framework/install/manifest.py --check
+
+# Reinstall parity — report canonical → live .claude/** drift, write nothing (exit 1 on drift):
+python3 framework/install/reinstall.py --check
+```
+
+`manifest.py` derives the *exact* `.claude/**` set a correct install produces from
+`framework/assets/**` + the resolved config (never a hand-listed literal), so the harness's
+completeness checks cannot disagree with what the installer copies. `reinstall.py` enforces the
+#116 dual-deploy rule — that this repo's live `.claude/**` copy of byte-mirrored assets stays in
+sync with canonical `framework/assets/**`. See `framework/README.md` for the full contract.
 
 ## Linting
 
@@ -54,6 +123,14 @@ cd node && npx tsc --noEmit
   presets/       # JSON preset definitions (team shapes)
   skills/        # Skill template files
   examples/      # Example YAML config files
+  framework/     # Config-driven runtime + installer (stdlib-only; see framework/README.md)
+    assets/        # What the bootstrapper installs into <repo>/.claude/ (hooks, lib, skills)
+    config/        # framework.config schema + install.config default
+    install/       # The installer: bootstrap.py, roster_gen.py, install_config, miniyaml,
+                   #   manifest.py (golden manifest), user_space/consent/backup/repo_space
+                   #   (consented user + repo install), atomic_io, reinstall.py (#116 parity)
+    harness/       # Install/test/teardown quality harness (python3 -m framework.harness)
+    tests/         # Framework runtime tests (python3 -m pytest framework/tests/)
   python/        # Python CLI (typer, pydantic, chevron)
     src/real_team/
       cli.py         # CLI commands

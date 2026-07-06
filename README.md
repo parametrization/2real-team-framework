@@ -246,6 +246,63 @@ commit in another.
 | `product` | The full harness: SessionStart (ontology refresh), pre/post Bash dispatchers, file-edit tracking |
 | `infra` | Commit-safety + CI subset: pre/post **Bash** dispatchers only — no ontology/session extras |
 
+### User-level install (`--user-space`)
+
+The simulated-team workflow depends on a few **harness-global** Claude settings that live in
+`~/.claude/settings.json`, not in any repo — chiefly the agent-teams flag
+(`env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), plus `teammateMode: auto`, the worktree
+isolation base `worktree.baseRef: fresh`, and the framework's `~/.claude` permission globs. A
+fresh clone produces a correct project `.claude/` but a harness that cannot spawn a team until
+those are present. Opt into the consented user-level install to fill that gap:
+
+```bash
+python3 framework/install/bootstrap.py /path/to/repo --owner my-org --user-space
+```
+
+The step is **safe by construction** — check-existing first, consent-gated, merge-only:
+
+- **Consent before any write.** It prints exactly which file and which keys it would add, and
+  writes only on an explicit interactive `y`. `--non-interactive` (and any non-TTY / CI run)
+  **skips it entirely** — it never touches user space unprompted.
+- **Idempotent, no-clobber.** A key already present and **equal** to the desired value is a
+  no-op (not even offered); if every key already matches, nothing is written. A key present
+  with a **different** value is surfaced as a conflict and **left exactly as-is** — your value
+  is never overwritten. List values (e.g. `permissions.allow`) are **unioned**, never replaced.
+- **Backed up + atomic.** Before amending an existing `settings.json` it is copied to a
+  timestamped `.bak` sibling, and the new file is written atomically (see *Atomic settings
+  writes* below), so an interrupted write can never strand a half-written settings file.
+
+### Repo-level backup, archive, and restore
+
+When an install would touch a repo that already carries its own Claude assets (a repo-root
+`.claude/` or `CLAUDE.md`), the installer offers the same consent UX for the repo's own
+assets. With explicit consent you choose between two dispositions:
+
+- **Keep & amend** (default, non-destructive) — leave the existing assets in place; the
+  bootstrapper's idempotent merge / skip-if-exists steps augment them. This is the safe default
+  for `--non-interactive`, non-TTY, and CI.
+- **Archive & fresh** — MOVE the existing `.claude/` and `CLAUDE.md` **out of Claude's load
+  scope** into a timestamped `.claude-backups/<UTC>/` directory, leaving a clean slate for a
+  fresh install. The archive directory is deliberately named `.claude-backups/` (it is neither
+  `.claude/` nor `CLAUDE.md`, and is not named `.claude*`) so Claude does **not** load the
+  archived copy — an archived asset is inert and cannot shadow the fresh install. A restore
+  manifest is written alongside the moved files.
+
+**Restore procedure.** The archive is fully restorable: every asset is moved byte-identical and
+`.claude-backups/<UTC>/` records what came from where. To roll back, move the archived
+`.claude/` and `CLAUDE.md` from `.claude-backups/<UTC>/` back to the repo root. The
+`restore_assets` helper in `framework/install/repo_space.py` does exactly this and refuses to
+clobber a currently-present target unless you opt into overwrite.
+
+### Atomic settings writes
+
+Every settings / manifest file the installer writes goes through `atomic_write_text`
+(`framework/install/atomic_io.py`): the full contents are written to a uniquely-named temp file
+in the **same** directory, flushed and `fsync`ed, then `os.replace`d onto the target. Because
+`os.replace` is an atomic rename, any concurrent reader — or a post-crash observer — sees either
+the old file intact or the complete new file, **never a truncated in-between**. This protects
+`settings.json` (and the repo-archive restore manifest) on every destructive install path.
+
 ## AI Persona Generation
 
 Generate culturally diverse, role-appropriate personas using Claude:

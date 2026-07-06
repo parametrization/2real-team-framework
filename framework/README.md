@@ -86,9 +86,33 @@ framework/
       ontology-librarian/SKILL.md   # ONTOLOGY: read-only two-layer staleness + lookup
       ontology-rebuild/SKILL.md     # ONTOLOGY: reconcile the semantic overlay from code
     settings.template.json          # the dispatcher wiring the bootstrap merges
-  install/
+  install/                          # the stdlib-only installer (runs before any dep is present)
     bootstrap.py                    # deterministic installer (new or existing repo)
     roster_gen.py                   # repo-introspecting roster generator (used by bootstrap)
+    child_install.py                # meta/child model: hook-less child layout pointing at the parent
+    install_config.py               # unified install.config.yaml load / merge / validate pipeline
+    miniyaml.py                     # minimal stdlib-only YAML-subset parser (keeps install/ dep-free)
+    manifest.py                     # GOLDEN MANIFEST: expected_install_set(config); `--check` drift guard
+    golden-manifest.json            # generated expected-install-set snapshot (do NOT hand-edit)
+    user_space.py                   # CONSENTED, idempotent ~/.claude/settings.json merge (--user-space, #107)
+    consent.py                      # explicit opt-in gate for any write touching user/repo Claude assets
+    backup.py                       # timestamped, restorable .bak sibling before a consent-gated write
+    repo_space.py                   # repo-level backup / archive-then-fresh / restore of .claude assets (#108)
+    atomic_io.py                    # atomic_write_text: temp→fsync→os.replace, never a truncated settings file
+    reinstall.py                    # self-host parity: refresh .claude/** from canonical; `--check` drift guard (#116)
+  harness/                          # install / test / teardown quality harness (`python3 -m framework.harness`, #105)
+    __main__.py                     # CLI entry (--quick / --compare / --include-real / --buckets / --installers / --scale)
+    runner.py                       # provision → install → assert → teardown per matrix cell
+    buckets.py                      # repo-type buckets as DATA (B1-B12; B10/B11 are the [real] buckets)
+    installers.py                   # real installer invocations (bootstrap argparse + 2real-team init bridge)
+    metrics.py                      # per-metric measurement (#103 A-J vocabulary)
+    records.py                      # metric-record schema + run-envelope rollup
+    snapshot.py                     # {relpath: sha256} fixture snapshots — teardown's ground truth
+    teardown.py                     # teardown drivers (prove zero residue after an install)
+    compare.py                      # run-over-run REGRESSION / IMPROVEMENT / STABLE verdict
+    manifest.py                     # bridge to install/manifest.py's expected_install_set
+    real_provision.py               # B10/B11: clone a live source at a pinned SHA into scratch, read-only (#153)
+    botfarm_upgrade_study.py        # B11 upgrade-over-live-install study (dev tooling, #109)
   recipes/                          # per-artifact recipe docs (Purpose/enforces/config/adapt)
   tests/
     test_bootstrap_smoke.py         # installs into a tmp repo + fires the gate end-to-end
@@ -175,6 +199,39 @@ framework/`) and the CLI invokes the bundled `install/bootstrap.py --no-team`
 (the CLI already wrote the roster). So a single `init` lays down a complete,
 runnable `.claude/` — hooks, libs, lifecycle, the skill, config, and the
 dispatcher wiring — not templates alone.
+
+## Install-completeness & parity guards
+
+Two mechanical guards keep the installed tree honest — an install neither drops a file it
+should write nor drifts from the canonical source:
+
+- **Golden install manifest** (`install/manifest.py`). `expected_install_set(config)` is the
+  single source of truth for *exactly* which `.claude/**` files a correct install of a given
+  resolved config produces. The set is **derived from** `assets/**` + the config (it reuses
+  `bootstrap.py`'s own asset iterators), never a hand-listed literal, so it cannot silently
+  disagree with what the installer copies. The generated snapshot lives at
+  `install/golden-manifest.json` (regenerate with `python3 framework/install/manifest.py`;
+  do not hand-edit). `python3 framework/install/manifest.py --check` verifies the snapshot is
+  in sync and **exits 1 on drift**. The coupling test `tests/test_golden_manifest.py` performs
+  a real `bootstrap.py` install into a tmp dir and asserts the produced tree equals the
+  manifest, which is what keeps it honest. (Data-driven persona cards under
+  `.claude/team/roster/` are intentionally not enumerated.)
+- **Reinstall parity** (`install/reinstall.py`). This repo is both the framework source and a
+  live consumer of it (dogfood), so byte-copied assets exist in two trees: canonical
+  `framework/assets/**` and the live runtime `.claude/**`. `python3 framework/install/
+  reinstall.py` regenerates the live copy from canonical; `--check` reports drift and **exits
+  1** without writing (paired with the `test_reinstall_parity.py` CI gate). Hooks/lib are wired
+  in place (canonical-by-reference, cannot drift) and the charter is hand-evolvable, so only
+  byte-mirrored asset classes (today `skills/`) are in scope. This is the #116 dual-deploy
+  rule's enforcement half.
+
+## Install / test / teardown quality harness
+
+`python3 -m framework.harness` drives an install → assert → teardown matrix over repo-type
+buckets, emits per-bucket / per-category pass rates plus `install_success_rate` and
+`reinstall_parity_clean`, and exits non-zero on any failed graded metric so CI can gate on it.
+See `CONTRIBUTING.md` › *Running Tests* for the flag reference (`--quick`, `--compare`,
+`--include-real`, `--buckets`, `--installers`, `--scale`).
 
 ## What's covered vs. what's next
 
