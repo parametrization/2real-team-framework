@@ -22,7 +22,15 @@ sys.path.insert(0, str(_FRAMEWORK_ROOT / "install"))  # install_config / manifes
 
 import install_config  # noqa: E402  (framework/install sibling — the resolved-config accessors)
 
-from framework.harness import buckets, compare, manifest, metrics, snapshot, teardown  # noqa: E402
+from framework.harness import (  # noqa: E402
+    buckets,
+    compare,
+    manifest,
+    metrics,
+    real_provision,
+    snapshot,
+    teardown,
+)
 from framework.harness.records import (  # noqa: E402
     MetricRecord,
     RunEnvelope,
@@ -292,9 +300,14 @@ def test_provisioners_synthesize_expected_layout(tmp_path: Path) -> None:
     assert (tmp_path / "b8b" / "bad.config.json").is_file()
 
 
-def test_real_bucket_provisioner_is_a_guarded_stub(tmp_path: Path) -> None:
-    with pytest.raises(NotImplementedError, match="pinned SHA"):
-        buckets._prov_real_stub(tmp_path, {})
+def test_real_bucket_provisioner_degrades_when_fixture_unresolvable(tmp_path: Path) -> None:
+    """The #153 provisioner replaced the raw stub: an unresolvable fixture raises
+    MissingFixtureError (a NotImplementedError subclass) so the runner's skip path still fires."""
+    prov = buckets.make_real_provisioner("B11")
+    opts = {"real_fixtures": {"B11": real_provision.RealFixtureSpec(
+        bucket="B11", source=str(tmp_path / "does-not-exist"))}}
+    with pytest.raises(NotImplementedError):
+        prov(tmp_path / "wd", opts)
 
 
 # --------------------------------------------------------------- end-to-end (real installer)
