@@ -270,6 +270,33 @@ def test_manifest_driven_uninstall_flags_residue_when_backup_missing(tmp_path: P
     assert "keep.py" in residue  # modified content is residue vs the pre-install snapshot
 
 
+# ------------------------------------- #149 finding: no_backup_litter scopes to installer output
+
+
+def test_no_backup_litter_ignores_preexisting_checked_in_baks(tmp_path: Path) -> None:
+    """A `.bak` present in the pre-install snapshot is the fixture's litter, not the installer's.
+
+    #101's noorinalabs run flagged the source repo's OWN checked-in `errors.jsonl.bak.*` as
+    installer litter. The metric now diffs against ``ctx.before`` (the pre-install snapshot),
+    so a pre-existing `.bak` passes but a NEW one the install created fails.
+    """
+    # A `.bak` checked into the fixture BEFORE install (captured in the pre-install snapshot).
+    preexisting = tmp_path / ".claude" / "annunaki"
+    preexisting.mkdir(parents=True)
+    (preexisting / "errors.jsonl.bak.20260429").write_text("old\n", encoding="utf-8")
+    before = snapshot.snapshot(tmp_path)
+
+    ctx = metrics.CellContext(workdir=tmp_path, installer="bootstrap", permutation={}, before=before)
+    m = metrics.m_no_backup_litter(ctx)
+    assert m.passed is True and m.value == 0  # the repo's own checked-in .bak is not our litter
+
+    # A NEW .bak the install produced (absent from `before`) is still flagged.
+    (tmp_path / "CLAUDE.md.20260705T000000Z.bak").write_text("backup\n", encoding="utf-8")
+    m2 = metrics.m_no_backup_litter(ctx)
+    assert m2.passed is False and m2.value == 1
+    assert m2.observed["baks"] == ["CLAUDE.md.20260705T000000Z.bak"]
+
+
 # --------------------------------------------------------------- buckets matrix
 
 

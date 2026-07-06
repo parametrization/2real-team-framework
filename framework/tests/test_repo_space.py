@@ -345,3 +345,120 @@ def test_user_space_write_is_atomic_and_crash_safe(tmp_path: Path, monkeypatch) 
         user_space.install_user_space(home=home, non_interactive=False, consent_fn=lambda _s: True)
 
     assert path.read_bytes() == before  # settings.json never truncated by the failed write
+
+
+# ---------------------------------------------- #149 finding 2: parent-dir fsync durability
+
+
+def test_atomic_write_fsyncs_parent_dir_after_replace(tmp_path: Path, monkeypatch) -> None:
+    """After the atomic rename, the target's PARENT DIR is fsynced so the rename is durable.
+
+    Fsyncing only the temp file persists its bytes but not the directory entry that names
+    them under the target; a crash right after ``os.replace`` could lose the rename. The fix
+    (#149 finding 2) fsyncs the parent dir — force that path and assert it fires on the
+    target's parent, and that it happens AFTER the replace.
+    """
+    target = tmp_path / "sub" / "out.json"
+    events: list[tuple[str, Path]] = []
+    real_replace = atomic_io.os.replace
+
+    def _replace_spy(src, dst):
+        events.append(("replace", Path(dst)))
+        return real_replace(src, dst)
+
+    def _fsync_dir_spy(directory):
+        events.append(("fsync_dir", Path(directory)))
+
+    monkeypatch.setattr(atomic_io.os, "replace", _replace_spy)
+    monkeypatch.setattr(atomic_io, "_fsync_dir", _fsync_dir_spy)
+    atomic_io.atomic_write_text(target, '{"a": 1}\n')
+
+    assert ("fsync_dir", target.parent) in events  # the parent dir was fsynced
+    # ...and strictly after the rename (durability of the entry, not the bytes).
+    assert events.index(("replace", target)) < events.index(("fsync_dir", target.parent))
+    assert target.read_text() == '{"a": 1}\n'
+
+
+def test_atomic_write_dir_fsync_is_fail_open(tmp_path: Path, monkeypatch) -> None:
+    """Hard durability is best-effort: a dir that can't be opened/fsynced never crashes the write."""
+    target = tmp_path / "out.json"
+
+    # Simulate a platform where opening a directory fd is unsupported (e.g. Windows).
+    real_open = atomic_io.os.open
+
+    def _open_raising(path, *a, **k):
+        if Path(path) == target.parent:
+            raise OSError("cannot open directory as fd")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(atomic_io.os, "open", _open_raising)
+    atomic_io.atomic_write_text(target, "data")  # must not raise
+    assert target.read_text() == "data"  # write still succeeded
+
+
+# ------------------------------------------- #149 finding 3: interrupted archive is recoverable
+
+
+def test_archive_writes_manifest_before_moving_and_is_recoverable(tmp_path: Path, monkeypatch) -> None:
+    """A crash MID-move leaves a manifested, fully-restorable archive — never a stranded half.
+
+    The manifest is written before the first ``shutil.move``, so if the process dies after
+    moving ``.claude`` but before ``CLAUDE.md``, restore reads the (complete) manifest, moves
+    ``.claude`` back, and skips the member still sitting untouched at the repo root — restoring
+    the original state byte-for-byte.
+    """
+    original = _seed_repo(tmp_path)
+    real_move = repo_space.shutil.move
+    calls = {"n": 0}
+
+    def _move_then_boom(src, dst):
+        calls["n"] += 1
+        if calls["n"] >= 2:  # move the first asset, crash on the second
+            raise RuntimeError("simulated interrupt mid-archive")
+        return real_move(src, dst)
+
+    monkeypatch.setattr(repo_space.shutil, "move", _move_then_boom)
+    with pytest.raises(RuntimeError):
+        repo_space.archive_assets(tmp_path)
+
+    # The manifest exists and names EVERY intended member despite the crash (written first).
+    archive_dirs = list((tmp_path / repo_space.BACKUPS_DIRNAME).iterdir())
+    assert len(archive_dirs) == 1
+    archive_dir = archive_dirs[0]
+    manifest = json.loads((archive_dir / repo_space.MANIFEST_NAME).read_text())
+    assert {e["name"] for e in manifest["entries"]} == {".claude", "CLAUDE.md"}
+
+    # Recovery: restore off the manifest reconstructs the original repo byte-for-byte.
+    monkeypatch.setattr(repo_space.shutil, "move", real_move)  # undo the fault injection
+    repo_space.restore_assets(tmp_path, archive_dir)
+    assert _snapshot(tmp_path, (".claude", "CLAUDE.md")) == original
+
+
+# ---------------------------- #149 finding 4: restore scope is exactly the managed assets
+
+
+def test_restore_scope_is_exactly_managed_assets(tmp_path: Path) -> None:
+    """Restore touches ONLY .claude/ + CLAUDE.md; out-of-scope residue is intentionally left.
+
+    Restore is deliberately not a "return to globally pristine" op: a fresh install's
+    ``.git/hooks/pre-push`` and the emptied ``.claude-backups/`` container remain by design
+    (#149 finding 4). This asserts the exact managed boundary.
+    """
+    _seed_repo(tmp_path)
+    # Out-of-scope artifacts that a fresh install / the archive itself would leave behind.
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "pre-push").write_text("#!/bin/sh\n", encoding="utf-8")
+    sibling = tmp_path / "README.md"
+    sibling.write_text("unrelated\n", encoding="utf-8")
+
+    archived = repo_space.archive_assets(tmp_path)
+    result = repo_space.restore_assets(tmp_path, archived.archive_dir)
+
+    # The managed assets came back...
+    assert set(result.restored) == {".claude", "CLAUDE.md"}
+    # ...and the out-of-scope artifacts are untouched (neither pruned nor clobbered).
+    assert (hooks / "pre-push").read_text() == "#!/bin/sh\n"
+    assert sibling.read_text() == "unrelated\n"
+    # The archive container is intentionally left in place (emptied, not removed).
+    assert (tmp_path / repo_space.BACKUPS_DIRNAME).is_dir()

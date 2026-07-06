@@ -510,7 +510,18 @@ def m_teardown_residue_zero(ctx: CellContext) -> Measurement:
 
 def m_no_backup_litter(ctx: CellContext) -> Measurement:
     # A happy-path fresh install (no conflict) must create zero .bak* files.
-    baks = [p.name for p in ctx.workdir.rglob("*.bak*") if ".git" not in p.parts]
+    # Scope detection to files the INSTALLER created: a .bak already present in the
+    # pre-install snapshot (ctx.before) is the source repo's own checked-in backup — e.g.
+    # noorinalabs's `errors.jsonl.bak.*` from #101 — not installer litter, so exclude it by
+    # diffing against the pre-install snapshot rather than counting every `.bak*` in the tree.
+    preexisting = set(ctx.before)
+    baks = []
+    for p in ctx.workdir.rglob("*.bak*"):
+        if ".git" in p.parts or not p.is_file():
+            continue
+        if p.relative_to(ctx.workdir).as_posix() in preexisting:
+            continue  # checked into the fixture before install — the repo's litter, not ours
+        baks.append(p.name)
     ok = not baks
     return Measurement(len(baks), ok, {"bak_files": 0}, {"bak_count": len(baks), "baks": baks[:20]})
 
