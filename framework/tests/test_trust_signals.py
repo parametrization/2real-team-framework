@@ -719,3 +719,383 @@ def test_base_resolves_phase4_wave1_from_global_wave_2(tmp_path) -> None:
         wave_ordinal=ts._wave_ordinal_for_wave("3", state),
     )
     assert base3 == "deployments/phase4/wave-2"
+
+
+# ===========================================================================
+# Durable review-catch ledger (#164): the charter's amendment convention has a
+# reviewer edit a blocking Must-fix comment IN PLACE to Replied/Must-fix: None
+# once the fix lands. Re-deriving must_fix_caught/must_fix_received purely
+# from the (now-amended) live comment body erases the historic catch and can
+# drop the reviewer out of the engineer map entirely — exactly what happened
+# to Tariq in Phase 6 Wave 6 (see wave_6_counter_corrections in state.json).
+# ===========================================================================
+
+
+# --------------------------------------------------------------- _review_catches_for_wave
+
+
+def test_review_catches_for_wave_missing_file_is_empty(tmp_path) -> None:
+    assert ts._review_catches_for_wave("6", tmp_path / "absent.json") == []
+
+
+def test_review_catches_for_wave_no_status_path_is_empty() -> None:
+    assert ts._review_catches_for_wave("6", None) == []
+
+
+def test_review_catches_for_wave_missing_key_is_empty(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"wave_6_changes_requested_cycles": 3}))
+    assert ts._review_catches_for_wave("6", state) == []
+
+
+def test_review_catches_for_wave_reads_recorded_entries(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    entries = [
+        {
+            "repo": "acme/proj",
+            "pr": 154,
+            "requestor": "Tariq Morales",
+            "requestee": "Paloma Gupta",
+        }
+    ]
+    state.write_text(json.dumps({"wave_6_review_catches": entries}))
+    assert ts._review_catches_for_wave("6", state) == entries
+
+
+# --------------------------------------------------------------- record_review_catch
+
+
+def test_record_review_catch_appends_and_persists_to_disk(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    # The real state file is always written one-key-per-line (see lifecycle's
+    # _initial_text / upsert_status_keys' compact-inline shape) — mirror that
+    # here since record_review_catch's write path (lifecycle.persist) upserts
+    # text-level and expects that shape, not a single-line json.dumps blob.
+    state.write_text(json.dumps({"wave_6_active": True}, indent=2) + "\n")
+
+    updated = ts.record_review_catch(
+        state,
+        "6",
+        repo="acme/proj",
+        pr=154,
+        requestor="Tariq Morales",
+        requestee="Paloma Gupta",
+        at="2026-07-06T00:00:00Z",
+    )
+    expected = [
+        {
+            "repo": "acme/proj",
+            "pr": 154,
+            "requestor": "Tariq Morales",
+            "requestee": "Paloma Gupta",
+            "recorded_at": "2026-07-06T00:00:00Z",
+        }
+    ]
+    assert updated == expected
+
+    # Round-trips through disk and preserves the pre-existing key untouched.
+    on_disk = json.loads(state.read_text())
+    assert on_disk["wave_6_active"] is True
+    assert on_disk["wave_6_review_catches"] == expected
+
+
+def test_record_review_catch_accumulates_across_calls_not_deduplicated(tmp_path) -> None:
+    # Each call is one catch event — repeated must-fix rounds on the same PR
+    # by the same reviewer are distinct cycles, never collapsed.
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({}))
+    ts.record_review_catch(
+        state, "6", repo="acme/proj", pr=154, requestor="Tariq Morales",
+        requestee="Paloma Gupta", at="t1",
+    )
+    updated = ts.record_review_catch(
+        state, "6", repo="acme/proj", pr=156, requestor="Tariq Morales",
+        requestee="Ibrahim El-Amin", at="t2",
+    )
+    assert [c["pr"] for c in updated] == [154, 156]
+    assert ts._review_catches_for_wave("6", state) == updated
+
+
+def test_record_review_catch_seeds_empty_state_file(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    updated = ts.record_review_catch(
+        state, "6", repo="acme/proj", pr=154, requestor="Tariq Morales",
+        requestee="Paloma Gupta", at="2026-07-06T00:00:00Z",
+    )
+    assert json.loads(state.read_text())["wave_6_review_catches"] == updated
+
+
+# --------------------------------------------------------------- _account_pr ledger-authoritative accounting
+
+# The exact shape from the Wave 6 defect: Tariq's blocking review, later
+# amended IN PLACE (same comment) to Replied/Must-fix: None once Paloma's fix
+# landed. Live parsing alone now reads this PR as clean.
+_AMENDED_CLEAN_BODY = """Requestor: Tariq Morales (QA)
+Requestee: Paloma Gupta
+RequestOrReplied: Replied
+
+Fix confirmed — all resolved.
+
+Must-fix: None
+"""
+
+# The same PR's review BEFORE the amendment — still live/pending.
+_LIVE_PENDING_BODY = """Requestor: Tariq Morales
+Requestee: Paloma Gupta
+RequestOrReplied: Request
+
+Must-fix:
+1. still needs a fix
+"""
+
+
+def test_account_pr_ledger_authoritative_over_amended_comment() -> None:
+    # THE #164 fix, isolated: a ledger entry recorded at issue time still
+    # produces the catch even though the live comment now reads clean.
+    signals: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        signals,
+        lambda n: n,
+        author="Paloma Gupta",
+        repo="acme/proj",
+        number=154,
+        comment_bodies=[_AMENDED_CLEAN_BODY],
+        ci_red=False,
+        review_catches=[
+            {
+                "repo": "acme/proj",
+                "pr": 154,
+                "requestor": "Tariq Morales",
+                "requestee": "Paloma Gupta",
+            }
+        ],
+    )
+    assert signals["Paloma Gupta"].must_fix_received == 1
+    assert signals["Paloma Gupta"].rework_cycles == 1
+    assert signals["Tariq Morales"].must_fix_caught == 1
+
+
+def test_account_pr_without_ledger_reproduces_the_164_defect() -> None:
+    # Documents the PRE-fix behavior directly: an EMPTY ledger (a wave that
+    # never called record_review_catch) falls back to live-comment parsing,
+    # so the amended body reads as fully clean and the reviewer never
+    # appears — exactly the bug #164 reported.
+    signals: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        signals,
+        lambda n: n,
+        author="Paloma Gupta",
+        repo="acme/proj",
+        number=154,
+        comment_bodies=[_AMENDED_CLEAN_BODY],
+        ci_red=False,
+        review_catches=[],
+    )
+    assert signals["Paloma Gupta"].must_fix_received == 0
+    assert "Tariq Morales (QA)" not in signals
+
+
+def test_account_pr_ledger_present_does_not_double_count_still_pending_review() -> None:
+    # A ledger entry recorded at issue time plus a STILL-LIVE (not yet
+    # amended) Must-fix comment for the same PR must count as ONE catch, not
+    # two — the ledger supersedes live parsing entirely for a PR it covers.
+    signals: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        signals,
+        lambda n: n,
+        author="Paloma Gupta",
+        repo="acme/proj",
+        number=154,
+        comment_bodies=[_LIVE_PENDING_BODY],
+        ci_red=False,
+        review_catches=[
+            {
+                "repo": "acme/proj",
+                "pr": 154,
+                "requestor": "Tariq Morales",
+                "requestee": "Paloma Gupta",
+            }
+        ],
+    )
+    assert signals["Paloma Gupta"].must_fix_received == 1
+    assert signals["Tariq Morales"].must_fix_caught == 1
+
+
+def test_account_pr_ledger_scoped_to_matching_repo_and_pr_only() -> None:
+    # A ledger entry for a DIFFERENT PR must not leak into this one's
+    # accounting — the filter is (repo, pr)-scoped.
+    signals: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        signals,
+        lambda n: n,
+        author="Paloma Gupta",
+        repo="acme/proj",
+        number=154,
+        comment_bodies=[_AMENDED_CLEAN_BODY],
+        ci_red=False,
+        review_catches=[
+            {
+                "repo": "acme/proj",
+                "pr": 999,
+                "requestor": "Tariq Morales",
+                "requestee": "Someone Else",
+            }
+        ],
+    )
+    assert signals["Paloma Gupta"].must_fix_received == 0
+
+
+# --------------------------------------------------------------- extract_signals end-to-end (load-bearing)
+
+
+def test_extract_signals_amend_in_place_does_not_erase_catch(tmp_path, monkeypatch) -> None:
+    """LOAD-BEARING: end to end through the real extract_signals entrypoint
+    (the CLI's extract/score subcommands call exactly this). A reviewer amends
+    their blocking verdict comment in place after the fix lands — the charter
+    convention — so gh now serves only the clean, amended body. Without the
+    #164 fix (revert _account_pr's ledger branch, or pass review_catches=[]
+    from extract_signals) this fails: must_fix_received drops to 0 and
+    "Tariq Morales" never appears in the signals map at all.
+    """
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "wave_6_review_catches": [
+                    {
+                        "repo": "acme/proj",
+                        "pr": 154,
+                        "requestor": "Tariq Morales",
+                        "requestee": "Paloma Gupta",
+                    }
+                ]
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        ts,
+        "merged_prs",
+        lambda wave, status_path=None, *, label=None, cfg=None: [
+            {"repo": "acme/proj", "number": 154, "commit_author_name": "Paloma Gupta"}
+        ],
+    )
+    monkeypatch.setattr(
+        ts, "_pr_comment_bodies", lambda repo, number: [_AMENDED_CLEAN_BODY]
+    )
+    monkeypatch.setattr(ts, "_pr_ci_is_red", lambda repo, number: False)
+
+    sigs = ts.extract_signals("6", state, cfg=_Cfg({}))
+
+    assert sigs["Paloma Gupta"].must_fix_received == 1
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+    assert sigs["Tariq Morales"].must_fix_caught == 1
+
+
+def test_wave6_fixture_rescoring_with_amended_catches(tmp_path, monkeypatch) -> None:
+    """Reproduces the exact Phase 6 Wave 6 scenario recorded in
+    wave_6_counter_corrections (state.json): PRs #154/#156/#160, all caught by
+    Tariq Morales, all amended in place to Replied/Must-fix: None after their
+    fixes landed. Pre-#164 this recomputed to must_fix_caught=0 for Tariq (he
+    dropped out of the engineer map entirely) and an aggregate
+    changes_requested_cycles of 0 — vs. the wrapup-recorded 3, the exact
+    divergence the state.json note records as a manual correction. With the
+    ledger populated (as record_review_catch would have done at issue time)
+    the scorer now recomputes the true count with no manual correction needed.
+    """
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "wave_6_review_catches": [
+                    {
+                        "repo": "acme/proj",
+                        "pr": 154,
+                        "requestor": "Tariq Morales",
+                        "requestee": "Paloma Gupta",
+                    },
+                    {
+                        "repo": "acme/proj",
+                        "pr": 156,
+                        "requestor": "Tariq Morales",
+                        "requestee": "Ibrahim El-Amin",
+                    },
+                    {
+                        "repo": "acme/proj",
+                        "pr": 160,
+                        "requestor": "Tariq Morales",
+                        "requestee": "Nia Rossi",
+                    },
+                ]
+            }
+        )
+    )
+
+    fake_prs = [
+        {"repo": "acme/proj", "number": 154, "commit_author_name": "Paloma Gupta"},
+        {"repo": "acme/proj", "number": 156, "commit_author_name": "Ibrahim El-Amin"},
+        {"repo": "acme/proj", "number": 160, "commit_author_name": "Nia Rossi"},
+    ]
+    bodies_by_pr = {
+        154: [_AMENDED_CLEAN_BODY],
+        156: [_AMENDED_CLEAN_BODY.replace("Paloma Gupta", "Ibrahim El-Amin")],
+        160: [_AMENDED_CLEAN_BODY.replace("Paloma Gupta", "Nia Rossi")],
+    }
+
+    monkeypatch.setattr(
+        ts, "merged_prs", lambda wave, status_path=None, *, label=None, cfg=None: fake_prs
+    )
+    monkeypatch.setattr(
+        ts, "_pr_comment_bodies", lambda repo, number: bodies_by_pr[number]
+    )
+    monkeypatch.setattr(ts, "_pr_ci_is_red", lambda repo, number: False)
+
+    sigs = ts.extract_signals("6", state, cfg=_Cfg({}))
+
+    assert sigs["Tariq Morales"].must_fix_caught == 3
+    assert sigs["Paloma Gupta"].must_fix_received == 1
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 1
+    assert sigs["Nia Rossi"].must_fix_received == 1
+
+    # Aggregate consistency: the wrapup-recorded changes_requested_cycles (3)
+    # now matches what the scorer recomputes, with no manual correction.
+    aggregate_changes_requested_cycles = sum(s.rework_cycles for s in sigs.values())
+    assert aggregate_changes_requested_cycles == 3
+
+
+# --------------------------------------------------------------- CLI record-catch
+
+
+def test_cli_record_catch_appends_to_state_file(tmp_path) -> None:
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({}))
+
+    rc = ts.main(
+        [
+            "record-catch",
+            "6",
+            "--repo",
+            "acme/proj",
+            "--pr",
+            "154",
+            "--requestor",
+            "Tariq Morales",
+            "--requestee",
+            "Paloma Gupta",
+            "--at",
+            "2026-07-06T00:00:00Z",
+            "--status",
+            str(state),
+        ]
+    )
+    assert rc == 0
+    on_disk = json.loads(state.read_text())
+    assert on_disk["wave_6_review_catches"] == [
+        {
+            "repo": "acme/proj",
+            "pr": 154,
+            "requestor": "Tariq Morales",
+            "requestee": "Paloma Gupta",
+            "recorded_at": "2026-07-06T00:00:00Z",
+        }
+    ]
