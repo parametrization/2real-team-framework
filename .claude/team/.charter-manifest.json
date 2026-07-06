@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "files": {
+    "agents.md": "8a53b9a7bf6b97e473bc5387b84609a83fe8c0524374d66dc2330e5d7ed450ce",
+    "branching.md": "3e51782810787065403bbd7203610e7be247788cb60278960859e1ffb922b5af",
+    "charter.md": "bc0f7655f97c2d6e872e8c2f74ef2ab9a3e1a8919bc526c30bcc6df6defe98c5",
+    "commits.md": "c9d5e7349f0ead70cb37dd8cf20a7753fe3bea5c943ad56fe3f661dc4daaab67",
+    "hooks.md": "4b2ce25d2365800ec6d940cd091be12c7a230092b91dc673fac78a4bd823068e",
+    "issues.md": "6f57a50dd85c4dd516c5dfd5a6772f65b881f5089929504166c267148544e62b",
+    "pull-requests.md": "7dd6f9aa05edf6fb4949de64f084d50c075cfefacb3bec7838e1cc05fde92e24",
+    "skills.md": "dcc93b623b5f62cbac412634d4d3b04c3731c5a4a0892dd3227c70241703e81e"
+  }
+}

@@ -1,6 +1,6 @@
 # Branching Rules
 
-**Configured merge model: `direct-to-main`.** Under `wave-branch`, feature work
+**Configured merge model: `wave-branch`.** Under `wave-branch`, feature work
 integrates through a shared integration branch per wave and only the wave rollup
 reaches `main`. Under `direct-to-main`, feature branches PR straight
 into `main`; the integration-branch sections below then collapse to
@@ -12,7 +12,7 @@ Work is organized into **waves** of parallel tasks. Before starting a wave, crea
 an integration branch from the latest `main`:
 
 ```
-deployments/wave-{wave}
+deployments/phase{phase}/wave-{wave}
 ```
 
 - **All feature branches for the wave PR into the integration branch** — not into
