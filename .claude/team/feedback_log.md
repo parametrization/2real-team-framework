@@ -418,7 +418,9 @@ proposal 1 → #164 (PR #171), proposal 2 → #167 (PR #172, hard gate), proposa
 1. **Harden the fail-closed guarantee before relying on it:** resolve #175 (dispatcher must not
    ALLOW on uncaught exception) as a prerequisite before the #167 gate is trusted org-wide.
    **Rationale:** a fail-closed hook behind a fail-open dispatcher is fail-open.
-   **Status: not yet applied** (tracked under #175, Wave 3).
+   **Status: APPLIED via #182** (Wave 3, S1) — `dispatcher.py` now blocks-unless-`FAIL_OPEN`: an
+   uncaught `check()` exception in a fail-closed hook (incl. `require_load_bearing_test`) blocks
+   instead of allowing; the 9 legacy fail-open hooks declare `FAIL_OPEN=True` (behavior unchanged).
 2. **Weigh block-vs-tech-debt at review time:** Nia's dispatcher finding was real but filed as
    tech-debt, so it scored nothing and doesn't hold the merge. Consider a norm: a finding that
    defeats a shipping feature's core guarantee is a Must-fix, not tech-debt.
@@ -430,3 +432,57 @@ proposal 1 → #164 (PR #171), proposal 2 → #167 (PR #172, hard gate), proposa
 No wave reserved. Standing flagship candidate: **#102** (mined-asset port / fork reconciliation) —
 explicitly deferred to run on the scorer this wave fixed. Also open: S2 hardening tranche
 (#174/#175/#176), Phase-5 debt (#142/#148/#141), #162 (installer wave), #110.
+
+---
+
+## Wave 8 Retro (2026-07-06) — Phase 6 Wave 3: "Fail-closed foundation + flagship asset port"
+
+**Shipped v0.8.0** (rollup #186, meta #178). 5 PRs, **1 changes-requested cycle** (the #184
+branch-freshness footgun), 40% top concentration (Nia 2 PRs), 0 CI-red, 629 tests. Owner bundled
+everything flagged at the end of Wave 2: #102 flagship P0 + ready P1 donors, the S2-hardening tranche
+(#174/#175/#176), and both W2-retro proposals — plus a new rename cost-out spike (#177).
+
+### Metrics / trust
+`trust_signals score 8` + distribution discipline: **Tariq 5→5** (must_fix_caught=1, the #184 catch),
+**Nia 4→5** (composite tie-top: 2 clean PRs incl. the #175 keystone — second earned 5),
+**Paloma 4→4** (clean flagship #185), **Ibrahim 4→4** (1 must_fix_received/rework, caught+fixed).
+
+### Top 3 going well
+1. **The #164 durable ledger fired for real.** Tariq's #184 changes-requested verdict was recorded at
+   issue-time and *survived* his in-place `Request→Replied` amendment — the exact scenario it was
+   built for and couldn't be validated by W2's clean wave. The quality machinery now demonstrably works.
+2. **QA caught the one guarantee-defeating defect before it shipped downstream.** The branch-freshness
+   `max_commits_behind=0` zero-tolerance default (pre-wired into every fresh install) would have
+   blocked adopters' ordinary `gh pr create`. Escalated to Must-fix under the brand-new #180 norm —
+   the norm earned its keep in its first wave.
+3. **Both W2-retro proposals closed the loop:** #175 dispatcher fail-closed (proposal #1, PR #182) and
+   the Must-fix-vs-tech-debt charter norm (proposal #2, PR #180). Track A hardened the gate the
+   flagship then rode on — sequencing worked.
+
+### Top 3 pain points / watch
+1. **Charter tree isn't reinstall-managed.** `reinstall.py`'s `_MANAGED_TREES` covers only `skills/`,
+   so `team/charter/**` edits must be hand-applied to both canonical and runtime copies — protected
+   only by reviewer diligence (Paloma flagged this on #181). **Proposal below.**
+2. **The promotion pipeline is untested-in-anger.** #102-P0 shipped a deterministic `promotion-audit`
+   skill, but its first real memory→charter→skill→hook audit hasn't been run on this repo. Dogfood it
+   next wave before trusting its auto-promotions.
+3. **S2 gate residual edges (documented tech-debt, not fixed):** additive `_deep_merge` means a repo
+   writing `load_bearing_test_exceptions: {}` can't clear the seeded `refactor` class; stem-naming
+   doesn't retroactively pair legacy modules (`dispatcher.py`, `bootstrap.py`). Both over-block
+   (fail-safe direction), acceptable for now.
+
+### Process proposals from THIS retro (approval-gated — not yet applied)
+1. **Make `reinstall.py` mirror the charter tree** (add `team/charter/**` to `_MANAGED_TREES`, or add a
+   `manifest --check`-style charter-drift gate). **Rationale:** the dual-deploy #116 guarantee has a
+   hole for charter edits — a silent canonical↔runtime charter drift would pass CI today. **Status:
+   not yet applied.**
+2. **Dogfood `promotion-audit` before relying on its auto-promotions.** Run the skill on this repo's
+   own memory/charter next wave and verify its AUTO-tier promotions + DECIDE-tier draft issues by hand
+   once, the way the #164 ledger got its first contested-wave validation here. **Status: not yet
+   applied.**
+
+### Next wave (owner decision — not started)
+No wave reserved. Standing flagship candidate: **#102 P2 tranche** (governance charter modules,
+wave-lifecycle GH-Projects automation, ontology-consultation enforcement, headcount budget) — now
+unblocked by the P0 pipeline shipped this wave. Also open: installer-completeness wave
+(#162/#142/#148/#141/#155), #110 (installer-as-skill), and the two proposals above.

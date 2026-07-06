@@ -232,3 +232,29 @@ Rows = the team member rating. Columns = the team member being rated.
 | Paloma Gupta | Closed the wave's motivating bug (#164) with a durable state-file ledger + a synthetic Wave-6 re-scoring fixture; broke her own W6 ship-without-test pattern | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — single PR; keep the test-with-behavior discipline as the default. |
 | Ibrahim El-Amin | Turned the W6 tautological-test lesson around — #163's durability guard test is load-bearing this time; also restored #158 source↔runtime parity cleanly | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — lowest-complexity story bundle this wave; reach for a flagship next wave. |
 | Nia Rossi | Made un-stamped waves impossible (#168 guard, dual-deployed); as S2 reviewer found a real fail-closed gap in the shared dispatcher (#175) the author missed | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, fp=0, must_fix_caught=0 — the dispatcher catch was strong but filed as tech-debt, not a blocking Must-fix, so it doesn't score; when a finding is real, weigh whether it blocks. |
+
+## Wave 8 Trust Updates (2026-07-06) — Phase 6 Wave 3: "Fail-closed foundation + flagship asset port"
+
+> **5 PRs, 1 changes-requested cycle, 40% top concentration, 0 CI-red.** The contested wave the #164
+> ledger was built for: Tariq's #184 changes-requested verdict (the branch-freshness zero-tolerance
+> default footgun) was recorded into `wave_8_review_catches` **at issue-time**, then amended in place
+> `Request→Replied` after Ibrahim's fix — and the catch **survived the amendment** (`must_fix_caught=1`
+> for Tariq scored correctly). This is the first wave the durable ledger actually fired; last wave it
+> shipped empty. `trust_signals.py score 8` + `apply_distribution_discipline`: Tariq & Nia tie at the
+> iteration composite max (2), both hold the reserved 5.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | delta 0, **must_fix_caught=1**: caught the #184 branch-freshness footgun — `max_commits_behind=0` shipped as zero-tolerance and pre-wired into every fresh install's `bootstrap._schema_defaults()`, so a downstream adopter's ordinary `gh pr create` would block on any drift. A high-value catch (guarantee-defeating default, → Must-fix under the new #180 norm), mutation-verified pre- and post-fix; the #164 ledger credited it through the amendment. Composite=2 (tie-top). Held at 5. prs_merged=1 (S2/S3 clean), received=0, ci_red=0, fp=0. |
+| Nia Rossi | 4 | **5** | delta +1, **composite=2 (tie-top)** — the wave's highest output at 2 clean PRs, one of them the keystone: S1 #175, the dispatcher fail-closed guard (blocks-unless-`FAIL_OPEN`) that the entire flagship rode on — retro proposal #1, mutation-verified. Plus S6/S7 (charter norm #180 + rename spike #177). Not "merely-clean" filler: the reserved-5 route here is top output including the Track-A keystone, matching Tariq's catch-driven composite. prs_merged=2, received=0, caught=0, ci_red=0, fp=0. **Second earned 5 in project history.** |
+| Paloma Gupta | 4 | 4 | delta 0: prs_merged=1 (#185, flagship S4 — the #102-P0 promotion/genericization pipeline: ledger + silent feeder hook + deterministic `promotion-audit` skill + charter marker convention), clean, must_fix_received=0; caught+fixed her own shared-mutable-dict bug pre-commit. Composite=1. A clean single (albeit large) PR is not a bump (policy). Held at 4. |
+| Ibrahim El-Amin | 4 | 4 | delta 0: prs_merged=1 (#184, S5 — branch-freshness + roster-union donors), **must_fix_received=1, rework=1** (the zero-tolerance default, caught by Tariq). Single received ⇒ below the 3+ −1 threshold, no ding; one rework ⇒ not a clean wave, no bump. Held at 4. Fixed cleanly and fast, and reconciled the wave-branch conflict himself. Composite=0. |
+
+### Done Well / Needs Improvement (Wave 8 / Phase 6 Wave 3)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | The wave's one real catch, via the exact ledger machinery shipped last wave — a guarantee-defeating default that would have hit every downstream adopter, mutation-proven and correctly escalated to Must-fix under the new #180 norm | metrics: prs_merged=1, received=0, ci_red=0, fp=0 — one catch, one clean PR; the reserved-5 stays per-wave, decay still applies if a future wave goes quiet. |
+| Nia Rossi | Highest output (2 PRs) incl. the Track-A keystone (#175 dispatcher fail-closed guard, safe-by-default, mutation-verified) that unblocked the flagship; drove the charter norm + rename spike | metrics clean: received=0, caught=0 — reached 5 on output not catches; sustain it (2+ substantive PRs or a real catch), a single clean PR next wave reverts the single-PR-no-bump policy. |
+| Paloma Gupta | Landed the entire #102-P0 flagship shortlist with a deterministic (byte-identical) skill core, and self-caught a shared-mutable-dict cross-contamination bug before commit | metrics clean but caught=0; the promotion pipeline's first real audit run is untested-in-anger — dogfood the `promotion-audit` skill next wave to prove it. |
+| Ibrahim El-Amin | Fast, clean turnaround on the QA-caught default footgun; owned and resolved the flagship-vs-donor wave-branch merge conflict (regenerated the manifest, ran the combined 629-test suite) himself | **must_fix_received=1**: shipped `max_commits_behind=0` as zero-tolerance when its sibling `max_age_days=0` meant disabled — an opposite-semantics default that would block downstream adopters. Match sibling-knob semantics when porting paired config. |
