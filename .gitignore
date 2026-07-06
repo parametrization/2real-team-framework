@@ -47,6 +47,9 @@ node/*.tgz
 # Consent-gated archive-then-fresh backups (repo_space.py archive/restore, #108/#149);
 # a restore/archive must not leave untracked noise in the working tree.
 .claude-backups/
+# Promotion-pipeline candidate ledger (suggest_generic_prompt feeder, #102-P0): transient
+# per-session working queue until the promotion-audit dogfood settles its tracking policy.
+.claude/generic_prompt_ledger.json
 
 # ---- Editor / OS ----
 .DS_Store
