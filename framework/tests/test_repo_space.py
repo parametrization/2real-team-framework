@@ -20,6 +20,7 @@ Stdlib + pytest only.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -394,6 +395,55 @@ def test_atomic_write_dir_fsync_is_fail_open(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(atomic_io.os, "open", _open_raising)
     atomic_io.atomic_write_text(target, "data")  # must not raise
     assert target.read_text() == "data"  # write still succeeded
+
+
+def _dir_fsync_supported(directory: Path) -> bool:
+    """True iff this platform can open+fsync a directory fd (fail-open guard, mirrors the code)."""
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        os.fsync(fd)
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
+def test_atomic_write_really_fsyncs_the_parent_directory(tmp_path: Path, monkeypatch) -> None:
+    """The success path fsyncs a fd that REALLY refers to the parent dir — not just 'some fsync'.
+
+    Non-tautological guard for #149 finding 2 (the durability syscall itself, not its wiring):
+    a spy on ``os.fsync`` records the inode behind every fsynced fd and correlates it to the
+    parent directory's inode. Gutting the ``os.fsync(dir_fd)`` line inside ``_fsync_dir`` makes
+    THIS test fail (the parent-dir inode is never fsynced). Skips cleanly on platforms that
+    cannot fsync a directory fd, matching the code's own fail-open behaviour.
+    """
+    target = tmp_path / "sub" / "out.json"
+    parent = target.parent
+    parent.mkdir(parents=True)
+    if not _dir_fsync_supported(parent):
+        pytest.skip("platform cannot fsync a directory fd (dir-fsync unsupported)")
+
+    parent_ino = os.stat(str(parent)).st_ino
+    fsynced_inodes: list[int] = []
+    real_fsync = atomic_io.os.fsync
+
+    def _fsync_spy(fd):
+        try:
+            fsynced_inodes.append(os.fstat(fd).st_ino)
+        except OSError:
+            pass
+        return real_fsync(fd)  # delegate to the real syscall — durability still happens
+
+    monkeypatch.setattr(atomic_io.os, "fsync", _fsync_spy)
+    atomic_io.atomic_write_text(target, '{"a": 1}\n')
+
+    # The PARENT DIRECTORY's fd was fsynced (correlated by inode), not merely the temp file.
+    assert parent_ino in fsynced_inodes, "parent-dir fd was never fsynced (durability syscall dropped)"
+    assert target.read_text() == '{"a": 1}\n'
 
 
 # ------------------------------------------- #149 finding 3: interrupted archive is recoverable
