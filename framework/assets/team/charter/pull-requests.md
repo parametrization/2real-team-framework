@@ -22,6 +22,40 @@ gh pr create --base <integration-branch> --title "<short title>" --body-file /tm
 - Push unpiped — piping `git push` through `tail`/`head` masks a rejected push
   behind the pipe's exit code (flagged — see [hooks.md](hooks.md)).
 
+## Pre-Review Self-Check: Every New Behavior Needs a Load-Bearing Test
+
+**Before requesting review, every new behavior must have a load-bearing test —
+one that FAILS if the behavior it covers is reverted.** A test that passes
+whether or not the behavior exists (tautological, or asserting on a mock instead
+of the real code path) does not satisfy this.
+
+This is a **hard, fail-closed gate** (owner decision, 2026-07-06, #167 — one of
+three Wave-1 retro process proposals, meta #165): all three Wave-1 must-fixes were
+new behavior shipped without a revert→fail test, caught only at QA. The
+`require_load_bearing_test` hook (see [hooks.md](hooks.md)) enforces the
+mechanical precondition at `gh pr create`/`gh pr ready` time — it blocks when the
+diff adds a substantive line to a behavior file with no accompanying test-file
+change in the same diff, and blocks (rather than the usual fail-open posture) when
+the diff itself cannot be verified (network/API failure, unresolvable repo/head).
+
+The hook is a lightweight, deterministic proxy — file-presence plus a substantive
+added line, not a semantic proof. It CANNOT verify that a touched test is actually
+load-bearing for the specific new behavior, or execute a real revert→fail
+simulation. That judgment remains the author's self-check duty before requesting
+review, and QA's review-time verification (see § Review Workflow below) holds the
+same bar the hook only approximates.
+
+**Override:** short of a deliberate, documented exception, this gate cannot be
+bypassed. If a class is configured under `policy.load_bearing_test_exceptions`
+(empty by default — no bypass exists until a repo configures at least one),
+prefix the command:
+
+```bash
+LOAD_BEARING_TEST_EXCEPTION="<class>:<rationale>" gh pr create ...
+```
+
+Every attempt — authorized or not — is logged to the events log for audit.
+
 **PR body template:**
 
 ```markdown

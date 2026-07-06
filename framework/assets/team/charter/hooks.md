@@ -6,7 +6,10 @@ hooks, installed under `.claude/hooks/` and wired through dispatchers in
 in `.claude/framework.config.json` name the active modules per event, and each hook
 reads its policy values (owner `{{owner}}`, default branch `{{default_branch}}`,
 reviewer count, identity roster, …) from that same config. All hooks are
-stdlib-only and fail open — a broken hook never blocks unrelated work.
+stdlib-only, and fail open by default — a broken hook never blocks unrelated
+work — with one deliberate exception: `require_load_bearing_test` (see below and
+[pull-requests.md § Pre-Review Self-Check](pull-requests.md)) fails **closed** on
+the review-request path, by owner-approved design (#167).
 
 ## Rule → Enforcement Map
 
@@ -21,6 +24,7 @@ stdlib-only and fail open — a broken hook never blocks unrelated work.
 | Labels must exist ([issues.md](issues.md)) | `validate_labels` | PreToolUse (Bash) | Validates `--label` values before `gh issue create` |
 | Verdict-comment grammar ([issues.md](issues.md)) | `validate_review_comment_format` | PreToolUse (Bash) | Blocks a `gh pr comment` / `gh issue comment` whose body attempts the charter header but is malformed (missing field or unknown `RequestOrReplied` token) — keeps the shape `trust_signals.py` parses reliable (#98) |
 | CI covers what a PR touches ([pull-requests.md](pull-requests.md)) | `validate_workflow_paths_coverage` | PreToolUse (Bash) | Blocks `gh pr create` when changed workflow-relevant paths escape every CI `paths:` filter |
+| New behavior needs a load-bearing test ([pull-requests.md § Pre-Review Self-Check](pull-requests.md)) | `require_load_bearing_test` | PreToolUse (Bash) | **HARD, fail-CLOSED** — blocks `gh pr create`/`gh pr ready` when the diff adds a substantive line to a behavior file with no accompanying test-file change (or when the diff itself can't be verified). Bypass only via a validated `LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale>` naming a class configured under `policy.load_bearing_test_exceptions` (#167) |
 | Push unpiped ([pull-requests.md](pull-requests.md)) | `warn_pipe_mask_rc` | PostToolUse (Bash) | Flags `git push` / `gh pr merge` piped through rc-masking commands |
 | Shell safety | `warn_zsh_wordsplit` | PreToolUse (Bash) | Advisory on bash-isms under zsh (when `shell: zsh`) |
 | Ontology stays fresh | `ontology_tracker` / `ontology_refresh` | PostToolUse / SessionStart | Tracks semantic-overlay drift; regenerates the structural index (inert until an ontology dir exists) |
