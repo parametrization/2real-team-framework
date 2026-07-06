@@ -49,10 +49,21 @@ Read on-demand any topic file whose one-line hook looks relevant to the user's r
 ```bash
 [ -f "$TEAM_DIR/roster.json" ] && jq -r 'to_entries[] | "  \(.key) — \(.value)"' "$TEAM_DIR/roster.json" 2>/dev/null \
   || echo "No roster — solo/unconfigured."
+if [ -f "$REPO_ROOT/.claude/lib/roster_consistency_check.py" ]; then
+  python3 "$REPO_ROOT/.claude/lib/roster_consistency_check.py" --repo-root "$REPO_ROOT" 2>/dev/null \
+    || echo "roster drift — see roster_consistency_check.py output above (advisory only)."
+fi
 ```
 
 Confirm the single implicit team. Spawn members via the `Agent` tool when work needs them
 (only the orchestrator spawns; managers request spawns via `SendMessage`).
+
+`roster_consistency_check.py` is advisory-only (non-blocking): it flags `roster.json` <->
+`roster/*.md` drift (e.g. a hand-edited card whose `user.email` no longer matches the roster
+allowlist) without halting the session. For a meta+children project, a CI job can additionally run
+`.claude/lib/roster_union_sync.py --owner <org>` (`continue-on-error`) to catch a child persona
+missing from the parent's union roster — see that module's docstring for the local-vs-remote
+resolution it uses.
 
 ### Step 3 — Handoff (read where the last session left off)
 

@@ -138,6 +138,18 @@
           "default": 5,
           "minimum": 0,
           "description": "/wave-retro counter-drift tolerance (percent). See retro_counter_drift_abs."
+        },
+        "branch_freshness_max_commits_behind": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "validate_branch_freshness.py (#179): a feature branch is flagged once it is behind its base by MORE than this many commits. 0 (default) flags any drift at all."
+        },
+        "branch_freshness_max_age_days": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "validate_branch_freshness.py (#179): additionally flag a branch whose merge-base with its base branch is older than this many days (only evaluated when the branch is already behind by at least one commit). 0 (default) disables the age dimension — only branch_freshness_max_commits_behind is enforced."
         }
       }
     },
@@ -178,7 +190,7 @@
         "pre_bash": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_pr_ci_status", "block_squash_wave_merge"],
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_branch_freshness", "validate_pr_ci_status", "block_squash_wave_merge"],
           "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
         },
         "post_bash": {
