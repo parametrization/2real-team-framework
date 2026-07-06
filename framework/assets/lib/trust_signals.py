@@ -26,6 +26,35 @@ Two cleanly separated layers:
     is a pure function so the model is unit-testable, and usable standalone on a
     hand-built signal dict, without touching the SCM at all.
 
+Durable review-catch ledger (#164)
+-----------------------------------
+The charter's verdict-amendment convention has a reviewer edit their blocking
+``Request``/``Must-fix:`` comment **in place** to ``Replied``/``Must-fix: None``
+once the fix lands. Because extraction used to derive ``must_fix_caught`` /
+``must_fix_received`` purely by re-parsing the PR's *current* comment bodies,
+an amendment silently erased the historic catch — the reviewer's signal
+vanished and, if they authored no PRs of their own, they dropped out of the
+engineer map entirely (Phase 6 Wave 1: the wave's standout reviewer scored
+``must_fix_caught=0``).
+
+Fix (design option (b) from #164/#165 — chosen over reading GitHub comment
+edit-history or a distinct ``Replied``-follow-up convention change: it needs no
+new SCM/API dependency and keeps the signal durable at the moment it is
+created): :func:`record_review_catch` durably appends one entry per
+changes-requested verdict to ``wave_{wave}_review_catches`` in the project
+state file, **at issue time** — i.e. the moment the blocking verdict comment is
+posted, before any later amendment can erase it. :func:`extract_signals` reads
+this ledger (:func:`_review_catches_for_wave`) and, for any PR that has >=1
+recorded catch, treats the ledger as **authoritative** for that PR's
+changes-requested accounting instead of re-deriving it from the (possibly
+already-amended) live comment body. A PR with no ledger entry falls back to the
+legacy live-comment-parsing path unchanged, so projects/waves that predate this
+ledger keep scoring exactly as before.
+
+CLI: ``trust_signals.py record-catch <wave> --repo O/N --pr P --requestor R
+--requestee E`` — meant to be invoked immediately after posting a blocking
+verdict comment (see the module CLI section below).
+
 Signals per engineer (all integers, all countable from the merged-PR set):
 
   ===========================  ============================================
@@ -54,6 +83,12 @@ CLI:
                                                                 # proposed deltas
                                                                 # + forced
                                                                 # negative line
+  trust_signals.py record-catch <wave> --repo O/N --pr P --requestor R
+                                 --requestee E [--at TS] [--status PATH]
+                                                                # durably record
+                                                                # one changes-
+                                                                # requested catch
+                                                                # at issue time
 """
 
 from __future__ import annotations
@@ -64,15 +99,22 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 # The shared config loader lives in the framework's hooks dir. This lib lives in
 # the sibling lib/ dir; mirror pr_ci_state.py's lib->hooks import bridge so the
-# scoring half stays importable wherever the framework is deployed.
-_HOOKS_DIR = Path(__file__).resolve().parent.parent / "hooks"
+# scoring half stays importable wherever the framework is deployed. lifecycle.py
+# is a same-dir sibling (both land side-by-side in the bundled framework tree
+# too — see lifecycle.py's own self-insert), so this dir is put on the path
+# explicitly rather than relying on script-adjacent defaults.
+_LIB_DIR = Path(__file__).resolve().parent
+_HOOKS_DIR = _LIB_DIR.parent / "hooks"
 sys.path.insert(0, str(_HOOKS_DIR))
+sys.path.insert(0, str(_LIB_DIR))
 
 from _framework_config import config  # noqa: E402
+from lifecycle import persist as _persist_state  # noqa: E402
 
 # Every gh subprocess call carries a timeout so a hung network call can never
 # wedge the tool indefinitely.
@@ -455,6 +497,70 @@ def _kickoff_ts(wave: str, status_path: Path | None) -> str | None:
     return str(val) if val else None
 
 
+def _now_iso(at: str | None = None) -> str:
+    """An ISO-8601 UTC timestamp; ``at`` overrides for deterministic tests."""
+    if at:
+        return at
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _review_catches_for_wave(wave: str, status_path: Path | None) -> list[dict]:
+    """The durable per-PR must-fix catch ledger for *wave* (#164).
+
+    Reads ``wave_<id>_review_catches`` — a list of ``{"repo", "pr",
+    "requestor", "requestee", "recorded_at"}`` entries appended by
+    :func:`record_review_catch` at issue time. Absent/unreadable state file, or
+    no entries recorded for this wave, → ``[]`` (fail-open: a project/wave that
+    never called :func:`record_review_catch` falls back entirely to the legacy
+    live-comment-parsing path in :func:`extract_signals`).
+    """
+    if status_path is None:
+        return []
+    try:
+        data = json.loads(Path(status_path).read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return []
+    val = data.get(f"wave_{wave}_review_catches")
+    return list(val) if isinstance(val, list) else []
+
+
+def record_review_catch(
+    status_path: str | Path,
+    wave: str,
+    *,
+    repo: str,
+    pr: int,
+    requestor: str,
+    requestee: str | None = None,
+    at: str | None = None,
+) -> list[dict]:
+    """Durably record one changes-requested catch **at issue time** (#164).
+
+    Call this the moment a blocking (``Request`` + enumerated ``Must-fix:``)
+    verdict comment is posted — before any later in-place amendment to
+    ``Replied``/``Must-fix: None`` can erase the historic signal. The entry is
+    appended (never deduplicated: N calls for the same PR/reviewer are N
+    distinct changes-requested cycles) to ``wave_<id>_review_catches`` in the
+    project state file via :func:`lifecycle.persist`, which preserves the
+    file's compact-inline shape and validates JSON before and after the write.
+
+    Returns the full updated list for that wave (post-append).
+    """
+    status_path = Path(status_path)
+    key = f"wave_{wave}_review_catches"
+    existing = _review_catches_for_wave(wave, status_path)
+    entry = {
+        "repo": repo,
+        "pr": int(pr),
+        "requestor": requestor,
+        "requestee": requestee,
+        "recorded_at": _now_iso(at),
+    }
+    updated = [*existing, entry]
+    _persist_state(status_path, {key: updated})
+    return updated
+
+
 def _pr_comment_bodies(repo: str, number: int) -> list[str]:
     """Every issue-comment body on a PR (verdict comments live here)."""
     raw = _run_gh(
@@ -625,6 +731,77 @@ def _canonicalizer(cfg):
     return canon
 
 
+def _account_pr(
+    signals: dict[str, Signals],
+    canon,
+    *,
+    author: str,
+    repo: str,
+    number: int,
+    comment_bodies: list[str],
+    ci_red: bool,
+    review_catches: list[dict] | None = None,
+) -> None:
+    """Fold one merged PR's contribution into *signals* (mutates in place).
+
+    Pure aside from the ``canon`` callable (itself pure) — no I/O. Shared by
+    :func:`extract_signals` (live gh-backed) and tests (hand-built PR data), so
+    the two never drift.
+
+    ``review_catches`` is the full wave-scoped durable ledger (#164,
+    :func:`_review_catches_for_wave`); entries are filtered here to this
+    ``(repo, number)``. When that filtered set is non-empty it is
+    **authoritative** for this PR's changes-requested accounting
+    (``must_fix_received`` / ``must_fix_caught`` / ``rework_cycles``) — it
+    supersedes re-deriving those from ``comment_bodies``, so a verdict comment
+    later amended in place (the charter's amendment convention) cannot erase a
+    catch that was durably recorded at issue time. A PR with no ledger entries
+    falls back to the legacy live-comment-parsing path unchanged. False-positive
+    detection is untouched by the ledger — it is always read from the live
+    comment body (a retraction is itself only ever expressed there).
+    """
+
+    def bucket(name: str) -> Signals:
+        return signals.setdefault(canon(name), Signals())
+
+    author_sig = bucket(author)
+    author_sig.prs_merged += 1
+    author_sig.authored_prs.append(number)
+
+    if ci_red:
+        author_sig.ci_red_merges += 1
+
+    verdicts = parse_verdicts(comment_bodies)
+    catches = [
+        c
+        for c in (review_catches or [])
+        if c.get("repo") == repo and str(c.get("pr")) == str(number)
+    ]
+
+    pr_had_changes_requested = False
+    if catches:
+        for c in catches:
+            pr_had_changes_requested = True
+            author_sig.must_fix_received += 1
+            requestor = c.get("requestor")
+            if requestor:
+                bucket(requestor).must_fix_caught += 1
+    else:
+        for v in verdicts:
+            if v.changes_requested:
+                pr_had_changes_requested = True
+                author_sig.must_fix_received += 1
+                if v.requestor:
+                    bucket(v.requestor).must_fix_caught += 1
+
+    for v in verdicts:
+        if v.false_positive and v.requestor:
+            bucket(v.requestor).review_false_positives += 1
+
+    if pr_had_changes_requested:
+        author_sig.rework_cycles += 1
+
+
 def extract_signals(
     wave: str,
     status_path: Path | None = None,
@@ -644,39 +821,31 @@ def extract_signals(
     ``Tariq Morales`` in another, and ``Tariq Morales (QA)`` in a third folds to a
     single ledger entry instead of splitting their signals across variants. A
     name absent from the roster passes through unchanged (fail-open).
+
+    Per-PR changes-requested accounting prefers the durable review-catch ledger
+    (:func:`_review_catches_for_wave`, #164) over live comment parsing when the
+    ledger has entries for a PR — see :func:`_account_pr`.
     """
     cfg = cfg or config()
     prs = merged_prs(wave, status_path, label=label, cfg=cfg)
     canon = _canonicalizer(cfg)
+    review_catches = _review_catches_for_wave(wave, status_path)
     signals: dict[str, Signals] = {}
-
-    def _bucket(name: str) -> Signals:
-        return signals.setdefault(canon(name), Signals())
 
     for pr in prs:
         author = pr.get("commit_author_name") or "(unknown)"
         repo = pr["repo"]
         number = pr["number"]
-
-        author_sig = _bucket(author)
-        author_sig.prs_merged += 1
-        author_sig.authored_prs.append(number)
-
-        if _pr_ci_is_red(repo, number):
-            author_sig.ci_red_merges += 1
-
-        verdicts = parse_verdicts(_pr_comment_bodies(repo, number))
-        pr_had_changes_requested = False
-        for v in verdicts:
-            if v.changes_requested:
-                pr_had_changes_requested = True
-                author_sig.must_fix_received += 1
-                if v.requestor:
-                    _bucket(v.requestor).must_fix_caught += 1
-            if v.false_positive and v.requestor:
-                _bucket(v.requestor).review_false_positives += 1
-        if pr_had_changes_requested:
-            author_sig.rework_cycles += 1
+        _account_pr(
+            signals,
+            canon,
+            author=author,
+            repo=repo,
+            number=number,
+            comment_bodies=_pr_comment_bodies(repo, number),
+            ci_red=_pr_ci_is_red(repo, number),
+            review_catches=review_catches,
+        )
 
     return signals
 
@@ -872,6 +1041,26 @@ def _cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_record_catch(args: argparse.Namespace) -> int:
+    if args.status is None:
+        print(
+            "ERROR: --status (or configured paths.state_file) is required",
+            file=sys.stderr,
+        )
+        return 2
+    updated = record_review_catch(
+        args.status,
+        args.wave,
+        repo=args.repo,
+        pr=args.pr,
+        requestor=args.requestor,
+        requestee=args.requestee,
+        at=args.at,
+    )
+    print(json.dumps(updated, indent=2, sort_keys=True))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -897,6 +1086,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p_score = sub.add_parser("score", help="emit signals + proposed deltas as JSON")
     _add_common(p_score)
     p_score.set_defaults(func=_cmd_score)
+
+    p_catch = sub.add_parser(
+        "record-catch",
+        help="durably record a changes-requested catch at issue time (#164)",
+    )
+    p_catch.add_argument("wave", help="iteration / wave id")
+    p_catch.add_argument("--repo", required=True, help="owner/name")
+    p_catch.add_argument("--pr", required=True, type=int, help="PR number")
+    p_catch.add_argument(
+        "--requestor",
+        required=True,
+        help="reviewer identity, as in the verdict comment's Requestor: field",
+    )
+    p_catch.add_argument(
+        "--requestee",
+        default=None,
+        help="PR-author identity, as in the verdict comment's Requestee: field",
+    )
+    p_catch.add_argument(
+        "--at", default=None, help="ISO-8601 UTC timestamp override (tests)"
+    )
+    p_catch.add_argument(
+        "--status",
+        type=Path,
+        default=_default_status(),
+        help="path to the project state file (default: config paths.state_file)",
+    )
+    p_catch.set_defaults(func=_cmd_record_catch)
     return parser
 
 
