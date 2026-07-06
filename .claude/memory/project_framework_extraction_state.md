@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.4.2 (Phase 4 complete), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.5.0 (Phase 5 complete: installer robustness), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,28 +11,43 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-05): released v0.4.2; Phase 5 Wave 1 COMPLETE on its wave branch
-(unmerged — stacking for Wave 2).** Phase 4 ("self-hosting & quality machinery", two waves)
-made the framework trustworthy when run on itself. **Phase 5** ("installer robustness") is now
-underway — theme set by owner. See [[handoff]] for the exact pickup. The foundation (PR #41)
-shipped long ago; Phase 3 installer overhaul (v0.4.0) is below.
+**Current baseline (2026-07-06): released v0.5.0 — Phase 5 (installer robustness) COMPLETE,
+merged to main, published to PyPI + npm.** Phase 4 ("self-hosting & quality machinery", two
+waves) made the framework trustworthy when run on itself. **Phase 5** ("installer robustness")
+made the installer trustworthy on repos *other than this one*. See [[handoff]] for the exact
+pickup (next = owner picks Wave 6 theme, reserved stub #150). The foundation (PR #41) shipped
+long ago; Phase 3 installer overhaul (v0.4.0) is below.
 
-**Phase 5 (2026-07-05, `deployments/phase5/wave-1`) — installer robustness:**
-- **Wave 1 (global wave 4) COMPLETE — discovery tranche, NOT merged to main.** 4 issues, all
-  charter-reviewed cross-assigned, 0 must-fix, 0 CR cycles, 376 tests: **#131** scorer
-  false-positive gate (the last Phase-4 artifact — gate `review_false_positives` on
-  `_has_must_fix_items`); **#106** `~/.claude` user-space audit → found load-bearing gap **G1**
-  (installer never writes the agent-teams env flag, so a fresh install can't spawn a team);
-  **#103** install-quality test-repo taxonomy (B1–B12) + ~31 metrics; **#104** install/test/teardown
-  methodology + metric-record schema. Three new design docs live in `framework/recipes/`
+**Phase 5 → v0.5.0 (2026-07-06, rollup PR #151 → main @ `7e6fe8b`) — installer robustness.**
+Both waves rolled up as a unit (owner decision: stack W2 on W1, one release). Published via OIDC
+to PyPI + npm (both `latest` = 0.5.0); lightweight tag `deployments-phase5-wave-2` for
+traceability only. **8 feature PRs, 0 must-fix, 0 CR cycles, 442 tests.**
+- **Wave 1 (global 4) — discovery**: **#131** scorer false-positive gate (last Phase-4 artifact —
+  gate `review_false_positives` on `_has_must_fix_items`); **#106** `~/.claude` user-space audit →
+  found load-bearing gap **G1** (installer never wrote the agent-teams env flag, so a fresh install
+  couldn't spawn a team); **#103** test-repo taxonomy B1–B12 + ~31 metrics; **#104**
+  install/test/teardown methodology. 3 design docs in `framework/recipes/`
   (`INSTALL_QUALITY_HARNESS.md`, `INSTALL_TEST_METHODOLOGY.md`, `USER_SPACE_AUDIT.md`).
-- **Integration decision (owner)**: stack Wave 2 on Wave 1; roll up Phase 5 as a unit with ONE
-  release (~v0.5.0) when the user-facing installer features land. Wave 1 = discovery (docs + one
-  dev-tooling fix) → no standalone release. main untouched this phase so far.
-- **Wave 2 (global wave 5, meta #140) = BUILD tranche**, gated on 6 owner-decisions (see [[handoff]]):
-  **#105** harness impl, **#107** consented user-level install (closes G1), **#108** repo-level
-  consent+backup/restore; folds tech-debt **#138** (record_id collision) + **#139** (metric vocab).
-  Team trust holds at **4 across the board** (steady state).
+- **Wave 2 (global 5) — build**: **#105** `python3 -m framework.harness` install/test/teardown
+  harness (11 modules; B1–B9 + inline dogfood default; B10/B11 real fixtures opt-in behind
+  `--include-real`, clone-at-pinned-SHA, never touch live repos) + **#138** record_id permutation
+  discriminant; **#139** golden manifest `expected_install_set(config)` in `framework/install/manifest.py`
+  (single source for install-completeness, derived from the installer's own iterators, `--check`
+  drift guard, retires hardcoded counts); **#107** consented **idempotent** user-level install
+  (`bootstrap.py --user-space`) — **closes G1** (check-existing no-op / backup-or-amend / never
+  clobbers; reusable `consent.py`/`backup.py`/`user_space.py`); **#108** repo-level consent +
+  backup/archive/**restore** (`repo_space.py` archives to sibling `.claude-backups/<UTC>/`, out of
+  Claude load scope, byte-identical restore) + **#145** atomic settings write
+  (`atomic_io.atomic_write_text`: temp→fsync→os.replace) across both paths.
+- A latent flat-vs-nested config seam (harness passed flat permutation dicts; #139 reads nested
+  dotted config) was caught in #105 review and fixed **pre-merge** via
+  `permutation_to_install_config`, so `files_installed_complete` grades against the real manifest
+  (activation verified post-merge, `install_success_rate 1.00`).
+- Install code (`framework/install/`) and harness (`framework/harness/`) are NOT part of the
+  `.claude/**` runtime → outside reinstall-parity scope. Team trust holds at **4 across the board**
+  — third consecutive fully-clean score (steady state). Deferred follow-ups (all OPEN tech-debt):
+  **#142** product `uninstall` · **#148** `cli_bridge_soft_degrade` + `--compare` CI gate · **#149**
+  durability/fidelity hardening · **#141** pre-existing flaky meta-install idempotency test.
 
 **Phase 4 (2026-07-05, two waves off `deployments/phase4/wave-{1,2}`):**
 - **Wave 1 → v0.4.1** (#98 trust-vocab, #99 dogfood lifecycle into wave skills, #100 phase-aware
@@ -110,10 +125,11 @@ project-coupled, it's config-decouplable:
    and subprocesses the Python bootstrap (`node/src/framework-install.ts`).
 5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
 6. ~~Phase 3 tech-debt #74/#75/#77/#82/#90/#94~~ — **all shipped in Phase 4 Wave 2 (v0.4.2)**.
-7. **Phase 5 (installer robustness) — in progress.** Wave 1 shipped #131 (scorer gate) + #103/#104/#106
-   (harness design + user-space audit). Remaining: **#105** harness impl, **#107/#108** consented
-   backup/restore installs (Wave 2, meta #140), then exploratory #101/#102 (reverse-map noorinalabs),
-   #109 (botfarm before/after), #110 (ship as CC skill). Tech-debt carry: #138/#139.
+7. ~~**Phase 5 (installer robustness)**~~ — **COMPLETE, shipped in v0.5.0** (both waves: #131 scorer
+   gate, #103/#104/#106 design+audit, #105 harness, #107/#108 consented user/repo install closing G1,
+   #138/#139/#145 folded). Remaining Phase 5 *exploratory* backlog (deferred, OPEN): #101/#102
+   (reverse-map noorinalabs against the new harness), #109 (botfarm before/after), #110 (ship the
+   installer as a CC skill); plus tech-debt #142/#148/#149/#141.
 
 **Architecture overview:** [[reference_config_driven_architecture]].
 **Commit/PR mechanics for this repo:** [[feedback_framework_commit_pr_mechanics]].
