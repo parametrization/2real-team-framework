@@ -143,7 +143,7 @@
           "type": "integer",
           "default": 0,
           "minimum": 0,
-          "description": "validate_branch_freshness.py (#179): a feature branch is flagged once it is behind its base by MORE than this many commits. 0 (default) flags any drift at all."
+          "description": "validate_branch_freshness.py (#179): when > 0, a feature branch is flagged once it is behind its base by MORE than this many commits. 0 (default) DISABLES the commits-behind dimension — branch-freshness is opt-in, off by default (0 == disabled, matching branch_freshness_max_age_days; NOT zero-tolerance). With both freshness knobs 0 the gate does nothing (no git/gh call)."
         },
         "branch_freshness_max_age_days": {
           "type": "integer",

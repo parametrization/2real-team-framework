@@ -76,8 +76,8 @@ _DEFAULTS: dict[str, Any] = {
         "retro_counter_drift_abs": 2,
         "retro_counter_drift_pct": 5,
         # Branch-freshness gate (#179): commits-behind (+ optional age) staleness
-        # threshold read by validate_branch_freshness.py. 0/0 = flag any drift,
-        # no age dimension — reproduces the strict pre-config-knob behavior.
+        # thresholds read by validate_branch_freshness.py. Both 0 == DISABLED
+        # (opt-in, off by default); the gate does nothing until a knob is set > 0.
         "branch_freshness_max_commits_behind": 0,
         "branch_freshness_max_age_days": 0,
     },

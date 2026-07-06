@@ -27,6 +27,8 @@ import sys
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_FRAMEWORK_ROOT / "assets" / "hooks"))
 
@@ -39,6 +41,31 @@ def _bash(command: str, cwd: str | None = None) -> dict:
     if cwd is not None:
         d["cwd"] = cwd
     return d
+
+
+class _StubCfg:
+    """Minimal config stub returning armed branch-freshness thresholds."""
+
+    def __init__(self, max_behind: int, max_age_days: int) -> None:
+        self._vals = {
+            "policy.branch_freshness_max_commits_behind": max_behind,
+            "policy.branch_freshness_max_age_days": max_age_days,
+            "scm.default_branch": "main",
+        }
+
+    def get(self, key, default=None):
+        return self._vals.get(key, default)
+
+
+@pytest.fixture
+def armed(monkeypatch):
+    """Arm the (opt-in, off-by-default) gate so check() proceeds past the
+    disabled short-circuit — routing/decision tests exercise the resolution
+    path, not the default-disabled early return. The commits-behind dimension
+    is set to 1 (any positive value arms it); the actual freshness verdict is
+    supplied by the mocked is_branch_fresh_local/remote in each test.
+    """
+    monkeypatch.setattr(hook, "config", lambda input_data=None, **kw: _StubCfg(1, 0))
 
 
 # --------------------------------------------------------------- extract_base / extract_head
@@ -96,10 +123,10 @@ def test_unrelated_command_is_ignored() -> None:
     assert hook.check(_bash('echo "gh pr create"')) is None
 
 
-# --------------------------------------------------------------- local path (default threshold 0)
+# ------------------------------------------------- local path (gate ARMED via `armed` fixture)
 
 
-def test_local_fresh_branch_allows() -> None:
+def test_local_fresh_branch_allows(armed) -> None:
     with (
         mock.patch.object(hook, "_resolve_implicit_repo", return_value=None),
         mock.patch.object(hook, "is_branch_fresh_local", return_value=True) as mocked,
@@ -109,7 +136,7 @@ def test_local_fresh_branch_allows() -> None:
     mocked.assert_called_once()
 
 
-def test_local_stale_branch_blocks() -> None:
+def test_local_stale_branch_blocks(armed) -> None:
     with (
         mock.patch.object(hook, "_resolve_implicit_repo", return_value=None),
         mock.patch.object(hook, "is_branch_fresh_local", return_value=False),
@@ -136,7 +163,7 @@ def test_local_path_receives_configured_thresholds(tmp_path: Path) -> None:
 # --------------------------------------------------------------- remote path (--repo)
 
 
-def test_repo_flag_uses_remote_path() -> None:
+def test_repo_flag_uses_remote_path(armed) -> None:
     cmd = "gh pr create --repo acme/widgets --head feature-x --base main"
     with (
         mock.patch.object(hook, "is_branch_fresh_remote", return_value=True) as remote_mock,
@@ -149,7 +176,7 @@ def test_repo_flag_uses_remote_path() -> None:
     local_mock.assert_not_called()
 
 
-def test_remote_stale_branch_blocks() -> None:
+def test_remote_stale_branch_blocks(armed) -> None:
     cmd = "gh pr create --repo acme/widgets --head feature-x --base develop"
     with mock.patch.object(hook, "is_branch_fresh_remote", return_value=False):
         result = hook.check(_bash(cmd))
@@ -158,7 +185,7 @@ def test_remote_stale_branch_blocks() -> None:
     assert "acme/widgets:develop" in result["reason"]
 
 
-def test_repo_flag_without_head_skips() -> None:
+def test_repo_flag_without_head_skips(armed) -> None:
     cmd = "gh pr create --repo acme/widgets"
     with (
         mock.patch.object(hook, "is_branch_fresh_remote") as remote_mock,
@@ -170,7 +197,7 @@ def test_repo_flag_without_head_skips() -> None:
     local_mock.assert_not_called()
 
 
-def test_remote_check_failure_allows() -> None:
+def test_remote_check_failure_allows(armed) -> None:
     cmd = "gh pr create --repo acme/widgets --head feature-x"
     with mock.patch.object(hook, "is_branch_fresh_remote", return_value=None):
         result = hook.check(_bash(cmd))
@@ -180,7 +207,7 @@ def test_remote_check_failure_allows() -> None:
 # --------------------------------------------------------------- implicit-repo resolution
 
 
-def test_implicit_repo_routes_to_remote_path() -> None:
+def test_implicit_repo_routes_to_remote_path(armed) -> None:
     with (
         mock.patch.object(hook, "_resolve_implicit_repo", return_value="acme/widgets"),
         mock.patch.object(hook, "_current_branch", return_value="feat-x"),
@@ -194,7 +221,7 @@ def test_implicit_repo_routes_to_remote_path() -> None:
     local_mock.assert_not_called()
 
 
-def test_gh_repo_env_takes_priority(monkeypatch) -> None:
+def test_gh_repo_env_takes_priority(armed, monkeypatch) -> None:
     monkeypatch.setenv("GH_REPO", "acme/widgets")
     with (
         mock.patch.object(hook, "_resolve_implicit_repo") as resolve_mock,
@@ -247,6 +274,27 @@ def test_local_fresh_when_zero_behind(monkeypatch) -> None:
     assert hook.is_branch_fresh_local("main") is True
 
 
+def test_local_zero_threshold_is_disabled_not_zero_tolerance(monkeypatch) -> None:
+    """max_commits_behind=0 means DISABLED: a branch 5 commits behind is FRESH.
+
+    This is the crux of the #184 must-fix — 0 must mean opt-out, matching the
+    sibling max_age_days semantics, NOT block-on-any-drift.
+    """
+
+    def fake_run(args, **kwargs):
+        result = mock.Mock()
+        result.returncode = 0
+        result.stdout = "5\t0\n" if args[:3] == ["git", "rev-list", "--left-right"] else ""
+        return result
+
+    monkeypatch.setattr(hook.subprocess, "run", fake_run)
+    # Default (both knobs 0) -> disabled -> fresh even 5 behind.
+    assert hook.is_branch_fresh_local("main") is True
+    assert hook.is_branch_fresh_local("main", max_commits_behind=0, max_age_days=0) is True
+    # An armed positive threshold flags the same 5-behind branch.
+    assert hook.is_branch_fresh_local("main", max_commits_behind=3) is False
+
+
 def test_local_stale_by_age_when_behind(monkeypatch) -> None:
     """behind=1 (<= a generous count threshold) but merge-base is very old -> stale by age."""
     import time
@@ -291,6 +339,25 @@ def test_remote_respects_max_commits_behind_threshold(monkeypatch) -> None:
     monkeypatch.setattr(hook.subprocess, "run", fake_run)
     assert hook.is_branch_fresh_remote("acme/widgets", "main", "feat", max_commits_behind=2) is True
     assert hook.is_branch_fresh_remote("acme/widgets", "main", "feat", max_commits_behind=1) is False
+
+
+def test_remote_zero_threshold_is_disabled(monkeypatch) -> None:
+    """max_commits_behind=0 -> DISABLED remotely too: a 5-behind branch is fresh."""
+
+    def fake_run(args, **kwargs):
+        result = mock.Mock()
+        result.returncode = 0
+        result.stdout = json.dumps({"behind": 5, "mb_date": ""})
+        return result
+
+    monkeypatch.setattr(hook.subprocess, "run", fake_run)
+    assert hook.is_branch_fresh_remote("acme/widgets", "main", "feat") is True
+    assert (
+        hook.is_branch_fresh_remote("acme/widgets", "main", "feat", max_commits_behind=0) is True
+    )
+    assert (
+        hook.is_branch_fresh_remote("acme/widgets", "main", "feat", max_commits_behind=3) is False
+    )
 
 
 def test_remote_stale_by_age(monkeypatch) -> None:
@@ -368,12 +435,37 @@ def test_check_reads_threshold_from_config(tmp_path: Path) -> None:
     _framework_config.clear_cache()
 
 
-def test_check_default_config_is_strict(tmp_path: Path) -> None:
-    """Absent config -> defaults (0, 0), matching the pre-config-knob behavior."""
+def test_check_default_config_is_disabled(tmp_path: Path) -> None:
+    """Absent config -> defaults (0, 0) -> gate is DISABLED (opt-in, off by default).
+
+    check() must return None WITHOUT calling any freshness probe (no git fetch,
+    no gh API) — a fresh framework install never blocks an ordinary
+    `gh pr create`. This is the #184 must-fix: 0 == disabled, not zero-tolerance.
+    """
+    with (
+        mock.patch.object(hook, "_resolve_implicit_repo", return_value=None) as resolve_mock,
+        mock.patch.object(hook, "is_branch_fresh_local", return_value=False) as local_mock,
+        mock.patch.object(hook, "is_branch_fresh_remote", return_value=False) as remote_mock,
+    ):
+        result = hook.check(_bash("gh pr create", cwd=str(tmp_path)))
+    assert result is None
+    # Fully short-circuited: no probe of any kind was invoked.
+    local_mock.assert_not_called()
+    remote_mock.assert_not_called()
+    resolve_mock.assert_not_called()
+
+
+def test_check_age_only_config_arms_gate(tmp_path: Path) -> None:
+    """Only max_age_days set (>0) still arms the gate — the age dimension is opt-in too."""
+    _write_config(tmp_path, max_behind=0, max_age_days=30)
     with (
         mock.patch.object(hook, "_resolve_implicit_repo", return_value=None),
         mock.patch.object(hook, "is_branch_fresh_local", return_value=False) as mocked,
     ):
-        hook.check(_bash("gh pr create", cwd=str(tmp_path)))
+        result = hook.check(_bash("gh pr create", cwd=str(tmp_path)))
+    assert result is not None
+    assert result["decision"] == "block"
+    mocked.assert_called_once()
     assert mocked.call_args.kwargs["max_commits_behind"] == 0
-    assert mocked.call_args.kwargs["max_age_days"] == 0
+    assert mocked.call_args.kwargs["max_age_days"] == 30
+    _framework_config.clear_cache()

@@ -32,18 +32,25 @@ Flag handling
                    check is skipped (head cannot be reliably inferred from cwd
                    for a different repo).
 
-Config-driven staleness threshold (policy.*)
-=============================================
-  policy.branch_freshness_max_commits_behind (default 0)
-      A branch is stale once it is behind base by MORE than this many commits.
-      0 (the default) reproduces the strict "any drift blocks" behavior.
-  policy.branch_freshness_max_age_days (default 0 = disabled)
-      Additionally treat a branch as stale when its merge-base with `base` is
-      older than this many days — i.e. it has not synced with base in a long
-      time, even if the raw commit-count delta looks small. Only evaluated when
-      the branch is behind at all (commits_behind > 0); a branch fully caught up
-      with base is never flagged on age alone. Applied on BOTH the local
-      (cwd git) and remote (gh API compare) paths.
+Opt-in, config-driven staleness thresholds (policy.*)
+=====================================================
+  The whole gate is OFF BY DEFAULT: with BOTH knobs at their default 0 the
+  hook returns None immediately (no git fetch, no gh API call) — a fresh
+  framework install never blocks a downstream adopter's ordinary `gh pr
+  create`. Branch-freshness enforcement is opt-in: an operator sets one (or
+  both) knobs > 0 to turn it on.
+
+  policy.branch_freshness_max_commits_behind (default 0 = DISABLED)
+      When > 0, a branch is stale once it is behind base by MORE than this many
+      commits. 0 (the default) DISABLES the commits-behind dimension — matching
+      the sibling max_age_days semantics below (both "0"s mean disabled).
+  policy.branch_freshness_max_age_days (default 0 = DISABLED)
+      When > 0, additionally treat a branch as stale when its merge-base with
+      `base` is older than this many days — i.e. it has not synced with base in
+      a long time, even if the raw commit-count delta looks small. Only
+      evaluated when the branch is behind at all (commits_behind > 0); a branch
+      fully caught up with base is never flagged on age alone. Applied on BOTH
+      the local (cwd git) and remote (gh API compare) paths.
 
 Fail-open posture
 ==================
@@ -122,10 +129,13 @@ def is_branch_fresh_local(
 ) -> bool:
     """cwd-based check: is HEAD within the configured staleness threshold of origin/base?
 
-    `cwd` anchors the subprocess calls so worktree subagents inspect their own
-    branch state, not the parent process's git state. Fail-open (returns True,
-    i.e. "fresh enough" / allow) on any subprocess error, timeout, or missing
-    git binary.
+    Both thresholds are OPT-IN: a falsy/0 `max_commits_behind` DISABLES the
+    commits-behind dimension (0 == disabled, not zero-tolerance), and a falsy/0
+    `max_age_days` disables the age dimension. With both 0 this returns True
+    ("fresh enough" / allow) unconditionally. `cwd` anchors the subprocess
+    calls so worktree subagents inspect their own branch state, not the parent
+    process's git state. Fail-open (returns True) on any subprocess error,
+    timeout, or missing git binary.
     """
     try:
         subprocess.run(
@@ -154,7 +164,9 @@ def is_branch_fresh_local(
     if behind == 0:
         return True  # perfectly caught up -- never stale regardless of age
 
-    stale_by_count = behind > max_commits_behind
+    # 0 == disabled (opt-in), NOT zero-tolerance. Only a POSITIVE threshold
+    # arms the commits-behind dimension.
+    stale_by_count = max_commits_behind > 0 and behind > max_commits_behind
     stale_by_age = False
 
     if max_age_days > 0:
@@ -255,10 +267,12 @@ def is_branch_fresh_remote(
 ) -> bool | None:
     """API-based check: behind_by (+ merge-base age) from the gh compare endpoint.
 
-    Returns True if fresh enough, False if stale, None if the check could not
-    be performed (network error, missing branch, malformed response, ...).
-    None is treated as "allow" by callers -- same fail-open posture as the
-    local path.
+    Both thresholds are OPT-IN (0 == disabled, same as the local path): a
+    falsy/0 `max_commits_behind` disables the commits-behind dimension and a
+    falsy/0 `max_age_days` disables the age dimension. Returns True if fresh
+    enough, False if stale, None if the check could not be performed (network
+    error, missing branch, malformed response, ...). None is treated as "allow"
+    by callers -- same fail-open posture as the local path.
     """
     try:
         result = subprocess.run(
@@ -284,7 +298,9 @@ def is_branch_fresh_remote(
     if behind == 0:
         return True  # perfectly caught up -- never stale regardless of age
 
-    stale_by_count = behind > max_commits_behind
+    # 0 == disabled (opt-in), NOT zero-tolerance. Only a POSITIVE threshold
+    # arms the commits-behind dimension.
+    stale_by_count = max_commits_behind > 0 and behind > max_commits_behind
     stale_by_age = False
     if max_age_days > 0:
         epoch = _parse_iso8601(data.get("mb_date", ""))
@@ -313,6 +329,13 @@ def check(input_data: dict) -> dict | None:
     cfg = config(input_data)
     max_behind = cfg.get("policy.branch_freshness_max_commits_behind", 0) or 0
     max_age_days = cfg.get("policy.branch_freshness_max_age_days", 0) or 0
+
+    # OPT-IN: the gate is OFF by default (both knobs 0 == disabled). When
+    # neither dimension is armed, do nothing — no git fetch, no gh API call —
+    # so a fresh framework install never blocks an ordinary `gh pr create`.
+    if max_behind <= 0 and max_age_days <= 0:
+        return None
+
     default_base = cfg.get("scm.default_branch", "main") or "main"
 
     cwd = resolve_invocation_cwd(input_data)
