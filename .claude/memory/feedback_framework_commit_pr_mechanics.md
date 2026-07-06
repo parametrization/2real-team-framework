@@ -27,5 +27,13 @@ otherwise cost a round-trip each.
 - **.pyc hygiene:** `__pycache__/*.pyc` was committed once then removed; `.gitignore` now covers
   it — don't re-add. A `git checkout` restore can resurrect them, so make pyc removal a
   deliberate separate commit if it recurs.
+- **Verdict-comment attribution (Requestor/Requestee) — DON'T SWAP.** `Requestor:` = the
+  **reviewer** (comment author); `Requestee:` = the **PR author** being addressed. `trust_signals.py`
+  keys reviewer identity off `Requestor:` (charter `issues.md` §Verdict-Comment Grammar), so a swap
+  mis-attributes the review to the author and corrupts retro scoring. When spawning reviewer agents,
+  instruct them `Requestor: <Reviewer>.<Name>` / `Requestee: <PRAuthor>.<Name>` /
+  `RequestOrReplied: Request` (`Replied` only for a clean/approval turn). Caught Phase-6-W1 on
+  #159/#160 where I handed reviewers swapped fields; fixed in place via
+  `gh api repos/.../issues/comments/<id> -X PATCH -f body=...` (edit only the two header lines).
 
 State + queue: [[project_framework_extraction_state]].
