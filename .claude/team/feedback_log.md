@@ -298,3 +298,77 @@ are a **supplementary manual tally** of the `Must-fix:` markers; the pure scorin
    tracked as **#94**.
 4. Make `branch.integration` phase-aware (template supports only `{wave}`, not `{phase}`), so
    phase-namespaced projects can be scored without hand-editing config. → new tech-debt issue.
+
+## Retrospective: Wave 6 (Phase 6 Wave 1) — 2026-07-06 — "Prove it on real repos" (validation)
+
+### Wave Metrics
+- **5 PRs merged** to `deployments/phase6/wave-1`: #154 (#153 real-repo provisioner, Paloma), #157
+  (#109 botfarm upgrade study, Ibrahim), #156 (#101 noorinalabs reconcile, Paloma), #159 (#152
+  installer docs, Nia), #160 (#149 durability hardening, Ibrahim).
+- **3 changes-requested cycles** (all Tariq): #154, #156, #160 — each amended in place to
+  `Replied`/`Must-fix: None` after the fix landed.
+- Issues closed: #153, #101, #109, #152, #149. Tech-debt filed: #161 (CONTRIBUTING flag-table
+  row), #162 (amend-path stale config module lists / finding-6), #163 (unguarded `os.close` in
+  `_fsync_dir`), #164 (amend-in-place erases per-reviewer must_fix_caught from the scorer). #102
+  (18-asset noorinalabs port) deferred to Wave 2 as a per-hook rewiring effort.
+- CI health: 0 CI-red merges; every PR merged CLEAN (11/11 checks).
+- **Lifecycle reconciliation:** the Wave-1 kickoff was never persisted last session
+  (`state.json` read `current_wave=wave-5`); reconstructed via the full allocate→start→scope→
+  kickoff→wrapup sequence (commit `922614f`). Wave physically ran on GitHub the whole time.
+
+### Counter Corrections
+- `changes_requested_cycles`: **claimed 3, recomputed 0 → claimed stands.** The recompute-to-0 is
+  fully explained by the in-place verdict amendments (`trust_signals` reads current comment state).
+  Recorded as `wave_6_counter_corrections` (measurement conflict, not an arithmetic error). This is
+  the trigger for **#164**.
+
+### Top-Implementer Concentration
+- max PRs by one author = 2 (Paloma **and** Ibrahim) / 5 total = **40%**. Below the 60% force-call
+  threshold; load spread across three authors on a validation-themed wave. Healthy.
+
+### Per-Engineer Assessments (reconstructed — see #164)
+- **Tariq Morales** — must_fix_caught=**3**, all load-bearing and mutation-proven (revert-the-fix →
+  test fails). Delta **+1 → 4→5** (distribution-discipline reserved 5: the singular top performer,
+  3 catches vs 0 for all others; first earned 5 in project history). Also caught the orchestrator's
+  Requestor/Requestee attribution swap on #159/#160.
+- **Paloma Gupta** — prs_merged=2, must_fix_received=**2** (#154, #156 both shipped new behavior
+  without its test). Delta **0 → 4** (not clean ⇒ no bump; <3 received ⇒ no ding). Negative-signal
+  line: repeated ship-without-test pattern, same root cause twice in one wave.
+- **Ibrahim El-Amin** — prs_merged=2 (#157 clean, #160 rework), must_fix_received=1 (tautological
+  fsync test). Delta **0 → 4**. Negative-signal line: the tautological test landed in the exact fix
+  that mattered most (durability).
+- **Nia Rossi** — prs_merged=1 (#159 docs), clean. Delta **0 → 4** (single clean PR is not a bump).
+  Negative-signal line: lowest output this wave; watch for decay if signal stays quiet.
+
+### Top 3 Going Well
+1. **The validation theme paid off in the wild:** the read-only source-unchanged invariant held
+   across all real sources (no `SourceMutatedError`); botfarm restored byte-identical on a 150-file
+   diverged install; live-pin resolution caught botfarm's `main` advancing mid-session; and real
+   durability bugs (parent-dir fsync gap, archive non-atomicity) surfaced and were fixed same-wave.
+2. **QA depth is real, not theater:** 3 genuine load-bearing catches, each mutation-proven
+   non-tautological before clearing — exactly the bar that keeps the quality oracle honest.
+3. **Clean delivery under real review pressure:** 0 CI-red, every PR CLEAN at merge, tech-debt
+   triaged into tracked issues rather than dropped.
+
+### Top 3 Pain Points
+1. **The verdict amend-in-place convention erases per-reviewer scoring signal** (#164). The
+   mechanical scorer, run post-amendment, reported `must_fix_caught=0` for everyone and dropped the
+   wave's standout reviewer (Tariq) from the output entirely. The retro had to hand-reconstruct.
+2. **Repeated ship-without-test on new behavior** (Paloma ×2, Ibrahim ×1 tautological). The gap was
+   never the logic — it was test coverage of newly-added behavior, caught only at QA. A pre-review
+   self-check ("does every new behavior have a load-bearing test?") would move these left.
+3. **Lifecycle state wasn't persisted at kickoff** — the wave ran for its entire life with
+   `state.json` stuck at `wave-5`, requiring a full retroactive reconciliation at wrapup. The
+   kickoff → state-write step is not enforced.
+
+### Proposed Process/Framework Changes (approval-gated — NOT yet applied)
+1. **Resolve #164** so per-reviewer `must_fix_caught` survives the amendment convention (read edit
+   history, or record catches at issue-time into `state.json`, or post a distinct `Replied`
+   follow-up instead of editing in place). Without this, every clean-after-fix wave under-credits QA.
+   **Rationale:** this wave the scorer would have zeroed the single most important contributor.
+2. **Add a pre-review author self-check gate:** "every new behavior has a load-bearing (revert →
+   fail) test" before requesting review. **Rationale:** all 3 must-fixes this wave were this exact
+   class; moving it left saves a full review→fix→re-verify cycle each.
+3. **Make lifecycle kickoff persistence non-optional** — `/wave-start` (or kickoff) should fail
+   loudly if `state.json` doesn't advance `current_wave`, so a wave can't run un-stamped.
+   **Rationale:** avoids the retroactive reconciliation this retro needed.
