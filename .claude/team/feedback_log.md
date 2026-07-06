@@ -414,13 +414,17 @@ proposal 1 → #164 (PR #171), proposal 2 → #167 (PR #172, hard gate), proposa
    the gate both under-enforces (one unrelated test edit satisfies the diff) and over-blocks (pure
    refactors) until hardened. It is live in this repo — watch for friction.
 
-### Process proposals from THIS retro (approval-gated — NOT yet applied)
+### Process proposals from THIS retro (approval-gated)
 1. **Harden the fail-closed guarantee before relying on it:** resolve #175 (dispatcher must not
    ALLOW on uncaught exception) as a prerequisite before the #167 gate is trusted org-wide.
    **Rationale:** a fail-closed hook behind a fail-open dispatcher is fail-open.
+   **Status: not yet applied** (tracked under #175, Wave 3).
 2. **Weigh block-vs-tech-debt at review time:** Nia's dispatcher finding was real but filed as
    tech-debt, so it scored nothing and doesn't hold the merge. Consider a norm: a finding that
    defeats a shipping feature's core guarantee is a Must-fix, not tech-debt.
+   **Status: APPLIED via #180** (Wave 3, S6) — the norm is now written into the charter's
+   Verdict-Comment Grammar (`framework/assets/team/charter/issues.md` § Request vs. Replied,
+   Must-fix vs. Tech-debt), with the #175 case as the worked example.
 
 ### Next wave (owner decision — not started)
 No wave reserved. Standing flagship candidate: **#102** (mined-asset port / fork reconciliation) —
