@@ -83,6 +83,11 @@ if str(_HOOKS_DIR) not in sys.path:
 from _framework_config import config  # noqa: E402
 from _shell_parse import strip_heredocs  # noqa: E402
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command (this is a warn-only hook —
+#: it never blocks, so it must never crash-block either).
+FAIL_OPEN = True
+
 # ---------------------------------------------------------------------------
 # Pattern 3: ${!var} / ${!arr[@]} / ${!arr[*]} — bash indirect/keys expansion
 # ---------------------------------------------------------------------------

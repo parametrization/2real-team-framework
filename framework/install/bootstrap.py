@@ -125,6 +125,8 @@ def _schema_defaults() -> dict:
             "tech_debt_exit_ratio_pct": 10,
             "retro_counter_drift_abs": 2,
             "retro_counter_drift_pct": 5,
+            "branch_freshness_max_commits_behind": 0,
+            "branch_freshness_max_age_days": 0,
         },
         "hooks": {
             "pre_bash": [
@@ -136,11 +138,12 @@ def _schema_defaults() -> dict:
                 "validate_review_comment_format",
                 "validate_workflow_paths_coverage",
                 "require_load_bearing_test",
+                "validate_branch_freshness",
                 "validate_pr_ci_status",
                 "block_squash_wave_merge",
             ],
             "post_bash": ["warn_pipe_mask_rc"],
-            "post_file": ["ontology_tracker"],
+            "post_file": ["ontology_tracker", "suggest_generic_prompt"],
             "session_start": ["ontology_refresh", "session_start"],
             "agent": [],
             "stop": ["session_handoff"],

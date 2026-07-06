@@ -23,6 +23,7 @@ CHARTER_FILES = (
     "pull-requests.md",
     "issues.md",
     "hooks.md",
+    "skills.md",
 )
 
 

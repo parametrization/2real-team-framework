@@ -5,8 +5,11 @@ hook modules into the installed ``.claude/hooks/``, points the config's
 ``hooks.agent`` / ``hooks.stop`` lists at them, and fires JSON payloads through
 the INSTALLED dispatchers as subprocesses — asserting PreToolUse semantics for
 Agent (first block wins, exit 2), never-block semantics for Stop (always exit
-0, advisories aggregated, block decisions downgraded), and fail-open behaviour
-for missing/raising modules on both. Stdlib + pytest only.
+0, advisories aggregated, block decisions downgraded), a missing module always
+skipped on both, and (#175) per-hook fail-direction on a raising module: Agent
+gate hooks default to fail-CLOSED unless they declare `FAIL_OPEN = True`,
+while Stop hooks are unconditionally swallowed (Stop never blocks by design,
+so there is no fail-direction to declare). Stdlib + pytest only.
 """
 
 from __future__ import annotations
@@ -53,6 +56,9 @@ def _fire(target: Path, dispatcher: str, payload: dict) -> subprocess.CompletedP
 _BLOCKER = 'def check(input_data):\n    return {"decision": "block", "reason": "agent gate says no"}\n'
 _WARNER = 'def check(input_data):\n    return {"decision": "allow", "systemMessage": "heads up"}\n'
 _RAISER = 'def check(input_data):\n    raise RuntimeError("boom")\n'
+_FAIL_OPEN_RAISER = (
+    'FAIL_OPEN = True\n\ndef check(input_data):\n    raise RuntimeError("boom")\n'
+)
 _STOP_NOTE = 'def check(input_data):\n    return {"systemMessage": "stop note"}\n'
 _STOP_BLOCKER = 'def check(input_data):\n    return {"decision": "block", "reason": "do not stop"}\n'
 
@@ -109,12 +115,27 @@ def test_agent_default_is_empty_and_allows(tmp_path: Path) -> None:
     assert r.stdout.strip() == ""
 
 
-def test_agent_fail_open_on_import_error_and_raise(tmp_path: Path) -> None:
+def test_agent_missing_module_skipped_undeclared_raise_blocks(tmp_path: Path) -> None:
+    """#175: a missing module is still skipped (ImportError, nothing to run), but a
+    raising module with no `FAIL_OPEN = True` declaration now BLOCKS — the dispatcher's
+    default fail-direction for an undeclared/crashing hook flipped from allow to block."""
     _install(tmp_path)
     _write_hook(tmp_path, "agent_raiser", _RAISER)
     _set_hooks(tmp_path, "agent", ["not_installed_module", "agent_raiser"])
     r = _fire(tmp_path, "dispatcher.py", {"tool_name": "Agent", "tool_input": {"prompt": "x"}})
-    assert r.returncode == 0  # missing module skipped; raising module swallowed
+    assert r.returncode == 2
+    assert "agent_raiser" in r.stdout
+    assert "fail-closed" in r.stdout.lower()
+
+
+def test_agent_declared_fail_open_raise_still_allows(tmp_path: Path) -> None:
+    """#175: a hook that explicitly opts in with `FAIL_OPEN = True` keeps the
+    pre-#175 behaviour — a crash inside it is swallowed, not blocked."""
+    _install(tmp_path)
+    _write_hook(tmp_path, "agent_fail_open_raiser", _FAIL_OPEN_RAISER)
+    _set_hooks(tmp_path, "agent", ["not_installed_module", "agent_fail_open_raiser"])
+    r = _fire(tmp_path, "dispatcher.py", {"tool_name": "Agent", "tool_input": {"prompt": "x"}})
+    assert r.returncode == 0  # missing module skipped; declared-fail-open raise swallowed
 
 
 # ------------------------------------------------------------------- Stop event

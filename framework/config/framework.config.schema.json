@@ -110,8 +110,10 @@
         "load_bearing_test_exceptions": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "default": {},
-          "description": "Map of <class> -> <human rationale> naming the only bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Empty = no bypass allowed (the gate is a hard, unconditional block until a class is configured)."
+          "default": {
+            "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed."
+          },
+          "description": "Map of <class> -> <human rationale> naming the bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Ships pre-seeded with a `refactor` class (#176) so a pure-refactor PR is not hard-blocked with zero configured bypass; a repo may add more classes."
         },
         "tech_debt_intake_pct": {
           "type": "integer",
@@ -138,6 +140,18 @@
           "default": 5,
           "minimum": 0,
           "description": "/wave-retro counter-drift tolerance (percent). See retro_counter_drift_abs."
+        },
+        "branch_freshness_max_commits_behind": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "validate_branch_freshness.py (#179): when > 0, a feature branch is flagged once it is behind its base by MORE than this many commits. 0 (default) DISABLES the commits-behind dimension — branch-freshness is opt-in, off by default (0 == disabled, matching branch_freshness_max_age_days; NOT zero-tolerance). With both freshness knobs 0 the gate does nothing (no git/gh call)."
+        },
+        "branch_freshness_max_age_days": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "validate_branch_freshness.py (#179): additionally flag a branch whose merge-base with its base branch is older than this many days (only evaluated when the branch is already behind by at least one commit). 0 (default) disables the age dimension — only branch_freshness_max_commits_behind is enforced."
         }
       }
     },
@@ -167,7 +181,9 @@
         "memory": { "type": "string", "default": ".claude/memory", "description": "Version-controlled project memory." },
         "ontology": { "type": "string", "default": "ontology", "description": "Two-layer ontology root (omit if unused)." },
         "state_file": { "type": "string", "default": ".claude/state.json", "description": "The wave/iteration state file the lifecycle skills read/write." },
-        "events_log": { "type": "string", "default": ".claude/framework/events.jsonl", "description": "Where hooks append block/event records (the generic observability stream)." }
+        "events_log": { "type": "string", "default": ".claude/framework/events.jsonl", "description": "Where hooks append block/event records (the generic observability stream)." },
+        "generic_prompt_ledger": { "type": "string", "default": ".claude/generic_prompt_ledger.json", "description": "The durable per-artifact genericize/skip decision ledger (#102) the suggest_generic_prompt hook feeds and the promotion-audit skill reads." },
+        "promotion_audit_log": { "type": "string", "default": ".claude/team/promotion_audit_log", "description": "Directory the promotion-audit skill writes its per-wave audit log into (wave_<id>.md)." }
       }
     },
     "hooks": {
@@ -178,7 +194,7 @@
         "pre_bash": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_pr_ci_status", "block_squash_wave_merge"],
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_branch_freshness", "validate_pr_ci_status", "block_squash_wave_merge"],
           "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
         },
         "post_bash": {
@@ -190,7 +206,7 @@
         "post_file": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["ontology_tracker"],
+          "default": ["ontology_tracker", "suggest_generic_prompt"],
           "description": "Ordered PostToolUse checks for file-mutating tools (Edit/Write/MultiEdit/NotebookEdit). Advisory only — never block."
         },
         "session_start": {

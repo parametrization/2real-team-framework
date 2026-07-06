@@ -65,9 +65,22 @@ _DEFAULTS: dict[str, Any] = {
         "merge_model": "direct-to-main",
         "admin_merge_exceptions": {},
         # Load-bearing-test pre-review gate (#167): map of <class> -> rationale
-        # naming the only bypass classes require_load_bearing_test.py accepts via
-        # LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale>. Empty = no bypass.
-        "load_bearing_test_exceptions": {},
+        # naming the bypass classes require_load_bearing_test.py accepts via
+        # LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale>. Pre-seeded with one
+        # class, `refactor` (#176), so a pure-refactor PR (no new behavior, so
+        # no test to pair) is not hard-blocked with zero configured bypass. A
+        # repo may add more classes; removing this key entirely is NOT
+        # sufficient to disable the seed (dict-valued config keys merge over
+        # these runtime defaults rather than replacing them — see
+        # _deep_merge) — a repo that wants zero classes must fork this default.
+        "load_bearing_test_exceptions": {
+            "refactor": (
+                "Pure refactor / no external behavior change (renames, "
+                "extraction, dead-code removal, formatting) - nothing new to "
+                "test. State exactly what was restructured and confirm no "
+                "observable behavior changed."
+            ),
+        },
         # Lifecycle-skill knobs (#86): per-wave tech-debt intake (/plan-phase),
         # phase-exit tech-debt gate (/phase-review), retro counter-drift
         # tolerances (/wave-retro).
@@ -75,6 +88,11 @@ _DEFAULTS: dict[str, Any] = {
         "tech_debt_exit_ratio_pct": 10,
         "retro_counter_drift_abs": 2,
         "retro_counter_drift_pct": 5,
+        # Branch-freshness gate (#179): commits-behind (+ optional age) staleness
+        # thresholds read by validate_branch_freshness.py. Both 0 == DISABLED
+        # (opt-in, off by default); the gate does nothing until a knob is set > 0.
+        "branch_freshness_max_commits_behind": 0,
+        "branch_freshness_max_age_days": 0,
     },
     "ci": {
         "merge_requires_green": True,
@@ -89,6 +107,8 @@ _DEFAULTS: dict[str, Any] = {
         "ontology": "ontology",
         "state_file": ".claude/state.json",
         "events_log": ".claude/framework/events.jsonl",
+        "generic_prompt_ledger": ".claude/generic_prompt_ledger.json",
+        "promotion_audit_log": ".claude/team/promotion_audit_log",
     },
     "hooks": {
         "pre_bash": [
@@ -100,11 +120,12 @@ _DEFAULTS: dict[str, Any] = {
             "validate_review_comment_format",
             "validate_workflow_paths_coverage",
             "require_load_bearing_test",
+            "validate_branch_freshness",
             "validate_pr_ci_status",
             "block_squash_wave_merge",
         ],
         "post_bash": ["warn_pipe_mask_rc"],
-        "post_file": ["ontology_tracker"],
+        "post_file": ["ontology_tracker", "suggest_generic_prompt"],
         "session_start": ["ontology_refresh", "session_start"],
         "agent": [],
         "stop": ["session_handoff"],

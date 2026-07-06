@@ -131,6 +131,23 @@ enforces the **shape** (a malformed header is *blocked*) and — since #118 —
 - **`Tech-debt:` for everything non-blocking** — nits, follow-ups, "accept
   as-is" notes, reviewer-name corrections, anything you would *not* hold the
   merge for. Tracked as issues; never scored as blocking.
+- **A finding that defeats a shipping feature's core guarantee is a
+  `Must-fix:`, not `Tech-debt:`** — even when the surrounding code otherwise
+  works and the PR is "done." Ask: *if this finding stands unresolved, does
+  the guarantee this PR ships still hold?* If no, it blocks the merge; filing
+  it as tech-debt lets the broken guarantee ship anyway, and the mechanical
+  scorer gives the reviewer **zero credit** for catching it (`Tech-debt:`
+  items are never counted toward `must_fix_received`/`must_fix_caught`).
+
+**Worked example (Phase 6 Wave 2, #175):** review of the fail-closed
+load-bearing-test hook (#167) found that `dispatcher.py` swallows an uncaught
+hook exception as `ALLOW` — the dispatcher fails **open**. That defeats
+#167's entire premise (a *fail-closed* gate). The finding was filed as
+`Tech-debt:` because the surrounding code "worked" outside that edge case; the
+scorer credited it nothing and it did not hold the merge, so a fail-closed
+guarantee shipped sitting on a fail-open dispatcher. Under this norm the same
+finding is filed `Must-fix:` — it defeats #167's core guarantee, full stop.
+(Charter norm adopted via #180.)
 
 Two Phase-4-Wave-1 misuses the warn tier now flags (each surfaced a phantom
 blocking signal that flattened the trust matrix):
