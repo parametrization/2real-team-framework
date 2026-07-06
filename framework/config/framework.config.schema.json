@@ -110,8 +110,10 @@
         "load_bearing_test_exceptions": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "default": {},
-          "description": "Map of <class> -> <human rationale> naming the only bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Empty = no bypass allowed (the gate is a hard, unconditional block until a class is configured)."
+          "default": {
+            "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed."
+          },
+          "description": "Map of <class> -> <human rationale> naming the bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Ships pre-seeded with a `refactor` class (#176) so a pure-refactor PR is not hard-blocked with zero configured bypass; a repo may add more classes."
         },
         "tech_debt_intake_pct": {
           "type": "integer",

@@ -38,7 +38,9 @@
       "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
       "emergency": "[EMERGENCY]-prefixed restore work"
     },
-    "load_bearing_test_exceptions": {},
+    "load_bearing_test_exceptions": {
+      "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed."
+    },
     "tech_debt_intake_pct": 20,
     "tech_debt_exit_ratio_pct": 10,
     "retro_counter_drift_abs": 2,
