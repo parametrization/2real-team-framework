@@ -44,6 +44,9 @@ node/*.tgz
 .claude/settings.local.json
 # Agent worktree checkouts (isolation dirs, never committed)
 .claude/worktrees/
+# Consent-gated archive-then-fresh backups (repo_space.py archive/restore, #108/#149);
+# a restore/archive must not leave untracked noise in the working tree.
+.claude-backups/
 
 # ---- Editor / OS ----
 .DS_Store

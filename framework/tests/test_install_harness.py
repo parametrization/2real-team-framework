@@ -22,7 +22,15 @@ sys.path.insert(0, str(_FRAMEWORK_ROOT / "install"))  # install_config / manifes
 
 import install_config  # noqa: E402  (framework/install sibling — the resolved-config accessors)
 
-from framework.harness import buckets, compare, manifest, metrics, snapshot, teardown  # noqa: E402
+from framework.harness import (  # noqa: E402
+    buckets,
+    compare,
+    manifest,
+    metrics,
+    real_provision,
+    snapshot,
+    teardown,
+)
 from framework.harness.records import (  # noqa: E402
     MetricRecord,
     RunEnvelope,
@@ -262,6 +270,33 @@ def test_manifest_driven_uninstall_flags_residue_when_backup_missing(tmp_path: P
     assert "keep.py" in residue  # modified content is residue vs the pre-install snapshot
 
 
+# ------------------------------------- #149 finding: no_backup_litter scopes to installer output
+
+
+def test_no_backup_litter_ignores_preexisting_checked_in_baks(tmp_path: Path) -> None:
+    """A `.bak` present in the pre-install snapshot is the fixture's litter, not the installer's.
+
+    #101's noorinalabs run flagged the source repo's OWN checked-in `errors.jsonl.bak.*` as
+    installer litter. The metric now diffs against ``ctx.before`` (the pre-install snapshot),
+    so a pre-existing `.bak` passes but a NEW one the install created fails.
+    """
+    # A `.bak` checked into the fixture BEFORE install (captured in the pre-install snapshot).
+    preexisting = tmp_path / ".claude" / "annunaki"
+    preexisting.mkdir(parents=True)
+    (preexisting / "errors.jsonl.bak.20260429").write_text("old\n", encoding="utf-8")
+    before = snapshot.snapshot(tmp_path)
+
+    ctx = metrics.CellContext(workdir=tmp_path, installer="bootstrap", permutation={}, before=before)
+    m = metrics.m_no_backup_litter(ctx)
+    assert m.passed is True and m.value == 0  # the repo's own checked-in .bak is not our litter
+
+    # A NEW .bak the install produced (absent from `before`) is still flagged.
+    (tmp_path / "CLAUDE.md.20260705T000000Z.bak").write_text("backup\n", encoding="utf-8")
+    m2 = metrics.m_no_backup_litter(ctx)
+    assert m2.passed is False and m2.value == 1
+    assert m2.observed["baks"] == ["CLAUDE.md.20260705T000000Z.bak"]
+
+
 # --------------------------------------------------------------- buckets matrix
 
 
@@ -292,9 +327,14 @@ def test_provisioners_synthesize_expected_layout(tmp_path: Path) -> None:
     assert (tmp_path / "b8b" / "bad.config.json").is_file()
 
 
-def test_real_bucket_provisioner_is_a_guarded_stub(tmp_path: Path) -> None:
-    with pytest.raises(NotImplementedError, match="pinned SHA"):
-        buckets._prov_real_stub(tmp_path, {})
+def test_real_bucket_provisioner_degrades_when_fixture_unresolvable(tmp_path: Path) -> None:
+    """The #153 provisioner replaced the raw stub: an unresolvable fixture raises
+    MissingFixtureError (a NotImplementedError subclass) so the runner's skip path still fires."""
+    prov = buckets.make_real_provisioner("B11")
+    opts = {"real_fixtures": {"B11": real_provision.RealFixtureSpec(
+        bucket="B11", source=str(tmp_path / "does-not-exist"))}}
+    with pytest.raises(NotImplementedError):
+        prov(tmp_path / "wd", opts)
 
 
 # --------------------------------------------------------------- end-to-end (real installer)
