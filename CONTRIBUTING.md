@@ -64,7 +64,7 @@ Key flags:
 | `--installers LIST` | Which installers to exercise (`bootstrap,cli`; default both) |
 | `--scale N` | B9 synthesized file count (default 300) |
 | `--no-dogfood` | Skip the B12 `reinstall --check` leg |
-| `--compare` + `--json` | Also print the full machine JSON to stdout |
+| `--json` | Print the full machine JSON to stdout (standalone — works with or without `--compare`) |
 
 **Real-repo mode (`--include-real`, Phase 6).** B10 (`meta-real-world`) and B11
 (`standalone-real-world`) run the harness against **real checkouts** instead of synthesized
