@@ -92,6 +92,11 @@ from _shell_parse import (  # noqa: E402
     tokenize,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "cannot determine -> fail-open" posture.
+FAIL_OPEN = True
+
 # --- Command-shape matchers -------------------------------------------------
 
 _GH_PR_GATE_ACTIONS = {"create", "ready"}

@@ -9,7 +9,12 @@ reviewer count, identity roster, …) from that same config. All hooks are
 stdlib-only, and fail open by default — a broken hook never blocks unrelated
 work — with one deliberate exception: `require_load_bearing_test` (see below and
 [pull-requests.md § Pre-Review Self-Check](pull-requests.md)) fails **closed** on
-the review-request path, by owner-approved design (#167).
+the review-request path, by owner-approved design (#167). "Fail open" is now an
+explicit, per-hook opt-in (`FAIL_OPEN = True`) rather than the dispatcher's
+implicit default: if a hook's `check()` raises an uncaught exception, the
+dispatcher blocks unless that module declared itself fail-open, so a hook that
+forgets to declare (like `require_load_bearing_test`, deliberately) fails closed
+on its own crash too (#175).
 
 ## Rule → Enforcement Map
 

@@ -113,6 +113,11 @@ from _shell_parse import (  # noqa: E402
     walk_flag_values,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "fail-open posture (matches the dispatcher)".
+FAIL_OPEN = True
+
 # --------------------------------------------------------------------------- #
 # Canonical grammar — the vocabulary #98 aligns against.
 # --------------------------------------------------------------------------- #

@@ -48,6 +48,11 @@ from _shell_parse import (  # noqa: E402
     tokenize,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "parse failure -> fail open" posture.
+FAIL_OPEN = True
+
 
 def _segment_has_no_verify(segment: list[str]) -> bool:
     """True if a tokenized git commit/push segment carries --no-verify or -n.

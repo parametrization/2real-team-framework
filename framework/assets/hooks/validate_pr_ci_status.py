@@ -70,6 +70,11 @@ from _framework_config import config  # noqa: E402
 from _framework_log import log_pretooluse_block  # noqa: E402
 from _repo_flag_parse import extract_repo  # noqa: E402
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command rather than blocking on the
+#: hook's own bug.
+FAIL_OPEN = True
+
 # Conclusion values that unambiguously indicate a failed check.
 _FAILURE_CONCLUSIONS = {
     "FAILURE",

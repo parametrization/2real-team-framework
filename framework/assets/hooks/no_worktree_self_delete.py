@@ -81,6 +81,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _framework_log import log_pretooluse_block  # noqa: E402
 from _shell_parse import resolve_invocation_cwd  # noqa: E402
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "any unexpected exception returns None (allow)" posture.
+FAIL_OPEN = True
+
 # Shell operators that separate command segments. We split on these to reach
 # each `git worktree remove` invocation individually.
 _SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||;|\|")

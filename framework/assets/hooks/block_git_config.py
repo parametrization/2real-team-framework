@@ -50,6 +50,11 @@ from _shell_parse import (  # noqa: E402
     tokenize,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "parse failure -> fail open" posture.
+FAIL_OPEN = True
+
 # Config keys the policy actually protects (commit identity). The whole `user.`
 # namespace is treated as identity (user.name / user.email / user.signingkey).
 # Non-identity / operational keys (core.hooksPath, commit.gpgsign, …) are NOT
