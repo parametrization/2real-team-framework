@@ -32,7 +32,8 @@ per the story's "keep it lightweight and deterministic" guidance). It instead
 enforces the mechanical PRECONDITION for a load-bearing test to exist at all: if
 the diff (base...head) adds a substantive line to a *behavior* file (a `.py` file
 under one of `_BEHAVIOR_ROOTS`, excluding test files), the SAME diff must also add
-a substantive line to a *test* file. "Substantive" excludes blank lines and
+a substantive line to a test file PAIRED to that specific behavior file (#174 —
+see "Per-file pairing" below). "Substantive" excludes blank lines and
 Python-comment-only lines, so pure formatting/comment churn doesn't count on
 either side of that ledger.
 
@@ -44,8 +45,46 @@ pre-review gate, see charter/pull-requests.md) and QA's review-time verification
 a PR cannot open review claiming "new behavior, zero test changes" — the single
 failure pattern that produced all three Wave-1 must-fixes.
 
-Out of scope for v1
-====================
+Per-file pairing (v2, #174 — Wave 3 S2)
+==========================================
+
+v1 (#167) treated ANY substantive test-file change anywhere in the diff as
+satisfying the WHOLE diff: a PR touching `hooks/foo.py` (new behavior) and
+`lib/bar.py` (new behavior) with a test change only for `foo` let `bar.py`'s new
+behavior through completely ungated. Pairing is now checked PER BEHAVIOR FILE —
+each new-behavior file must have its OWN corresponding substantive test-file
+change, not just any test-file change somewhere in the diff.
+
+A behavior file `X` counts as paired if the diff also substantively touches a
+test file that is:
+
+  1. named `test_<stem>.py` or `<stem>_test.py` for `X`'s stem — the "mapped
+     test path" for a separate-tree test layout (this repo's own convention:
+     `framework/assets/hooks/foo.py` <-> `framework/tests/test_foo.py`), OR
+  2. in the SAME DIRECTORY as `X` — for repos (this framework installs into
+     many) that co-locate tests beside source instead of a separate tree, OR
+  3. `conftest.py` — shared pytest fixture infrastructure isn't "for" any one
+     behavior file, so a substantive conftest change is accepted for every
+     behavior file in the diff.
+
+Chosen granularity: PER-FILE, not per-directory. This repo's own behavior roots
+(`framework/assets/hooks/`, `framework/assets/lib/`, etc.) each hold many
+independently-reviewed, independently-tested modules that all share one test
+root (`framework/tests/`) — a per-DIRECTORY bucket would still let module A's
+test satisfy module B's new behavior whenever A and B share a behavior root,
+reproducing the exact loophole #174 exists to close. Per-file pairing is the
+only granularity that actually closes it for this project's own layout, while
+rule 2 (same-dir) keeps the check meaningful for repos with a different,
+co-located layout.
+
+Known limitation: rule 1 requires the `test_<stem>.py` / `<stem>_test.py` naming
+convention. Existing modules that predate this convention and aren't named that
+way (and aren't covered by rule 2 or 3) will need a test renamed/added the next
+time they gain new behavior, or can use the documented override (below) if the
+change is genuinely test-exempt.
+
+Out of scope for v1/v2
+========================
 
 - Non-Python behavior surfaces (shell scripts, TS/JS, YAML-driven config) are not
   scanned — `_is_behavior_path` only recognizes `.py` files under the configured
@@ -55,6 +94,10 @@ Out of scope for v1
   (no call-graph / coverage correlation) — file presence + a substantive added
   line is the entire signal.
 - Does not execute a revert->fail simulation. See "Detection signal" above.
+- Pairing (rule 1) is nominal (filename convention), not import-graph analysis —
+  it does not open the test file to confirm it actually imports/exercises the
+  behavior module (would require fetching full file content, not just the diff
+  patch already available from the compare API, for every touched test file).
 
 Override — deliberate, documented, audited
 ============================================
@@ -66,11 +109,15 @@ override audiences never collide:
     LOAD_BEARING_TEST_EXCEPTION="<class>:<rationale>" gh pr create ...
 
 `<class>` must be a key in `policy.load_bearing_test_exceptions` (a map of
-class -> human rationale, empty by default — no bypass exists unless a repo
-configures at least one class) and `<rationale>` must be non-empty. An
-unrecognized/missing class, or no exceptions configured at all, blocks — the
-override is validated, not a free escape hatch. Every attempted override (valid
-or not) is logged via `_framework_log.log_pretooluse_block` for the audit trail.
+class -> human rationale) and `<rationale>` must be non-empty. This map ships
+PRE-SEEDED with one class, `refactor` (#176 — Wave 3 S3): a pure refactor / no
+external-behavior-change PR has no new behavior to cover, so the hard-block
+posture with zero configured bypass classes was a dead end for that legitimate
+case. A repo may add more classes via its own config — see
+`policy.load_bearing_test_exceptions` in `framework.config.schema.json`. An
+unrecognized/missing class, or an empty rationale, still blocks — the override
+is validated, not a free escape hatch. Every attempted override (valid or not)
+is logged via `_framework_log.log_pretooluse_block` for the audit trail.
 
 Fires on
 ========
@@ -88,9 +135,9 @@ module) so the parsing logic has exactly one source of truth.
 
 Exit codes:
     0 — allow (not a `gh pr create`/`gh pr ready`, no behavior file with a
-        substantive added line in the diff, a test file was touched alongside it,
-        or a validated override was supplied)
-    2 — block (new behavior without an accompanying test-file change, an
+        substantive added line in the diff, every such behavior file has its own
+        paired test-file change, or a validated override was supplied)
+    2 — block (one or more behavior files lack a paired test-file change, an
         unverifiable diff, or an invalid/unconfigured override attempt)
 """
 
@@ -211,10 +258,10 @@ def _fetch_compare_files(repo: str, base: str, head: str) -> list[dict] | None:
     return data
 
 
-def _scan_diff(files: list[dict]) -> tuple[list[str], bool]:
-    """Return (behavior_files_with_substance, test_file_touched_with_substance)."""
+def _scan_diff(files: list[dict]) -> tuple[list[str], list[str]]:
+    """Return (behavior_files_with_substance, test_files_with_substance)."""
     behavior_files: list[str] = []
-    test_touched = False
+    test_files: list[str] = []
     for entry in files:
         if not isinstance(entry, dict):
             continue
@@ -227,10 +274,49 @@ def _scan_diff(files: list[dict]) -> tuple[list[str], bool]:
         if not added:
             continue
         if _is_test_path(filename):
-            test_touched = True
+            test_files.append(filename)
         elif _is_behavior_path(filename):
             behavior_files.append(filename)
-    return behavior_files, test_touched
+    return behavior_files, test_files
+
+
+# --- Per-file pairing (#174) ---------------------------------------------------
+
+
+def _stem(path: str) -> str:
+    """The filename without its `.py` extension."""
+    return path.rsplit("/", 1)[-1][:-3]
+
+
+def _dirname(path: str) -> str:
+    """The repo-relative directory portion of `path` (``""`` for a bare filename)."""
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _mapped_test_basenames(behavior_path: str) -> tuple[str, str]:
+    """The two test-file basenames `behavior_path`'s stem maps to under the
+    `test_<name>.py` / `<name>_test.py` naming convention — the "mapped test
+    path" for a separate-tree test layout (see module docstring)."""
+    stem = _stem(behavior_path)
+    return (f"test_{stem}.py", f"{stem}_test.py")
+
+
+def _behavior_file_paired(behavior_path: str, test_files: list[str]) -> bool:
+    """True if `behavior_path` has its own corresponding substantive test-file
+    change among `test_files` — the S2 (#174) per-file pairing check. See the
+    module docstring's "Per-file pairing" section for the three pairing rules
+    (mapped test-name, same directory, `conftest.py`)."""
+    mapped = set(_mapped_test_basenames(behavior_path))
+    behavior_dir = _dirname(behavior_path)
+    for test_path in test_files:
+        basename = test_path.rsplit("/", 1)[-1]
+        if basename == "conftest.py":
+            return True
+        if basename in mapped:
+            return True
+        if _dirname(test_path) == behavior_dir:
+            return True
+    return False
 
 
 # --- Override validation (mirrors ADMIN_MERGE_EXCEPTION in
@@ -293,24 +379,29 @@ def _fail_closed_reason(detail: str) -> str:
     )
 
 
-def _no_test_reason(behavior_files: list[str], repo: str, base: str, head: str) -> str:
-    files_list = "\n  - ".join(behavior_files)
+def _no_test_reason(unpaired_files: list[str], repo: str, base: str, head: str) -> str:
+    files_list = "\n  - ".join(unpaired_files)
     return (
         f"BLOCKED: this PR ({repo} {base}...{head}) adds new behavior to "
-        f"{len(behavior_files)} file(s) with no accompanying test-file change in "
-        f"the same diff:\n  - {files_list}\n\n"
+        f"{len(unpaired_files)} file(s) with no test-file change PAIRED to that "
+        f"specific file in the same diff:\n  - {files_list}\n\n"
         "Pre-review self-check gate (charter/pull-requests.md § Pre-Review "
-        "Self-Check, #167): every new behavior needs a load-bearing (revert->fail) "
-        "test — one that FAILS if the behavior it covers is reverted. All three "
-        "Wave-1 must-fixes were this exact class, caught only at QA; this gate "
+        "Self-Check, #167/#174): every new-behavior file needs its OWN "
+        "load-bearing (revert->fail) test. Pairing is checked PER FILE, not once "
+        "for the whole diff (#174) — a substantive test-file change elsewhere in "
+        "this PR does not satisfy the file(s) listed above unless it is named "
+        "`test_<name>.py` / `<name>_test.py` for that file's stem, lives in the "
+        "same directory as that file, or is `conftest.py`. All three Wave-1 "
+        "must-fixes were this exact failure class, caught only at QA; this gate "
         "moves the check to PR-open time.\n\n"
-        "Add or extend a test that exercises the new behavior, then retry "
-        "`gh pr create`/`gh pr ready`. If this really is test-exempt (e.g. a pure "
-        "refactor with no behavior change — note this v1 gate cannot tell that "
+        "Add or extend a paired test for each file above, then retry `gh pr "
+        "create`/`gh pr ready`. If this really is test-exempt (e.g. a pure "
+        "refactor with no behavior change — note this gate cannot tell that "
         "apart from new behavior with a missing test), use the documented "
         "override:\n"
         f'  {_OVERRIDE_ENV_VAR}="<class>:<rationale>" gh pr create ...\n'
-        "where <class> is a key configured under `policy.load_bearing_test_exceptions`."
+        "where <class> is a key configured under `policy.load_bearing_test_exceptions` "
+        "(ships pre-seeded with a `refactor` class, #176)."
     )
 
 
@@ -368,12 +459,16 @@ def check(input_data: dict) -> dict | None:
             _fail_closed_reason(f"`gh api compare {repo} {base}...{head}` failed"),
         )
 
-    behavior_files, test_touched = _scan_diff(files)
-    if not behavior_files or test_touched:
+    behavior_files, test_files = _scan_diff(files)
+    if not behavior_files:
+        return None
+
+    unpaired = [f for f in behavior_files if not _behavior_file_paired(f, test_files)]
+    if not unpaired:
         return None
 
     return _blocked_with_override_check(
-        input_data, command, _no_test_reason(behavior_files, repo, base, head)
+        input_data, command, _no_test_reason(unpaired, repo, base, head)
     )
 
 
