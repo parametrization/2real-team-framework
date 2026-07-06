@@ -1,70 +1,69 @@
 <!-- handoff: manual — written by the /handoff skill; the session_handoff auto-hook must not overwrite this file. Delete it (or this line) to re-enable auto-refresh. -->
-# Session Handoff — 2026-07-06 (Phase 6 Wave 2 COMPLETE; v0.7.0 SHIPPED to main + both registries)
+# Session Handoff — 2026-07-06 (Phase 6 Wave 3 COMPLETE; v0.8.0 SHIPPED to main + both registries)
 
 ## Pickup (next concrete step)
-**Phase 6 Wave 2 ("close the quality/process loop") is DONE and released. main is at v0.7.0.**
-Nothing is in flight. The next action is an **owner decision**: pick the next wave/phase theme.
-**No wave is reserved** (unlike last session's #165 stub). Standing flagship candidate = **#102**.
-Do NOT start a wave without theme + kickoff approval (gate).
+**Phase 6 Wave 3 ("fail-closed foundation + flagship asset port") is DONE and released. main is at
+v0.8.0.** Nothing is in flight. The next action is an **owner decision**: pick the next wave/phase
+theme. **No wave is reserved.** Standing candidate = **#102 P2 tranche** (now unblocked by the P0
+pipeline that shipped this wave). Do NOT start a wave without theme + kickoff approval (gate).
 
 When the owner sets a theme + approves kickoff: scope via `lifecycle.py wave allocate/start/scope`
-(next global wave = **8**; no reservation to claim), then `/wave-start` (approval-gated). Base =
+(next global wave = **9**; no reservation to claim), then `/wave-start` (approval-gated). Base =
 `main`. Lifecycle: `framework/assets/lib/lifecycle.py` (this repo has NO `.claude/lib` — runs from
 assets; state file = `.claude/state.json`).
 
 ### Candidate next material (owner picks the theme)
-- **Top carry-forward — #102**: port the ~18 mined noorinalabs assets (fork-reconciliation:
-  P0 promotion/genericization pipeline, P1 `validate_branch_freshness.py` + roster-union). Explicitly
-  deferred to run on the #164 scorer fix this wave shipped. Sized as its own wave.
-- **S2 hardening tranche (NEW this wave, all OPEN):** **#175** `dispatcher.py` swallows uncaught hook
-  exceptions as ALLOW — undermines #167's fail-closed intent (resolve BEFORE trusting the gate
-  org-wide) · **#174** `test_touched` is diff-wide not per-behavior-file · **#176** pre-seed a
-  `load_bearing_test_exceptions` class (empty default hard-blocks pure refactors).
-- **Installer-completeness wave (Option C):** **#162** stale config module lists (deferred here as an
-  installer-correctness bug) + **#142** uninstall/`--teardown` + **#148** `cli_bridge_soft_degrade` +
-  `--compare` CI gate + **#141** flaky meta-install idempotency test.
-- **Exploratory:** #110 (installer-as-CC-skill). **Longstanding:** review-gate tranche
-  (`validate_pr_review` + `pr_review_state`), mid-wave reachability `gh` wrapper, LLM personas.
+- **#102 P2 tranche** (the mapping doc `framework/recipes/NOORINALABS_RECONCILE.md` §3b/§3e/§3f):
+  governance charter modules (`tech-decisions`, `artifact-ownership`, `state-claims`, `communication`),
+  wave-lifecycle GH-Projects automation (board-field sync, wave-evidence gates), ontology-consultation
+  enforcement hooks, headcount-budget check. #102 is still OPEN, annotated with the P0/P1-done note.
+- **Installer-completeness wave:** #162 (stale config module lists) + #142 (uninstall/`--teardown`) +
+  #148 (`cli_bridge_soft_degrade` + `--compare` CI gate) + #141 (flaky meta-install idempotency) +
+  #155 (real-repo provisioner hardening, 5 items).
+- **This-wave process debt (2 unapplied proposals in feedback_log, need owner approval):**
+  1. **Make `reinstall.py` mirror the charter tree** — `_MANAGED_TREES` covers only `skills/`, so
+     `team/charter/**` edits are hand-dual-deployed and a canonical↔runtime charter drift passes CI
+     today (Paloma flagged on #181; the #180 norm edit had to be hand-applied to both copies).
+  2. **Dogfood the `promotion-audit` skill** (shipped this wave, #102-P0) on this repo's own
+     memory/charter and hand-verify its AUTO-tier promotions + DECIDE-tier draft issues once — the way
+     the #164 ledger got its first real validation this wave.
+- **Exploratory:** #110 (installer-as-CC-skill); #177 rename (report exists in `RENAME_COSTOUT.md`,
+  effort M — owner would pick a name + approve before any execution). **Longstanding:** review-gate
+  tranche (`validate_pr_review` + `pr_review_state`), mid-wave reachability `gh` wrapper, LLM personas.
 
-### 2 process proposals from THIS retro (in feedback_log, NOT yet applied — need owner approval)
-1. **Resolve #175 before relying on the #167 gate** — a fail-closed hook behind a fail-open
-   dispatcher is fail-open. Make it a prerequisite to trusting the load-bearing gate org-wide.
-2. **Weigh block-vs-tech-debt at review time** — Nia's real dispatcher finding was filed as
-   tech-debt, so it scored nothing and didn't hold the merge. Norm: a finding that defeats a shipping
-   feature's core guarantee is a Must-fix, not tech-debt.
+## What shipped this session — Phase 6 Wave 3 → v0.8.0
+**Rollup PR #186** (`deployments/phase6/wave-3` → main, merge **4af3866**). Version bump **bb2bcd7**.
+Retro commit **0945b1c**. Release **v0.8.0** (target main) → OIDC published. **Verified live: npm
+0.8.0 (`latest`); PyPI `/0.8.0/json`=200.** Lightweight tag `deployments-phase6-wave-3`. Deployment
+branch + all 5 feature branches deleted; worktrees pruned. Meta **#178** + stories **#175/#174/#176/
+#179/#180/#177** closed; **#102 kept OPEN** (P2 deferred, annotated).
 
-## What shipped this session — Phase 6 Wave 2 → v0.7.0
-**Rollup PR #173** (`deployments/phase6/wave-2` → main, merge **33c6388**). Version bump **b82939d**.
-Retro commit **6eee7b5**. Release **v0.7.0** (target main) → OIDC published. **Verified live: npm
-0.7.0 (`latest`); PyPI `/0.7.0/json`=200.** Lightweight tag `deployments-phase6-wave-2` on the merge
-commit (no Release → no double-publish). Deployment branch deleted; wave meta **#165 closed**.
-
-Clean wave — **4 PRs, 0 changes-requested cycles**, one clean PR/engineer, 507 tests (+41), ruff
-clean, `.claude/` in sync. Delivered all 3 owner-approved W6-retro proposals:
-- **#164/PR#171** (Paloma) durable review-catch ledger — fixes the W1 scorer blind spot (NOT
-  exercised by this no-amendment wave; first real test = next contested wave).
-- **#167/PR#172** (Tariq) fail-closed `require_load_bearing_test` hard gate — live in this repo.
-- **#168/PR#169** (Nia) `wave assert-kickoff` kickoff-persistence guard.
-- **#158/#163/#161/PR#170** (Ibrahim) review-pr parity + `_fsync_dir` close guard + CONTRIBUTING doc.
-
-See [[project_framework_extraction_state]] for the full v0.7.0 baseline.
+**5 PRs, 1 changes-requested cycle** (the #184 footgun), 40% concentration, **629 tests**, ruff clean,
+`.claude/` in sync. See [[project_framework_extraction_state]] for the full v0.8.0 baseline + per-story
+detail.
+- **Track A:** #175/PR#182 (Nia) dispatcher blocks-unless-`FAIL_OPEN` · #174+#176/PR#183 (Tariq)
+  per-behavior-file gate + refactor exception class.
+- **Track B:** #102-P0/PR#185 (Paloma) promotion/genericization pipeline (ledger + silent feeder hook
+  + deterministic `promotion-audit` skill + charter marker) · #179/PR#184 (Ibrahim) branch-freshness +
+  roster-union donors.
+- **Track C:** #180/PR#181 (Nia) Must-fix-vs-tech-debt charter norm · #177 rename cost-out report.
 
 ## Team / trust
-- **4 PRs, 0 CR cycles, 25% concentration, 0 CI-red.** All reviews `Replied`/Must-fix: None; every
-  load-bearing test independently mutation-checked (revert→fail) — Tariq QA on S1/S3/S4, Nia
-  Tech-Lead on Tariq's S2.
-- **All delta 0 (clean wave).** Tariq **holds 5** (reserved-5 NOT decayed — carried flagship S2 +
-  all reviews; signal not quiet). Paloma/Ibrahim/Nia hold **4**. Both W6 negative patterns corrected
-  (Paloma shipped #164 with test+fixture; Ibrahim's #163 test is load-bearing). trust_matrix.md +
-  feedback_log.md updated (Wave 7 sections) + committed.
-- **Scorer caveat:** `trust_signals score 7` = delta 0 for all (no must-fixes to credit). The #164
-  ledger is now merged but empty (no amendments this wave).
+- **The #164 durable review-catch ledger fired for real** (first contested wave): Tariq caught the
+  #184 branch-freshness zero-tolerance-default footgun (would have blocked every downstream adopter's
+  `gh pr create`); recorded into `wave_8_review_catches` at issue-time, **survived** the in-place
+  `Request→Replied` amendment → `must_fix_caught=1` scored. ⚠️ NOTE: the ledger write is an
+  uncommitted state.json mutation — a `git reset --hard` during branch-switching WILL discard it;
+  record-catch, then commit before any reset (learned this wave, re-recorded once).
+- **Trust (via `trust_signals score 8` + distribution discipline):** **Tariq 5→5** (must_fix_caught=1),
+  **Nia 4→5** (composite tie-top, 2 PRs incl. #175 keystone — **2nd earned 5 in project history**),
+  **Paloma 4→4** (clean flagship #185), **Ibrahim 4→4** (must_fix_received=1 + rework=1, caught+fixed).
+  trust_matrix.md + feedback_log.md Wave 8 sections committed.
 
 ## Mechanical state
-- Branch: **main** @ `6eee7b5` (clean, modulo regenerable ontology/structural churn). Release
-  **v0.7.0** live on both registries.
-- Open PRs: none. Deployment branch deleted; worktrees pruned (only main checkout).
-- Open issues: tech-debt **#174/#175/#176** (W2 S2-hardening) · **#162** (installer) · **#142/#148/#141**
-  (Phase 5) · **#102** (asset port, flagship next) · **#110** (installer-as-skill).
-- Lifecycle: `last_completed_wave=wave-7` (phase 6, wave-branch, pr=4, cr_cycles=0, concentration=25%);
-  `current_wave=wave-7`; `global_wave_seq=7`; **no wave reserved**; next allocate = **wave 8** (theme TBD).
+- Branch: **main** @ `0945b1c` (clean). Release **v0.8.0** live on both registries.
+- Open PRs: none. Deployment + feature branches deleted; only main checkout (worktrees pruned).
+- Open issues: **#102** (P2 tranche, next candidate) · installer debt **#162/#142/#148/#141/#155** ·
+  **#110** (installer-as-skill). (#177 rename report done; owner-gated on name choice.)
+- Lifecycle: `last_completed_wave=wave-8` (phase 6, wave-branch, pr=5, cr_cycles=1, concentration=40);
+  `current_wave=wave-8`; `global_wave_seq=8`; **no wave reserved**; next allocate = **wave 9** (theme TBD).

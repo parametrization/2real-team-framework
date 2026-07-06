@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.7.0 (Phase 6 Wave 2: quality/process-loop hardening), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.8.0 (Phase 6 Wave 3: fail-closed foundation + flagship #102-P0 asset port), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,14 +11,43 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-06): released v0.7.0 — Phase 6 Wave 2 (close the quality/process loop)
-COMPLETE, merged to main, published to PyPI + npm.** Phase 4 ("self-hosting & quality machinery")
-made the framework trustworthy run on itself; **Phase 5** ("installer robustness", v0.5.0) made the
-installer trustworthy on repos *other than this one*; **Phase 6 Wave 1** (v0.6.0) *proved it in the
-wild* against real diverged forks; **Phase 6 Wave 2** (v0.7.0) *closed the loop on the framework's
-own quality machinery* (the W1 scorer blind spot + process gaps). See [[handoff]] for the exact
-pickup (next = owner picks the next wave/phase theme — no wave reserved; standing flagship candidate
-is #102). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+**Current baseline (2026-07-06): released v0.8.0 — Phase 6 Wave 3 (fail-closed foundation + flagship
+#102-P0 asset port) COMPLETE, merged to main, published to PyPI + npm.** Phase 4 ("self-hosting &
+quality machinery") made the framework trustworthy run on itself; **Phase 5** ("installer robustness",
+v0.5.0) made the installer trustworthy on repos *other than this one*; **Phase 6 Wave 1** (v0.6.0)
+*proved it in the wild* against real diverged forks; **Phase 6 Wave 2** (v0.7.0) *closed the loop on
+the framework's own quality machinery*; **Phase 6 Wave 3** (v0.8.0) *hardened the fail-closed guarantee
+and began porting the mined noorinalabs assets* (#102 P0 + ready P1 donors). See [[handoff]] for the
+exact pickup (next = owner picks the theme — no wave reserved; standing candidate = #102 **P2 tranche**,
+now unblocked by the P0 pipeline). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 3 → v0.8.0 (2026-07-06, rollup PR #186 → main @ merge `4af3866`, bump `bb2bcd7`,
+retro `0945b1c`) — "Fail-closed foundation + flagship asset port."** **5 PRs, 1 CR cycle, 40%
+concentration, 0 CI-red, 629 tests.** OIDC published (npm `latest`=0.8.0; PyPI `/0.8.0/json`=200);
+lightweight tag `deployments-phase6-wave-3`. Owner bundled everything flagged at end of W2:
+- **Track A (fail-closed hardening):** **#175/PR#182** (Nia) — `dispatcher.py` now
+  **blocks-unless-`FAIL_OPEN`**: uncaught `check()` exception in a fail-closed hook (incl.
+  `require_load_bearing_test`) blocks instead of allowing; 9 legacy fail-open hooks declare
+  `FAIL_OPEN=True` (bit-identical). *Resolves W2-retro proposal #1.* **#174+#176/PR#183** (Tariq) —
+  load-bearing-test gate is now **per-behavior-file** (closes the diff-wide loophole) + seeded
+  `refactor` exception class so pure refactors aren't hard-blocked.
+- **Track B (#102 flagship port, P0 + ready P1 donors; P2 DEFERRED):** **#102-P0/PR#185** (Paloma) —
+  promotion/genericization pipeline: `generic_prompt_ledger` + silent `suggest_generic_prompt`
+  PostToolUse feeder hook + `generic_prompt_tracker` lib + deterministic **`promotion-audit` skill**
+  (memory→charter→skill→hook auditor, pure-function-backed) + charter `skills.md` marker convention.
+  **#179/PR#184** (Ibrahim) — P1 donors `validate_branch_freshness` (opt-in, `0`=disabled after QA
+  fix), `roster_union_sync` + `roster_consistency_check` (meta∪child drift gate).
+- **Track C:** **#180/PR#181** (Nia) — charter norm *a finding defeating a shipping feature's core
+  guarantee is a Must-fix, not tech-debt* (W2-retro proposal #2, applied). **#177/PR#181** — rename
+  cost-out report `framework/recipes/RENAME_COSTOUT.md` (repo+PyPI+npm; effort M; keep `0.x`; no rename).
+- **The #164 durable ledger fired for real** (first contested wave): Tariq's #184 changes-requested
+  verdict (the branch-freshness zero-tolerance-default footgun) recorded into `wave_8_review_catches`
+  at issue-time, **survived** his `Request→Replied` amendment → `must_fix_caught=1` scored correctly.
+- **Trust: Tariq 5→5** (the #184 catch), **Nia 4→5** (composite tie-top: 2 PRs incl. #175 keystone —
+  **2nd earned 5**), Paloma 4→4 (clean flagship), Ibrahim 4→4 (1 received+rework, caught+fixed).
+- **New process debt (feedback_log, unapplied):** (1) make `reinstall.py` mirror the charter tree —
+  `_MANAGED_TREES` covers only `skills/`, so `team/charter/**` edits are hand-dual-deployed (drift
+  passes CI today); (2) dogfood the `promotion-audit` skill before trusting its auto-promotions.
 
 **Phase 6 Wave 2 → v0.7.0 (2026-07-06, rollup PR #173 → main @ merge `33c6388`, bump `b82939d`,
 retro `6eee7b5`) — "Close the quality/process loop."** Clean wave: **4 PRs, 0 CR cycles, 25%
@@ -168,8 +197,8 @@ project-coupled, it's config-decouplable:
 2. **Review-gate tranche**: port `validate_pr_review` (~1189-line N-reviewer/TechDebt gate) +
    the `pr_review_state` oracle that reuses it. (`validate_review_comment_format` **shipped** in
    Phase 4: #111 ported it, #118 added the semantic warn tier.) Rest still deferred.
-3. `validate_branch_freshness`; mid-wave reachability `gh` wrapper around
-   `lifecycle.classify_reachability`.
+3. ~~`validate_branch_freshness`~~ — **shipped in v0.8.0** (#179/PR#184, opt-in `0`=disabled). Still
+   deferred: mid-wave reachability `gh` wrapper around `lifecycle.classify_reachability`.
 4. ~~Node CLI runtime install~~ — **shipped in v0.4.0** (#70): node CLI bundles `framework/`
    and subprocesses the Python bootstrap (`node/src/framework-install.ts`).
 5. Optional LLM persona personalities (`python/src/real_team/personas.py`).
