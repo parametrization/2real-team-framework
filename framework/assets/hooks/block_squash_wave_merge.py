@@ -49,6 +49,11 @@ from _shell_parse import (  # noqa: E402
     walk_flag_values,
 )
 
+#: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
+#: exception from `check()` allows the command, matching this module's
+#: documented "base unresolvable -> fail-open" posture.
+FAIL_OPEN = True
+
 
 def _integration_regex(template: str) -> re.Pattern[str]:
     """Build an anchored regex from a ``branch.integration`` template.

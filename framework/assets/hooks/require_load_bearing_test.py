@@ -113,6 +113,11 @@ from validate_workflow_paths_coverage import (  # noqa: E402
     _resolve_repo,
 )
 
+# Deliberately NOT declared `FAIL_OPEN = True` (#175): this hook is the repo's
+# documented fail-CLOSED exception (see module docstring), so the dispatcher's
+# default posture for an undeclared/crashing hook — block, not allow — is
+# exactly what this gate needs. Do not add `FAIL_OPEN` here.
+
 # --- Path classification -----------------------------------------------------
 
 #: Repo-relative path prefixes treated as "behavior" surfaces for this gate's v1
@@ -161,10 +166,10 @@ def _is_behavior_path(path: str) -> bool:
 _TRIVIAL_ADDED_LINE_RE = re.compile(r"^\s*(#.*)?$")
 
 
-def _added_substantive_lines(patch: str | None) -> list[str]:
+def _added_substantive_lines(patch: object) -> list[str]:
     """Return the added (`+`-prefixed) lines of a unified diff `patch` that are
-    NOT blank/comment-only. Empty list for a missing/binary/trivial patch."""
-    if not patch:
+    NOT blank/comment-only. Empty list for a missing/binary/trivial/non-str patch."""
+    if not patch or not isinstance(patch, str):
         return []
     lines: list[str] = []
     for raw in patch.splitlines():
