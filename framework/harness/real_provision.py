@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -232,6 +233,16 @@ def provision_real(spec: RealFixtureSpec | None, wd: Path, opts: dict | None = N
                            "source": spec.source, "pin": sha}}
 
     if spec.model == "meta-and-children":
+        if not spec.children:
+            # #155 item 4: a bare --include-real B10 with no --real-config resolves to a
+            # degenerate zero-children meta install. Not fatal (a childless meta is a valid,
+            # if trivial, install), but surface it instead of silently degrading — #101 supplies
+            # children explicitly via --real-config.
+            warnings.warn(
+                f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
+                "degenerate meta install; supply children via --real-config (#155 item 4).",
+                stacklevel=2,
+            )
         children_ctx = []
         for child in spec.children:
             child_sha = resolve_pin(child.source, child.ref, child.pin)
