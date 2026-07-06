@@ -149,6 +149,61 @@ def test_persist_preserves_existing_and_is_valid_json(tmp_path: Path) -> None:
     assert s["wave_16_active"] is True
 
 
+# --------------------------------------------------------------- kickoff persistence guard (#168)
+
+
+def test_assert_kickoff_persisted_traps_the_wave1_failure() -> None:
+    """Load-bearing: the guard MUST trip when kickoff's state write is skipped.
+
+    Reproduces the exact Wave 1 shape: `current_wave` is stuck at a PRIOR wave
+    (the actual symptom reported at retro) and none of wave 7's own kickoff keys
+    were ever written — because the kickoff state write silently never ran.
+    If `kickoff_persisted` is reverted to a stub that always returns True (or
+    only checks one of the three facts it must check), this assertion fails —
+    that is what makes it load-bearing rather than tautological.
+    """
+    skipped_state = {
+        "current_wave": "wave-5",  # never advanced past the PRIOR wave
+        "global_wave_seq": 7,
+        "wave_7_phase": 6,
+        # no wave_7_active, no wave_7_kicked_off_at — kickoff never persisted
+    }
+    ok, msg = lifecycle.kickoff_persisted(skipped_state, "7")
+    assert ok is False
+    assert "NOT persisted" in msg
+    assert "current_wave is 'wave-5'" in msg
+
+    # Now the fix lands for real: kickoff_wave runs and stamps the state file.
+    landed_path_state = dict(skipped_state)
+    landed_path_state["current_wave"] = "wave-7"
+    landed_path_state["wave_7_active"] = True
+    landed_path_state["wave_7_kicked_off_at"] = "2026-07-06T00:00:00Z"
+    ok2, msg2 = lifecycle.kickoff_persisted(landed_path_state, "7")
+    assert ok2 is True
+    assert "persisted" in msg2
+
+
+def test_assert_kickoff_persisted_true_after_real_kickoff_wave(tmp_path: Path) -> None:
+    """End-to-end: run the real start/scope/kickoff sequence and check the guard passes."""
+    state = tmp_path / "state.json"
+    lifecycle.start_wave(state, "7", at="2026-07-06T00:00:00Z")
+    lifecycle.scope_wave(state, "7", ["acme"], phase=6, at="2026-07-06T00:05:00Z")
+    lifecycle.kickoff_wave(state, "7", merge_model="wave-branch", at="2026-07-06T00:10:00Z")
+
+    ok, _ = lifecycle.kickoff_persisted(json.loads(state.read_text()), "7")
+    assert ok is True
+
+
+def test_assert_kickoff_persisted_false_when_active_flag_missing() -> None:
+    """Partial persistence (pointer moved, active flag/timestamp lost) still trips."""
+    ok, msg = lifecycle.kickoff_persisted(
+        {"current_wave": "wave-7"}, "7"
+    )
+    assert ok is False
+    assert "wave_7_active" in msg
+    assert "wave_7_kicked_off_at" in msg
+
+
 # --------------------------------------------------------------- CLI
 
 
@@ -182,3 +237,29 @@ def test_cli_state_path_and_wave_flow(tmp_path: Path) -> None:
 
     # invalid model rejected at the CLI (argparse choices)
     assert run("merge-model", "set", "1", "bogus", "--state", str(state)).returncode != 0
+
+
+def test_cli_assert_kickoff_exit_codes(tmp_path: Path) -> None:
+    """`wave assert-kickoff` is the sub-command the skill's kickoff step gates on."""
+    state = tmp_path / "lc.json"
+
+    def run(*a: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(_FRAMEWORK_ROOT / "assets" / "lib" / "lifecycle.py"), *a],
+            capture_output=True, text=True,
+        )
+
+    # start + scope only (no kickoff yet) → assert-kickoff fails loudly (exit 1, stderr).
+    assert run("wave", "start", "9", "--at", "2026-07-06T00:00:00Z", "--state", str(state)).returncode == 0
+    r = run("wave", "assert-kickoff", "9", "--state", str(state))
+    assert r.returncode == 1
+    assert "ERROR" in r.stderr and "NOT persisted" in r.stderr
+
+    # kickoff lands → assert-kickoff now passes (exit 0).
+    assert run(
+        "wave", "kickoff", "9", "--merge-model", "wave-branch",
+        "--at", "2026-07-06T00:10:00Z", "--state", str(state),
+    ).returncode == 0
+    r = run("wave", "assert-kickoff", "9", "--state", str(state))
+    assert r.returncode == 0
+    assert "persisted" in r.stdout
