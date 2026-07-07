@@ -43,7 +43,7 @@ class RunResult:
         return f"{self.stdout}\n{self.stderr}"
 
 
-def _run(argv: list[str], *, cwd: Path | None = None) -> RunResult:
+def _run(argv: list[str], *, cwd: Path | None = None, env: dict | None = None) -> RunResult:
     start = time.monotonic()
     try:
         cp = subprocess.run(
@@ -53,6 +53,7 @@ def _run(argv: list[str], *, cwd: Path | None = None) -> RunResult:
             stdin=subprocess.DEVNULL,  # zero-prompt contract: any prompt EOFErrors
             timeout=INSTALL_TIMEOUT_S,
             cwd=str(cwd) if cwd else None,
+            env=env,
         )
         return RunResult(argv, cp.returncode, cp.stdout, cp.stderr, time.monotonic() - start)
     except subprocess.TimeoutExpired as exc:
@@ -93,6 +94,36 @@ def run_cli(target: Path, flags: list[str]) -> RunResult:
         *flags,
     ]
     return _run(argv)
+
+
+def run_cli_soft_degrade(target: Path, flags: list[str], pkg_src: Path) -> RunResult:
+    """``2real-team init`` run from an ISOLATED package copy whose framework payload is
+    unreachable — exercises the CLI bridge's **soft-degrade** (#139).
+
+    ``pkg_src`` is a directory on which ``real_team`` is importable but whose ``parents[2]``
+    (the resolved repo-root the bridge probes) holds ``presets/templates/skills`` yet **no**
+    ``framework/`` and no ``_bundled/framework``. So ``framework_install.resolve_framework_root``
+    returns None: the CLI still lays the mustache team scaffolding + root ``CLAUDE.md``, prints
+    the soft notice, skips the ``bootstrap.py`` runtime step, and exits 0. Prepending ``pkg_src``
+    to ``PYTHONPATH`` shadows any installed ``real_team`` so the copy (not the editable install)
+    is what runs.
+    """
+    argv = [
+        sys.executable,
+        "-c",
+        "import sys; from real_team.cli import app; app()",
+        "init",
+        "--target",
+        str(target),
+        "--non-interactive",
+        *flags,
+    ]
+    prior = os.environ.get("PYTHONPATH", "")
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(pkg_src) + (os.pathsep + prior if prior else ""),
+    }
+    return _run(argv, env=env)
 
 
 def run_reinstall_check() -> RunResult:

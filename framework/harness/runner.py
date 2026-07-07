@@ -143,9 +143,17 @@ def run_cell(bucket: Bucket, leg: Leg, installer: str, opts: dict, scratch: Path
         target.mkdir(parents=True, exist_ok=True)
 
         before = snapshot(target)
-        flags = (leg.cli_flags or leg.build_flags)(workdir) if installer == "cli" \
-            else leg.build_flags(workdir)
-        primary = _install(installer, target, flags)
+        if installer == "cli_soft_degrade":
+            # Isolated-checkout leg (B13): run the CLI from a copy whose framework payload is
+            # unreachable so the bridge soft-degrades. The importable package root is in
+            # the fixture's ``extra.iso_src`` (see buckets._prov_cli_soft_degrade).
+            primary = installers.run_cli_soft_degrade(
+                target, leg.build_flags(workdir), Path(fixture["extra"]["iso_src"])
+            )
+        else:
+            flags = (leg.cli_flags or leg.build_flags)(workdir) if installer == "cli" \
+                else leg.build_flags(workdir)
+            primary = _install(installer, target, flags)
         after = snapshot(target)
 
         ctx = CellContext(
