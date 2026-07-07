@@ -648,3 +648,60 @@ clean verdicts across 3 PRs.** Armed the PR-review gate on this repo (`reviewers
 - **Charter-manifest checksum cross-check** in `charter_drift.py plan()` (W9, Nia #190).
 - **Normalize `ensure_gitignore_entries` matching** before compare (W9, Tariq #191).
 A dedicated hardening wave folding these + the 3 new follow-ups (#207/#208/#211) is increasingly warranted.
+
+---
+
+## Wave 12 Retro (2026-07-07) — Phase 6 Wave 7: "Harden the armed gate" → v0.9.2
+
+**Shape:** 3 stories / 3 PRs, **0 changes-requested cycles**, 33% top concentration (3 distinct authors),
+717 tests (+11), 0 CI-red, 0 Must-fix caught. Hardened the gate armed in v0.9.1 and **cleared the entire
+deferred-debt tail** (the 3 gate-activation follow-ups #207/#208/#211 + both W9 carry-overs). Released
+v0.9.2 (patch). PRs #217/#218/#219 → wave branch → rollup #220 → main.
+
+### Going well
+1. **The deferred-debt list is EMPTY for the first time this phase.** Five items across three waves —
+   #207/#208/#211 (gate-activation follow-ups) + the two W9 carry-overs (charter-manifest checksum
+   cross-check; `ensure_gitignore_entries` normalize) — all landed in one focused wave. The "hardening
+   slot" W11 proposed became W12, and it fully drained the backlog it was created for.
+2. **The gate governed its own maintenance.** This was the first wave whose story merges ran *through*
+   the live 2-reviewer gate: the oracle allowed each of #217/#218/#219 only after 2 distinct clean
+   verdicts. We hardened the gate while the gate was gating us — and it behaved exactly as specified.
+3. **Both W11 proposals were applied inside one wave, not just filed.** Proposal #1 (hardening slot) *was*
+   this wave. Proposal #2 (review-load balance) was applied by design: 6 verdicts spread Nia 2 / Paloma 2
+   / Tariq 1 / Ibrahim 1 — no reviewer carried more than 2, versus Tariq's 3-of-6 in W11. And the
+   single-integration-owner rule was dogfooded a second time (Paloma sole manifest-owner) with zero
+   conflict.
+4. **Trust discipline predicted its own outcome.** W11 pre-registered both moves in writing: Nia's 5
+   "decays on a clean-no-catch wave," Tariq's path back to 5 is "owning one of the tracked follow-ups."
+   Both fired mechanically this wave — Nia authored nothing + caught nothing (5→4), Tariq authored the
+   flagship #207 fix (4→5). A clean, non-arbitrary rotation the team could have predicted in advance.
+
+### Pain points
+1. **Story-difficulty is invisible to the scorer.** Tariq (5) and Ibrahim (4) both authored one clean PR
+   with identical mechanical signals (delta 0, composite 1). The differentiation — S1 was the wave's
+   deepest correctness fix, S2 its lightest config/doc touch — lives *only* in the retro narrative, not
+   in `trust_signals`. The judgment is sound but unmechanized; a difficulty/impact weight would make the
+   reserved-5 rotation reproducible instead of hand-argued.
+2. **The rollup can no longer merge through its own gate.** With the gate permanently armed (unlike W6,
+   where local main was still dormant at rollup time), rollup PR #220 carried no verdicts of its own and
+   the oracle correctly refused `gh pr merge`. We used the documented direct-push escape hatch — correct,
+   but it's an *undocumented-in-charter* operational step that a future orchestrator could get wrong.
+3. **Manifest-owner was a no-op this wave.** Zero installed-path changes meant Paloma's integration-owner
+   duty reduced to "confirm no regen needed." The role that caused the W5 conflict still hasn't been
+   stress-tested under real golden-manifest churn.
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **Codify the rollup-merge path under a permanently-armed gate** (in `pull-requests.md` + `wave-end`):
+   the sanctioned way to land a rollup is a direct-push merge to `main` via the escape hatch (the stories
+   already each carry 2 verdicts; re-reviewing the rollup is theater). Document it so it's a named step,
+   not tribal knowledge — this is the first phase where every future rollup hits this.
+2. **Mechanize review-load in the wrapup** (carry W11 proposal #2 from principle to implementation):
+   `wave-end` records per-reviewer verdict counts next to concentration, so review-load balance is a
+   tracked number rather than something the orchestrator balances by hand.
+3. **(Stretch) Weight trust signal by story difficulty/impact.** Give the scorer a coarse per-PR
+   difficulty tag so a flagship correctness fix and a one-line config change don't read identically. Would
+   make reserved-5 rotations mechanical rather than narrative-argued (addresses pain point #1).
+
+### Carry-over
+- **NONE.** The deferred-debt list is empty for the first time this phase — both W9 carry-overs landed in
+  S3 this wave. Future waves start from a clean debt slate.
