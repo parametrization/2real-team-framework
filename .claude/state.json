@@ -1,9 +1,21 @@
 {
+  "wave_12_phase": 6,
+  "wave_12_phase_ordinal": 7,
+  "wave_12_active": true,
+  "wave_12_started_at": "2026-07-07T04:00:00Z",
+  "wave_12_repos_in_scope": [
+    "2real-team-framework"
+  ],
+  "wave_12_scope_reconciled_at": "2026-07-07T04:00:00Z",
+  "wave_12_kicked_off_at": "2026-07-07T04:00:00Z",
+  "wave_12_merge_model": "wave-branch",
   "wave_11_phase": 6,
   "wave_11_phase_ordinal": 6,
   "wave_11_active": false,
   "wave_11_started_at": "2026-07-07T02:31:00Z",
-  "wave_11_repos_in_scope": ["2real-team-framework"],
+  "wave_11_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_11_scope_reconciled_at": "2026-07-07T02:31:00Z",
   "wave_11_kicked_off_at": "2026-07-07T02:31:00Z",
   "wave_11_merge_model": "wave-branch",
@@ -16,7 +28,9 @@
   "wave_10_phase_ordinal": 5,
   "wave_10_active": false,
   "wave_10_started_at": "2026-07-07T00:56:52Z",
-  "wave_10_repos_in_scope": ["2real-team-framework"],
+  "wave_10_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_10_scope_reconciled_at": "2026-07-07T00:56:52Z",
   "wave_10_kicked_off_at": "2026-07-07T00:56:52Z",
   "wave_10_merge_model": "wave-branch",
@@ -29,7 +43,9 @@
   "wave_9_phase_ordinal": 4,
   "wave_9_active": false,
   "wave_9_started_at": "2026-07-06T23:18:49Z",
-  "wave_9_repos_in_scope": ["2real-team-framework"],
+  "wave_9_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_9_scope_reconciled_at": "2026-07-06T23:18:49Z",
   "wave_9_kicked_off_at": "2026-07-06T23:18:49Z",
   "wave_9_merge_model": "wave-branch",
@@ -42,12 +58,22 @@
   "wave_8_phase_ordinal": 3,
   "wave_8_active": false,
   "wave_8_started_at": "2026-07-06T21:47:16Z",
-  "wave_8_repos_in_scope": ["2real-team-framework"],
+  "wave_8_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_8_scope_reconciled_at": "2026-07-06T21:47:16Z",
   "wave_8_kicked_off_at": "2026-07-06T21:47:16Z",
   "wave_8_merge_model": "wave-branch",
   "wave_8_meta_issue": "#178",
-  "wave_8_review_catches": [{"repo":"parametrization/2real-team-framework","pr":184,"requestor":"Tariq.Morales","requestee":"Ibrahim.El-Amin","recorded_at":"2026-07-06T22:45:09Z"}],
+  "wave_8_review_catches": [
+    {
+      "repo": "parametrization/2real-team-framework",
+      "pr": 184,
+      "requestor": "Tariq.Morales",
+      "requestee": "Ibrahim.El-Amin",
+      "recorded_at": "2026-07-06T22:45:09Z"
+    }
+  ],
   "wave_8_completed_at": "2026-07-06T23:05:03Z",
   "wave_8_final_pr_count": 5,
   "wave_8_changes_requested_cycles": 1,
@@ -57,7 +83,9 @@
   "wave_7_phase_ordinal": 2,
   "wave_7_active": false,
   "wave_7_started_at": "2026-07-06T20:05:21Z",
-  "wave_7_repos_in_scope": ["2real-team-framework"],
+  "wave_7_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_7_scope_reconciled_at": "2026-07-06T20:05:22Z",
   "wave_7_kicked_off_at": "2026-07-06T20:05:39Z",
   "wave_7_merge_model": "wave-branch",
@@ -70,7 +98,9 @@
   "wave_6_phase_ordinal": 1,
   "wave_6_active": false,
   "wave_6_started_at": "2026-07-06T02:00:00Z",
-  "wave_6_repos_in_scope": ["2real-team-framework"],
+  "wave_6_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_6_scope_reconciled_at": "2026-07-06T02:00:00Z",
   "wave_6_kicked_off_at": "2026-07-06T02:00:00Z",
   "wave_6_merge_model": "wave-branch",
@@ -78,13 +108,24 @@
   "wave_6_final_pr_count": 5,
   "wave_6_changes_requested_cycles": 3,
   "wave_6_top_concentration_pct": 40,
-  "wave_6_counter_corrections": [{"key":"changes_requested_cycles","claimed":3,"recomputed":0,"resolution":"claimed-stands","reason":"all 3 ChangesRequested verdicts (#154/#156/#160, Tariq) were amended in place to Replied/Must-fix:None after fixes landed; trust_signals recomputes from current comment state so it under-counts to 0. Per wave-retro CR-cycle semantics the wrapup-time historic count is authoritative.","corrected_at":"2026-07-06T03:43:15Z"}],
+  "wave_6_counter_corrections": [
+    {
+      "key": "changes_requested_cycles",
+      "claimed": 3,
+      "recomputed": 0,
+      "resolution": "claimed-stands",
+      "reason": "all 3 ChangesRequested verdicts (#154/#156/#160, Tariq) were amended in place to Replied/Must-fix:None after fixes landed; trust_signals recomputes from current comment state so it under-counts to 0. Per wave-retro CR-cycle semantics the wrapup-time historic count is authoritative.",
+      "corrected_at": "2026-07-06T03:43:15Z"
+    }
+  ],
   "wave_5_meta_issue": "#140",
   "wave_5_phase": 5,
   "wave_5_phase_ordinal": 2,
   "wave_5_active": false,
   "wave_5_started_at": "2026-07-05T23:07:55Z",
-  "wave_5_repos_in_scope": ["2real-team-framework"],
+  "wave_5_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_5_scope_reconciled_at": "2026-07-05T23:07:55Z",
   "wave_5_kicked_off_at": "2026-07-05T23:07:56Z",
   "wave_5_merge_model": "wave-branch",
@@ -97,7 +138,9 @@
   "wave_4_phase_ordinal": 1,
   "wave_4_active": false,
   "wave_4_started_at": "2026-07-05T20:50:51Z",
-  "wave_4_repos_in_scope": ["2real-team-framework"],
+  "wave_4_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_4_scope_reconciled_at": "2026-07-05T20:50:52Z",
   "wave_4_kicked_off_at": "2026-07-05T20:50:52Z",
   "wave_4_merge_model": "wave-branch",
@@ -109,7 +152,9 @@
   "wave_3_phase_ordinal": 2,
   "wave_3_active": false,
   "wave_3_started_at": "2026-07-05T19:12:56Z",
-  "wave_3_repos_in_scope": ["2real-team-framework"],
+  "wave_3_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_3_scope_reconciled_at": "2026-07-05T19:12:56Z",
   "wave_3_merge_model": "wave-branch",
   "wave_3_kicked_off_at": "2026-07-05T19:12:56Z",
@@ -121,7 +166,9 @@
   "wave_2_phase_ordinal": 1,
   "wave_2_active": false,
   "wave_2_started_at": "2026-07-05T12:00:00Z",
-  "wave_2_repos_in_scope": ["2real-team-framework"],
+  "wave_2_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_2_scope_reconciled_at": "2026-07-05T12:00:00Z",
   "wave_2_kicked_off_at": "2026-07-05T12:00:00Z",
   "wave_2_merge_model": "wave-branch",
@@ -130,18 +177,21 @@
   "wave_2_changes_requested_cycles": 1,
   "wave_2_top_concentration_pct": 25,
   "last_completed_wave": "wave-11",
-  "current_wave": "wave-11",
-  "global_wave_seq": 11,
+  "current_wave": "wave-12",
+  "global_wave_seq": 12,
   "wave_1_phase": 3,
   "wave_1_phase_ordinal": 1,
   "wave_1_active": false,
   "wave_1_started_at": "2026-07-02T16:00:00Z",
-  "wave_1_repos_in_scope": ["2real-team-framework"],
+  "wave_1_repos_in_scope": [
+    "2real-team-framework"
+  ],
   "wave_1_scope_reconciled_at": "2026-07-02T16:00:00Z",
   "wave_1_kicked_off_at": "2026-07-02T16:00:00Z",
   "wave_1_merge_model": "wave-branch",
   "wave_1_completed_at": "2026-07-02T22:30:00Z",
   "wave_1_final_pr_count": 13,
   "wave_1_changes_requested_cycles": 4,
-  "wave_1_top_concentration_pct": 38
+  "wave_1_top_concentration_pct": 38,
+  "wave_12_meta_issue": "#213"
 }
