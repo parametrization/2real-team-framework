@@ -28,10 +28,14 @@ assets to one of two dispositions; uninstall reverses each to a byte-identical p
 
 The **amend** disposition (existing assets kept in place, deliberately NOT snapshotted by the
 installer) is inherently non-recoverable byte-for-byte — so uninstall does the honest thing: it
-UN-MERGES only what it can attribute to the framework (the hook wiring + permission rules it added
-to ``settings.json``, the managed ``.gitignore`` block) and leaves everything else untouched,
-rather than deleting a merged file wholesale. ``settings.json`` and ``.gitignore`` are therefore
-pruned surgically, never blindly removed — honoring "remove EXACTLY the install set, nothing else".
+attributes every removal to the framework and touches nothing else. ``settings.json`` and
+``.gitignore`` are UN-MERGED (only the hook wiring + permission rules / the managed block the
+installer added are pruned), and the enumerated ``.claude/**`` set is removed only where the
+on-disk bytes still MATCH what the framework produces (:func:`_derivable_asset_bytes`) — a
+consumer's pre-existing file the installer's skip-if-exists kept at a framework path (and never
+archived) has diverging bytes and is PRESERVED, not deleted. This is the same framework-provenance
+guard every sibling reverser uses (``remove_ontology``/``remove_pre_push``), and it is what makes
+"remove EXACTLY the install set, nothing else" true for the amend disposition too (#227 fix).
 
 Idempotent + fail-safe
 ======================
@@ -323,31 +327,86 @@ def remove_ontology(target: Path, ontology_rel: str, *, dry_run: bool) -> list[s
 # ---------------------------------------------------------------- .claude tree removal
 
 
-def _surgical_claude_removal(target: Path, inst_cfg: dict, *, dry_run: bool) -> list[str]:
-    """Remove the enumerated framework-owned ``.claude/**`` set + the data-driven persona cards.
+def _derivable_asset_bytes(run_cfg: dict) -> dict[str, bytes]:
+    """The exact bytes the framework produces for every BYTE-DERIVABLE manifest path.
 
-    The removal set is the golden manifest (``manifest.expected_install_set``) minus
-    ``settings.json`` (which is un-merged, not wholesale-deleted), plus every file under
-    ``.claude/team/roster/`` (the fully framework-owned persona-card dir the manifest declines to
-    enumerate). Returns the repo-root-relative paths removed.
+    Built from the SAME iterators/rendering the installer copies with, so it cannot drift from
+    what a correct install writes:
+
+    * ``hooks/`` + ``lib/`` + ``skills/`` — static assets copied verbatim (``shutil.copy2``), so
+      the shipped source bytes are the framework's fingerprint.
+    * ``team/charter/*.md`` — rendered from the modular template with the ``{{key}}`` substitution
+      (reproduced here from the RUNTIME config the install recorded), so an unmodified rendered
+      module reproduces byte-for-byte.
+
+    Paths NOT in this map (the config trio, ``.charter-manifest.json``, the team org-artifacts,
+    and the data-driven persona cards) are framework-GENERATED output whose names are proprietary
+    to the framework — a foreign repo being amended never carries them — so they are treated like
+    ``remove_ontology`` treats the generated ``structural/**`` index: framework-owned by origin.
     """
+    out: dict[str, bytes] = {}
+    for src in bootstrap._iter_asset_files("hooks"):
+        out[f"{_CLAUDE}/hooks/{src.name}"] = src.read_bytes()
+    for rel, src in bootstrap._iter_lib_files():
+        out[f"{_CLAUDE}/lib/{rel.as_posix()}"] = src.read_bytes()
+    for rel, src in bootstrap._iter_skill_files():
+        out[f"{_CLAUDE}/skills/{rel.as_posix()}"] = src.read_bytes()
+    context = bootstrap._charter_context(run_cfg)
+    for src in bootstrap._iter_charter_files():
+        text = src.read_text(encoding="utf-8")
+        for key, value in context.items():
+            text = text.replace("{{" + key + "}}", value)
+        out[f"{_CLAUDE}/team/charter/{src.name}"] = text.encode("utf-8")
+    return out
+
+
+def _surgical_claude_removal(
+    target: Path, inst_cfg: dict, run_cfg: dict, *, dry_run: bool
+) -> tuple[list[str], list[str]]:
+    """Remove the framework-owned ``.claude/**`` set + persona cards, GATED on provenance.
+
+    The candidate set is the golden manifest (``manifest.expected_install_set``) minus
+    ``settings.json`` (un-merged, not wholesale-deleted), plus every file under
+    ``.claude/team/roster/`` (the framework-owned persona-card dir the manifest declines to
+    enumerate). But a manifest path is a NECESSARY, not sufficient, condition for removal:
+    for a byte-derivable path (:func:`_derivable_asset_bytes`) the on-disk bytes must still match
+    what the framework produces. In the *amend* disposition the installer's skip-if-exists keeps a
+    consumer's pre-existing file at a framework path (never archived), so deleting it by manifest
+    path alone would destroy user data — the exact asymmetry the sibling reversers already avoid
+    (``remove_ontology``/``remove_pre_push``/``unmerge_settings``). A path whose bytes diverge is
+    PRESERVED (user-modified or foreign); every sibling reverser guards the same way.
+
+    Returns ``(removed, preserved)`` — both repo-root-relative POSIX path lists.
+    """
+    derivable = _derivable_asset_bytes(run_cfg)
     removed: list[str] = []
+    preserved: list[str] = []
+
+    def _consider(rel: str, p: Path) -> None:
+        if rel in derivable:
+            try:
+                on_disk = p.read_bytes()
+            except OSError:
+                on_disk = None
+            if on_disk != derivable[rel]:
+                preserved.append(rel)  # user-modified / foreign bytes — never delete
+                return
+        if not dry_run:
+            p.unlink()
+        removed.append(rel)
+
     for rel in sorted(manifest.expected_install_set(inst_cfg)):
         if rel == _SETTINGS_REL:
             continue  # handled by unmerge_settings
         p = target / rel
         if p.is_file():
-            if not dry_run:
-                p.unlink()
-            removed.append(rel)
+            _consider(rel, p)
     roster = target / _CLAUDE / "team" / "roster"
     if roster.is_dir():
         for p in sorted(roster.rglob("*")):
             if p.is_file():
-                if not dry_run:
-                    p.unlink()
-                removed.append(p.relative_to(target).as_posix())
-    return removed
+                _consider(p.relative_to(target).as_posix(), p)
+    return removed, preserved
 
 
 def find_latest_archive(target: Path) -> Path | None:
@@ -390,7 +449,10 @@ def uninstall(target: Path | str, *, dry_run: bool = False) -> dict:
     removes the enumerated ``.claude/**`` set (fresh disposition), then prunes emptied containers.
     """
     target = Path(target).resolve()
-    report: dict = {"target": str(target), "status": None, "removed": [], "restored": [], "notes": []}
+    report: dict = {
+        "target": str(target), "status": None,
+        "removed": [], "restored": [], "preserved": [], "notes": [],
+    }
     if not is_installed(target):
         report["status"] = "not-installed"
         report["notes"].append("no .claude/framework.config.json here — nothing to uninstall.")
@@ -430,7 +492,16 @@ def uninstall(target: Path | str, *, dry_run: bool = False) -> dict:
             report["notes"].append(f"restored pre-install assets from {archive_dir.name}")
         report["status"] = "restored"
     else:
-        report["removed"] += _surgical_claude_removal(target, inst_cfg, dry_run=dry_run)
+        removed, preserved = _surgical_claude_removal(
+            target, inst_cfg, run_cfg, dry_run=dry_run
+        )
+        report["removed"] += removed
+        report["preserved"].extend(preserved)
+        if preserved:
+            report["notes"].append(
+                f"preserved {len(preserved)} user-modified path(s) at framework locations "
+                f"(bytes diverged — never framework-owned): {', '.join(preserved)}"
+            )
         report["notes"].append(
             f"settings.json: {unmerge_settings(target / _CLAUDE, template, dry_run=dry_run)}"
         )
@@ -470,6 +541,8 @@ def _print_report(report: dict, *, dry_run: bool) -> None:
     verb = "would remove" if dry_run else "removed"
     print("\n-- plan --" if dry_run else "\n-- result --")
     print(f"{verb}:       {len(report['removed'])} file(s)")
+    if report.get("preserved"):
+        print(f"preserved:     {len(report['preserved'])} user-modified path(s) at framework locations")
     if report["restored"]:
         print(f"restored:      {', '.join(report['restored'])} (pre-install backup)")
     for note in report["notes"]:

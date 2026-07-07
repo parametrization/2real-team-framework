@@ -150,6 +150,54 @@ def test_consented_archive_is_restored_byte_identical(tmp_path: Path) -> None:
     assert not (tmp_path / repo_space.BACKUPS_DIRNAME).exists(), "spent backup container not pruned"
 
 
+def test_amend_preserves_user_file_at_a_framework_path(tmp_path: Path) -> None:
+    """#227 regression (user-data-loss): in the amend disposition the installer's skip-if-exists
+    KEEPS a consumer's pre-existing file at a framework asset path (never archived) — teardown
+    must NOT delete it. A blind manifest-path unlink would destroy unrecoverable user data.
+    """
+    _git_init_repo(tmp_path)
+    # Pre-seed a USER file at a framework-owned skill path (+ another .claude asset) with content
+    # that is NOT what the framework ships. Amend (non-interactive over existing .claude) keeps it.
+    user_skill = tmp_path / ".claude" / "skills" / "handoff" / "SKILL.md"
+    user_skill.parent.mkdir(parents=True, exist_ok=True)
+    user_skill.write_text("# MY OWN handoff notes — do not touch\n", encoding="utf-8")
+    pre = snap.snapshot(tmp_path)
+
+    _install(tmp_path, "--owner", "test-org", "--no-ontology")
+    # skip-if-exists kept the user's bytes (no archive taken in amend).
+    assert user_skill.read_text() == "# MY OWN handoff notes — do not touch\n"
+    assert not (tmp_path / repo_space.BACKUPS_DIRNAME).exists(), "amend must not archive"
+
+    r = _run_uninstall(tmp_path, "--non-interactive")
+    assert r.returncode == 0, r.stderr
+    # The user's file SURVIVES teardown, byte-for-byte.
+    assert user_skill.is_file(), "teardown deleted a user file kept by amend skip-if-exists"
+    assert user_skill.read_text() == "# MY OWN handoff notes — do not touch\n"
+    # And the round-trip is byte-identical to pre-install (nothing of the user's lost).
+    assert snap.symmetric_diff(pre, snap.snapshot(tmp_path)) == []
+
+
+def test_surgical_removal_preserves_user_modified_asset_unit(tmp_path: Path) -> None:
+    """Unit: a manifest asset path whose on-disk bytes diverge from the shipped asset is
+    PRESERVED (reported), while an unmodified sibling is removed."""
+    _git_init_repo(tmp_path)
+    _install(tmp_path, "--owner", "test-org", "--no-ontology")
+    # Tamper one installed asset so its bytes no longer match the shipped source.
+    skills = tmp_path / ".claude" / "skills"
+    victim = next(p for p in skills.rglob("*") if p.is_file())
+    victim.write_text("USER EDIT\n", encoding="utf-8")
+
+    inst_cfg = uninstall.load_install_snapshot(tmp_path)
+    run_cfg = uninstall.load_runtime_config(tmp_path)
+    removed, preserved = uninstall._surgical_claude_removal(
+        tmp_path, inst_cfg, run_cfg, dry_run=False
+    )
+    victim_rel = victim.relative_to(tmp_path).as_posix()
+    assert victim_rel in preserved
+    assert victim_rel not in removed
+    assert victim.read_text() == "USER EDIT\n"
+
+
 # ----------------------------------------------------------------- idempotency / safety
 
 
