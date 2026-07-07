@@ -598,3 +598,53 @@ review-gate flagship — `pr_review_state` oracle (S1), `block_gh_pr_review` sub
 - **Charter-manifest checksum cross-check** in `charter_drift.py plan()` (Nia's #190 tech-debt).
 - **Normalize `ensure_gitignore_entries` matching** before compare for idempotency (Tariq's #191 tech-debt).
 Both remain good early-slot fold-ins for the next hardening wave.
+
+---
+
+## Wave 11 Retro (2026-07-07) — Phase 6 Wave 6: "Activate the review gate" → v0.9.1
+
+**Shape:** 3 stories / 3 PRs, **0 changes-requested cycles**, 33% top concentration (3 distinct authors),
+706 tests (+6), 0 CI-red, 0 Must-fix caught. **First wave run entirely under the 2-reviewer regime — 6
+clean verdicts across 3 PRs.** Armed the PR-review gate on this repo (`reviewers_required=2` +
+`pr_review_gate_enabled=true`); framework defaults stay dormant. Released v0.9.1 (patch). PRs
+#206/#209/#210 → wave branch → rollup #212 → main. Gate now live on `main`.
+
+### Going well
+1. **The gate validated itself.** S1's PR #206 was the first PR ever to clear the 2-reviewer bar, and
+   the two reviewers' verdicts *were* the live data proving the oracle reports `approved 2/2`. Plus a
+   self-contained throwaway PR demonstrated the block→approve transition (0/2 blocked → 2/2 passed). We
+   activated a mechanism and proved it on its own activation PR in the same wave.
+2. **Dogfooded proposal #1 while codifying it.** S3 was sole charter integration-owner and S2 was barred
+   from charter — so the exact `pre_bash`/charter conflict that cost a round-trip last wave simply could
+   not occur. The "single integration-owner for shared registries" rule proved itself *before* it was
+   written into the charter. This is the strongest possible evidence a process proposal is sound.
+3. **Scope discipline held under temptation.** Three real findings surfaced mid-wave (#207 fail-open
+   scope, #208 example.json default, #211 cr-cycles wording) and all three were tracked, not folded — and
+   S2 *routed* the cr-cycles finding to the charter owner rather than grabbing it, honoring the very
+   integration-owner rule being codified.
+
+### Pain points
+1. **The enabled gate still hasn't blocked a genuine accident.** The live proof was a *self-constructed*
+   throwaway PR with synthetic (real-identity) verdicts. We've proven the mechanism fires; we haven't yet
+   observed it catch a real not-approved merge attempt in the wild. The next organic under-reviewed PR is
+   the real test.
+2. **A codified instruction is now stale (#211).** `wave-end/SKILL.md`'s `--cr-cycles` counts *verdicts*,
+   which double-counts at N≥2 vs the scorer's per-PR `rework_cycles`. The Manager had to compute the
+   wrapup number correctly by hand this wave. A wrong-but-official instruction is a latent trap — this is
+   exactly the kind of doc↔code drift a `--check` gate is meant to prevent.
+3. **Review load doubled and concentrated.** 6 verdicts for 3 PRs; Tariq carried 3 of them. Sustainable
+   at this size, but as waves grow, review-load concentration on QA is a scaling risk worth watching.
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **A near-term hardening slot for the gate-activation debt.** #207 (make the gate fail-open on oracle
+   *fetch* error, not just exceptions), #208 (example.json `reviewers_required`→1), and #211 (cr-cycles
+   per-PR wording) are all correctness debt created by *this* activation. Fold them together next wave so
+   the freshly-armed gate is robust before it governs many PRs. Owning #211 also converts Ibrahim's
+   routed finding into a real contribution.
+2. **Track review-load balance in the wrapup.** Record per-reviewer verdict counts alongside concentration
+   so lopsided review load (one reviewer carrying most verdicts) is visible before it becomes a bottleneck.
+
+### Carry-over (still unapplied — now 3 waves deferred; the deferred-debt list is growing)
+- **Charter-manifest checksum cross-check** in `charter_drift.py plan()` (W9, Nia #190).
+- **Normalize `ensure_gitignore_entries` matching** before compare (W9, Tariq #191).
+A dedicated hardening wave folding these + the 3 new follow-ups (#207/#208/#211) is increasingly warranted.
