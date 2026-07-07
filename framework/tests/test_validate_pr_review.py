@@ -29,6 +29,7 @@ _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_FRAMEWORK_ROOT / "assets" / "hooks"))
 sys.path.insert(0, str(_FRAMEWORK_ROOT / "assets" / "lib"))
 
+import pr_review_state as oracle  # noqa: E402
 import validate_pr_review as hook  # noqa: E402
 
 
@@ -198,6 +199,45 @@ def test_oracle_error_allows(monkeypatch) -> None:
         raise RuntimeError("gh exploded")
 
     monkeypatch.setattr(hook, "review_state", _raise)
+    assert hook.check(_bash(_MERGE)) is None
+
+
+def test_oracle_unknown_state_allows(monkeypatch) -> None:
+    """FAIL_OPEN (#207/#214): an oracle "unknown" state ALLOWS, exactly like an
+    exception — it must NOT read as an ordinary "not approved" and block.
+    """
+    _arm(monkeypatch, enabled=True)
+    _stub_oracle(
+        monkeypatch,
+        {"state": oracle.UNKNOWN, "approvals": 0, "reviewers_required": 2, "unresolved_must_fix": []},
+    )
+    assert hook.check(_bash(_MERGE)) is None
+
+
+def test_comment_fetch_error_reads_unknown_and_gate_allows(monkeypatch) -> None:
+    """End-to-end (#207/#214): a comment-fetch/transport error must reach the
+    gate as "unknown", never silently as "pending" — a broken oracle must
+    never be able to wedge `gh pr merge`.
+
+    Deliberately does NOT stub `hook.review_state` — it exercises the REAL
+    `pr_review_state.review_state` oracle end-to-end (only the lower-level
+    `trust_signals._pr_comment_bodies` comment fetch is monkeypatched to fail,
+    exactly as a transient GitHub API error would). This also guards against a
+    state-string mismatch between the oracle and the gate (e.g. the gate
+    checking for a different literal than the oracle emits).
+
+    Mutation bar: reverting `review_state`'s except-handler back to
+    `state=PENDING` flips this PR to "not approved" and the gate BLOCKS
+    instead of allowing -> this test fails.
+    """
+    import trust_signals as ts
+
+    def _boom(_repo, _num):
+        raise RuntimeError("gh comment fetch exploded")
+
+    monkeypatch.setattr(ts, "_pr_comment_bodies", _boom)
+    _arm(monkeypatch, enabled=True)
+    # No oracle stub: hook.review_state is the real pr_review_state.review_state.
     assert hook.check(_bash(_MERGE)) is None
 
 

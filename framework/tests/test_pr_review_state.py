@@ -225,9 +225,18 @@ def test_reviewers_required_fail_open_defaults():
     assert prs._reviewers_required(_Cfg(3)) == 3
 
 
-def test_review_state_wrapper_fail_opens_to_pending_on_fetch_error(monkeypatch):
-    """A comment-fetch error returns pending — never a raised exception and
-    never a manufactured 'approved'."""
+def test_review_state_wrapper_fail_opens_to_unknown_on_fetch_error(monkeypatch):
+    """A comment-fetch error returns "unknown" — never a raised exception,
+    never a manufactured "approved", and (#207/#214) NOT masked as an ordinary
+    "pending". "pending" means the oracle evaluated the PR and found it
+    genuinely not-yet-approved; "unknown" means it couldn't evaluate the PR at
+    all (a transient fetch/transport error). Collapsing the two used to let a
+    flaky GitHub API call block `gh pr merge` exactly like a real "not
+    approved" — the opposite of a fail-open gate.
+
+    Mutation bar: reverting the except-handler in `review_state` back to
+    `state=PENDING` makes this fail.
+    """
 
     def _boom(_repo, _num):
         raise RuntimeError("gh exploded")
@@ -239,7 +248,9 @@ def test_review_state_wrapper_fail_opens_to_pending_on_fetch_error(monkeypatch):
             return 1
 
     state = prs.review_state("acme/widget", 7, cfg=_Cfg())
-    assert state["state"] == "pending"
+    assert state["state"] == "unknown"
+    assert state["state"] == prs.UNKNOWN
+    assert state["state"] != "pending"
     assert state["approvals"] == 0
     assert state["unresolved_must_fix"] == []
 
