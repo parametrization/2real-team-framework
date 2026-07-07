@@ -577,14 +577,22 @@ review-gate flagship — `pr_review_state` oracle (S1), `block_gh_pr_review` sub
    prose without checking it against the actual verdict grammar/`trust_signals` — the requestee/Requestor
    error got through planning and was caught downstream by the implementer, later than it should've been.
 
-### New proposals (need owner approval before a future wave adopts them)
+### New proposals (owner-approved at Phase 6 Wave 6 kickoff — both folded into the charter this wave)
 1. **Single integration-owner for shared registries.** When 2+ stories in a wave touch the same shared
    config list / registry (`pre_bash`, `_DEFAULTS`, golden manifest), designate one story as the
    integration owner for that list (or serialize those specific edits) so the predictable merge conflict
    is pre-empted rather than resolved after the fact. Low effort, removes a recurring round-trip.
+   **Status: APPLIED via #204 (Phase 6 Wave 6, S3)** — written into the charter as
+   `framework/assets/team/charter/issues.md` § Wave Planning → "Single Integration-Owner for Shared
+   Registries" (canonical + dual-deployed to runtime, byte-identical via `charter_drift.py --check`).
+   Dogfooded live this wave: S3 (Nia) was the sole charter integration-owner; S2 (Ibrahim) was barred
+   from editing `charter/**` and routed wording through the lead's relay.
 2. **Pin contracts against code, not just prose.** When a wave freezes an inter-story contract, validate
    it against the actual grammar/parsing layer at authoring time (a quick grammar check), not only in
    narrative. Would have caught the requestee/Requestor bug before it reached an implementer.
+   **Status: APPLIED via #204 (Phase 6 Wave 6, S3)** — written into the charter as
+   `framework/assets/team/charter/issues.md` § Wave Planning → "Pin Frozen Contracts Against Code, Not
+   Prose" (canonical + dual-deployed to runtime).
 
 ### Carry-over (still unapplied, from Wave 9 retro — no early slot claimed this flagship wave)
 - **Charter-manifest checksum cross-check** in `charter_drift.py plan()` (Nia's #190 tech-debt).

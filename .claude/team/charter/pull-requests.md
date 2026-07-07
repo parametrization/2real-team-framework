@@ -128,9 +128,23 @@ identities whose current verdict is clean (a `Replied` review with `Must-fix: No
 4. **Merge into the integration branch** — the team merges these PRs itself; no
    owner approval is needed below `main`.
 
-Reviewers are assigned by the lead at wave kickoff (no self-review; spread the load).
-The reviewer runs the tests on the branch — a review is an act of verification, not
-a reading exercise.
+### Reviewer Assignment (distinct, author-exclusive)
+
+Reviewers are assigned by the lead at wave kickoff (spread the load). The reviewer runs
+the tests on the branch — a review is an act of verification, not a reading exercise.
+
+Every PR is assigned **2 distinct reviewers**, and the assignment
+is **author-exclusive**: a reviewer can never be the PR's own author — the `Requestee:`
+of that PR's verdicts, per the verdict grammar in [issues.md](issues.md). The
+2 reviewers must be 2 *different* people; the
+same reviewer counted twice does not satisfy the bar, and no self-review is permitted.
+
+This assignment convention is what the armed merge gate mechanically enforces (§ The
+N-reviewer merge gate): the oracle counts clean approvals over **distinct `Requestor:`
+identities other than the author**, so assigning fewer than 2
+distinct non-author reviewers leaves the PR unable to reach `approved` — it cannot
+merge. Assign the full slate at kickoff so the process the gate checks and the process
+the team runs are the same one.
 
 ## CI Gates
 
