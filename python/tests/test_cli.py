@@ -1422,3 +1422,49 @@ class TestBootstrapProject:
         created = bootstrap_project(tmp_path, config)
         roster_files = [f for f in created if "roster/" in f]
         assert len(roster_files) == 2
+
+
+class TestUninstall:
+    """The packaged ``2real-team uninstall`` command (bridges to the framework uninstaller)."""
+
+    def _install(self, tmp_path: Path) -> None:
+        import subprocess
+        import sys
+
+        from real_team.framework_install import resolve_framework_root
+
+        root = resolve_framework_root()
+        assert root is not None, "framework assets not resolvable in the source checkout"
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        r = subprocess.run(
+            [sys.executable, str(root / "install" / "bootstrap.py"), str(tmp_path),
+             "--owner", "test-org", "--no-ontology"],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        )
+        assert r.returncode == 0, r.stderr
+        assert (tmp_path / ".claude" / "framework.config.json").is_file()
+
+    def test_uninstall_removes_installed_framework(self, tmp_path: Path):
+        self._install(tmp_path)
+        result = runner.invoke(
+            app, ["uninstall", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        assert not (tmp_path / ".claude").exists()
+
+    def test_uninstall_dry_run_keeps_files(self, tmp_path: Path):
+        self._install(tmp_path)
+        result = runner.invoke(
+            app, ["uninstall", "--target", str(tmp_path), "--dry-run", "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".claude" / "framework.config.json").is_file()
+
+    def test_uninstall_noninstalled_repo_is_clean(self, tmp_path: Path):
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        result = runner.invoke(
+            app, ["uninstall", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output

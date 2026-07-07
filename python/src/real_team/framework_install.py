@@ -103,3 +103,31 @@ def install_framework(
         cmd += ["--dry-run"]
 
     return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def uninstall_framework(
+    target: Path,
+    *,
+    dry_run: bool = False,
+    non_interactive: bool = True,
+) -> subprocess.CompletedProcess | None:
+    """Reverse a framework install in ``target`` via ``framework/install/uninstall.py``.
+
+    The counterpart to :func:`install_framework`: locates the same framework root (wheel-bundled
+    copy first, source checkout as fallback) and runs its deterministic uninstaller. Defaults to
+    ``non_interactive=True`` so the packaged command never hangs on a prompt; pass
+    ``non_interactive=False`` to let the uninstaller ask for confirmation on a TTY.
+
+    Returns the CompletedProcess (inspect ``.returncode`` / ``.stdout``), or None when the
+    framework assets could not be located (caller should report a soft notice, not fail).
+    """
+    root = resolve_framework_root()
+    if root is None:
+        return None
+
+    cmd: list[str] = [sys.executable, str(root / "install" / "uninstall.py"), str(target)]
+    if non_interactive:
+        cmd += ["--non-interactive"]
+    if dry_run:
+        cmd += ["--dry-run"]
+    return subprocess.run(cmd, capture_output=True, text=True)

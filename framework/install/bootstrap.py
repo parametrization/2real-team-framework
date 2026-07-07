@@ -1368,6 +1368,11 @@ def main() -> int:
              "Use this — not --force — to propagate a config change into an evolved charter.",
     )
     ap.add_argument("--dry-run", action="store_true", help="Print the plan; write nothing")
+    ap.add_argument(
+        "--teardown", action="store_true",
+        help="Uninstall: remove the framework-owned install set and restore any consented "
+             "pre-install backups (delegates to uninstall.py). Honors --dry-run/--non-interactive.",
+    )
     args = ap.parse_args()
 
     if not _ASSETS.is_dir():
@@ -1375,6 +1380,14 @@ def main() -> int:
         return 1
 
     target = Path(args.target).resolve()
+
+    if args.teardown:  # thin dispatch to the reversal product (issue #142/#222)
+        import uninstall  # noqa: E402  (sibling module in install/)
+
+        return uninstall.cli_teardown(
+            target, dry_run=args.dry_run, non_interactive=args.non_interactive
+        )
+
     target_claude = target / ".claude"
     mode = "DRY-RUN" if args.dry_run else "INSTALL"
     print(f"== 2real framework bootstrap ({mode}) ==")
