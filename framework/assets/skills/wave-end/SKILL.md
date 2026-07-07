@@ -51,6 +51,24 @@ and reads the counters recorded here.
    one round; count the PR once). This mirrors `trust_signals.py`'s `rework_cycles` signal
    ("PRs they authored that needed >=1 rework round") so the two counters never drift.
    `--concentration` = max(PRs by one author) × 100 / total.
+
+   **Emit review-load next to concentration** (#231): concentration tracks *authoring*
+   load; the companion number is *reviewing* load — per-reviewer verdict counts, so a
+   lopsided slate (one reviewer carrying most verdicts) is a tracked number rather than
+   something you balance by eye. Compute it with the skill's bundled `review_load.py`,
+   resolved the same dual-deploy way as `$LIB` (installed copy first, framework-source
+   fallback), and record the line alongside the counters — `/wave-retro` reads it into the
+   feedback log's review-load note:
+
+   ```bash
+   RL="$REPO_ROOT/.claude/skills/wave-end/review_load.py"
+   [ -f "$RL" ] || RL="$REPO_ROOT/framework/assets/skills/wave-end/review_load.py"
+   python3 "$RL" counts "$W"   # {reviewer: {verdicts, prs_reviewed}}, roster-canonicalized
+   ```
+
+   A "verdict" is one review turn by its `Requestor:` (both `Request` and the
+   amended-in-place `Replied` count once — the amendment convention edits the comment in
+   place, so it never inflates the count; see [pull-requests.md](../../team/charter/pull-requests.md)).
 4. Run `git worktree prune`
 5. Scan docs/ and diagrams for staleness against changes
 6. If this is the final wave of the phase, create a PR to the default branch (User
