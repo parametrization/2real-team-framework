@@ -30,6 +30,7 @@
     ".claude/hooks/validate_commit_identity.py",
     ".claude/hooks/validate_labels.py",
     ".claude/hooks/validate_pr_ci_status.py",
+    ".claude/hooks/validate_pr_review.py",
     ".claude/hooks/validate_review_comment_format.py",
     ".claude/hooks/validate_workflow_paths_coverage.py",
     ".claude/hooks/warn_pipe_mask_rc.py",

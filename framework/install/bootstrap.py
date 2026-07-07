@@ -141,6 +141,7 @@ def _schema_defaults() -> dict:
                 "require_load_bearing_test",
                 "validate_branch_freshness",
                 "validate_pr_ci_status",
+                "validate_pr_review",
                 "block_squash_wave_merge",
             ],
             "post_bash": ["warn_pipe_mask_rc"],
