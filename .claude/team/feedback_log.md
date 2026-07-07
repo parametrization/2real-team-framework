@@ -475,14 +475,69 @@ everything flagged at the end of Wave 2: #102 flagship P0 + ready P1 donors, the
 1. **Make `reinstall.py` mirror the charter tree** (add `team/charter/**` to `_MANAGED_TREES`, or add a
    `manifest --check`-style charter-drift gate). **Rationale:** the dual-deploy #116 guarantee has a
    hole for charter edits — a silent canonical↔runtime charter drift would pass CI today. **Status:
-   not yet applied.**
+   APPLIED via #189/PR #190 (Wave 9)** — chose the `--check` gate route (`charter_drift.py`); caught +
+   remediated 4 pre-existing drifted charter modules on first run.
 2. **Dogfood `promotion-audit` before relying on its auto-promotions.** Run the skill on this repo's
    own memory/charter next wave and verify its AUTO-tier promotions + DECIDE-tier draft issues by hand
-   once, the way the #164 ledger got its first contested-wave validation here. **Status: not yet
-   applied.**
+   once, the way the #164 ledger got its first contested-wave validation here. **Status: APPLIED via
+   #187/PR #191 (Wave 9)** — dogfooded on the real 3-candidate ledger (all DECIDE, none mis-auto);
+   caught + fixed an AUTO false-positive bug (fenced-code marker match); ledger policy settled.
 
 ### Next wave (owner decision — not started)
 No wave reserved. Standing flagship candidate: **#102 P2 tranche** (governance charter modules,
 wave-lifecycle GH-Projects automation, ontology-consultation enforcement, headcount budget) — now
 unblocked by the P0 pipeline shipped this wave. Also open: installer-completeness wave
 (#162/#142/#148/#141/#155), #110 (installer-as-skill), and the two proposals above.
+
+---
+
+## Wave 9 Retro (2026-07-07) — Phase 6 Wave 4: "Trust the promotion pipeline"
+
+**2 PRs · 0 changes-requested cycles (both Replied first pass) · 50% top concentration · 0 CI-red · 0
+Must-fix caught.** A deliberately small hardening wave that applied BOTH Wave 8 retro proposals and
+dogfooded the #102-P0 promotion pipeline for real before the larger #102 P2 tranche builds on it —
+same "trust the machinery before you rely on it" discipline as the scorer-fix-before-W2 and
+gate-hardening-before-W3-flagship. `trust_signals.py score 9`: both implementers clean, delta 0; no 5s
+(reserved-5 not handed out for merely-clean work). Shipped as **v0.8.1** (PyPI + npm, OIDC).
+
+### Top 3 going well
+1. **Both proposals didn't just get built — they paid for themselves on first run.** S1's charter-drift
+   gate immediately caught 4 pre-existing drifted charter modules; S2's dogfood caught a real AUTO
+   false-positive bug (`has_promotion_markers()` bare-substring-matched a doc that *quotes* the marker
+   in a fenced block). Dogfooding worked exactly as intended — the pipeline is now validated-in-anger.
+2. **Cleanest wave yet: 0 changes-requested cycles, both PRs approved first pass.** Both reviewers
+   (Nia on S1, Tariq on S2) independently reproduced every load-bearing claim — revert→fail on both
+   fixes, twice-run byte-identical determinism diff on the promotion-audit skill — rather than trusting
+   author reports. Real verification, still zero blocking findings.
+3. **Ledger policy settled durably, not just for this repo.** `bootstrap.ensure_gitignore_entries()`
+   wires the gitignore default into every install path, so downstream adopters never hit the
+   untracked-noise surprise we did — the fix generalizes (the dual-deploy #116 instinct applied to a
+   runtime-state default).
+
+### Top 3 pain points / watch
+1. **Charter-drift gate has a manifest blind spot (Nia tech-debt).** `plan()` doesn't cross-check
+   `.charter-manifest.json` checksums against the live charter — a manual re-render that bypasses
+   `install_charter(force=True)` could leave a stale manifest the gate won't catch, and `--refresh-charter`
+   could then misclassify a module as hand-evolved. Fail-safe direction, but a real gap.
+2. **`ensure_gitignore_entries` exact-line matching (Tariq tech-debt).** Matches gitignore entries by
+   exact line-equality, so a variant existing form (leading `/`, glob, inline comment) would append an
+   effective duplicate. And `is_owned` now treats ANY `.gitignore` at any depth as owned — one notch
+   coarser, so a future genuinely-stray install-time `.gitignore` write would be silently accepted.
+3. **Two clean waves in a row for the reviewers' reserved-5s (Nia, Tariq both at 5).** The reserved-5
+   is per-wave and decays if a future wave goes quiet; neither had a scoring catch this wave (both
+   Replied). Not a problem yet — but the 5s are now riding on prior-wave evidence, so a substantive
+   contribution or real catch is due to keep them anchored.
+
+### Process proposals from THIS retro (approval-gated — not yet applied)
+1. **Close the charter-manifest blind spot:** have `charter_drift.py plan()` also verify
+   `.charter-manifest.json` checksums against the live charter tree (fold Nia's tech-debt into the
+   existing gate). Low effort, closes the one seam the new gate doesn't cover.
+2. **Harden `ensure_gitignore_entries` matching:** normalize before compare (strip leading `/`, ignore
+   inline comments, treat glob-equivalent forms as present) so re-install is truly idempotent across
+   hand-edited `.gitignore` variants. Fold Tariq's tech-debt in.
+
+### Next wave (owner decision — not started)
+No wave reserved. Standing flagship candidate: **#102 P2 tranche** (governance charter modules,
+wave-lifecycle GH-Projects automation, ontology-consultation enforcement, headcount budget) — now on a
+**dogfooded** pipeline. Also open: installer-completeness (#162/#142/#148/#141/#155), #110, and the two
+small tech-debt proposals above (both fold cleanly into an early slot of any wave).
