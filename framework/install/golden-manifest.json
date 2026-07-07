@@ -49,6 +49,7 @@
     ".claude/lib/ontology_gen/refresh.py",
     ".claude/lib/ontology_gen/typescript_ext.py",
     ".claude/lib/pr_ci_state.py",
+    ".claude/lib/pr_review_state.py",
     ".claude/lib/roster_consistency_check.py",
     ".claude/lib/roster_union_sync.py",
     ".claude/lib/trust_signals.py",
