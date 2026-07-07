@@ -159,6 +159,34 @@ def m_invalid_config_refused(ctx: CellContext) -> Measurement:
     )
 
 
+def m_cli_bridge_soft_degrade(ctx: CellContext) -> Measurement:
+    """CLI bridge degrades gracefully when the bundled framework payload is absent (#139).
+
+    Pass iff ``2real-team init`` printed the soft-degrade notice and still exited 0 — the
+    mustache team scaffolding (charter + root ``CLAUDE.md``) is laid, and the ``bootstrap.py``
+    runtime step was SKIPPED (no ``.claude/framework.config.json``), i.e. no error raised.
+    """
+    r = ctx.primary
+    out = r.out
+    notice = "bundled assets not found" in out or "Framework runtime not installed" in out
+    team_scaffolded = (ctx.workdir / ".claude" / "team" / "charter.md").is_file()
+    claude_md = (ctx.workdir / "CLAUDE.md").is_file()
+    # The runtime step must be skipped: the bridge returned None, so no framework.config.json.
+    runtime_skipped = not (ctx.workdir / ".claude" / "framework.config.json").is_file()
+    ok = (
+        r.returncode == 0 and not r.timed_out
+        and notice and team_scaffolded and claude_md and runtime_skipped
+    )
+    return Measurement(
+        value=ok, passed=ok,
+        expected={"exit": 0, "soft_notice": True, "team_scaffolded": True,
+                  "root_CLAUDE.md": True, "runtime_step": "skipped"},
+        observed={"exit": r.returncode, "timed_out": r.timed_out, "notice": notice,
+                  "charter": team_scaffolded, "claude_md": claude_md,
+                  "runtime_skipped": runtime_skipped, "stdout_excerpt": _excerpt(out)},
+    )
+
+
 def m_non_interactive_zero_prompts(ctx: CellContext) -> Measurement:
     # stdin is always closed; a prompt would EOFError/hang -> our timeout (124).
     ok = not ctx.primary.timed_out
@@ -569,6 +597,7 @@ _reg("install_exit_status", "A", KIND_PASS_FAIL, m_install_exit_status)
 _reg("repo_state_gate_correct", "A", KIND_PASS_FAIL, m_repo_state_gate_correct)
 _reg("invalid_config_refused", "A", KIND_PASS_FAIL, m_invalid_config_refused)
 _reg("non_interactive_zero_prompts", "A", KIND_PASS_FAIL, m_non_interactive_zero_prompts)
+_reg("cli_bridge_soft_degrade", "A", KIND_PASS_FAIL, m_cli_bridge_soft_degrade)
 _reg("files_installed_complete", "B", KIND_SCORED, m_files_installed_complete)
 _reg("no_unexpected_files", "B", KIND_PASS_FAIL, m_no_unexpected_files)
 _reg("install_snapshot_recorded", "B", KIND_PASS_FAIL, m_install_snapshot_recorded)

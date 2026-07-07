@@ -1,0 +1,64 @@
+name: install-quality-gate
+
+# Arms the install-quality harness's run-over-run regression gate (#104 §4 / #148 / #224).
+# Runs the deterministic `cli_bridge_soft_degrade` cell (B13) through the REAL CLI bridge and
+# diffs it against the committed baseline with `--compare`; the harness exits non-zero on a
+# REGRESSION verdict or any failed graded metric, failing this job.
+#
+# Scope note: the gate runs the trend-free B13 cell only. The full matrix carries wall-clock
+# `*_duration_s` trend metrics whose run-over-run budget is machine-dependent and would make a
+# cross-runner `--compare` flaky; the soft-degrade cell is pass/fail and deterministic.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches:
+      - main
+      - "deployments/**"
+    paths:
+      - "framework/harness/**"
+      - "framework/install/**"
+      - "python/src/real_team/**"
+      - "framework/tests/install_quality/**"
+      - "framework/tests/test_install_harness.py"
+      - ".github/workflows/install-quality-gate.yml"
+
+jobs:
+  compare-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the CLI (real_team + typer/rich)
+        # The B13 soft-degrade fixture runs `2real-team init` from an isolated copy of the
+        # real_team package, so the package and its deps must be importable by this interpreter.
+        working-directory: python
+        run: |
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+
+      - name: Harness self-tests (incl. the B13 end-to-end soft-degrade cell)
+        env:
+          ENVIRONMENT: test
+        run: pytest framework/tests/test_install_harness.py -q
+
+      - name: Seed the committed baseline into the runtime runs dir
+        # runs/ is .gitignored (envelopes are generated artifacts); the source-controlled
+        # baseline lives under baselines/ and is copied in so `--compare` finds a prior run.
+        run: |
+          mkdir -p framework/tests/install_quality/runs
+          cp framework/tests/install_quality/baselines/cli_soft_degrade.baseline.json \
+             framework/tests/install_quality/runs/baseline.json
+
+      - name: Compare gate — fail on any metric regression
+        run: |
+          python3 -m framework.harness \
+            --buckets B13 \
+            --installers cli_soft_degrade \
+            --no-dogfood \
+            --compare
