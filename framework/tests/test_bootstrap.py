@@ -40,3 +40,30 @@ def test_written_order_groups_hook_with_verdict_grammar_gate() -> None:
     order (matches the schema/runtime copies test_defaults_sync pins equal)."""
     pre = _written_pre_bash()
     assert pre.index("block_gh_pr_review") == pre.index("validate_review_comment_format") + 1
+
+
+# --------------------------------------------------------------------------
+# ensure_gitignore_entries() normalization pairing (#216).
+#
+# Full coverage (dedup / stable-order / blank-collapse / run-twice-no-diff,
+# each mutation-verified) lives in test_gitignore_ledger_default.py, which
+# pre-dates and is dedicated to this helper. This test pins the same
+# load-bearing contract directly against bootstrap.py so the file-pairing
+# gate (charter/pull-requests.md § Pre-Review Self-Check) has a same-stem
+# test for THIS file's own new behavior.
+
+
+def test_ensure_gitignore_entries_dedupes_and_orders_deterministically(tmp_path: Path) -> None:
+    """Load-bearing (revert -> fail): calling with a duplicated/unordered entries
+    tuple must still produce a single, alphabetically-stable set of appended
+    lines. Reverting either the input-dedup step or the ``sorted(...)`` around
+    the missing entries in ``ensure_gitignore_entries`` makes this fail."""
+    # Deliberately passed in the REVERSE of sorted order (with a repeat), so this
+    # catches both a dropped dedup step and a dropped `sorted(...)` independently.
+    bootstrap.ensure_gitignore_entries(
+        tmp_path, (".claude/x.json", ".claude-backups/", ".claude-backups/"), dry_run=False
+    )
+    lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert lines.count(".claude-backups/") == 1
+    # sorted(...) output is deterministic regardless of call-site argument order.
+    assert lines.index(".claude-backups/") < lines.index(".claude/x.json")

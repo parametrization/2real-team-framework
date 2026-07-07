@@ -18,6 +18,12 @@ expected ``{{feature_branch_scheme}}`` -> value difference is never mistaken for
 genuine content divergence (a canonical doc update not propagated, or a hand-edited runtime
 copy) is reported.
 
+It also cross-checks each module's on-disk checksum against the value recorded in the render
+manifest (``team/.charter-manifest.json``, written by ``bootstrap.install_charter``), so a
+charter edit that happens to match canonical byte-for-byte but skipped going through
+``install_charter`` — leaving the manifest checksum stale — is still caught (#216). See
+:func:`plan` for the full rationale.
+
 Read-only by design (approach (a) from issue #189): this never writes. A reported drift is
 fixed by re-rendering the affected module(s) from canonical for the current config (see
 ``install_charter`` in ``bootstrap.py``; a scoped one-off call with ``force=True`` re-renders
@@ -96,11 +102,25 @@ def plan(claude_root: Path = _DEFAULT_CLAUDE_ROOT, cfg: dict | None = None) -> l
     before comparison, so an expected ``{{placeholder}}`` -> value substitution is never
     itself flagged — only genuine content drift (a canonical update not propagated, a
     missing module, or a hand-edited runtime copy) appears in the result.
+
+    Also cross-checks each module's content against the checksum recorded in the render
+    manifest (``team/.charter-manifest.json``, written by ``bootstrap.install_charter``).
+    A module can byte-match the canonical render while the manifest's recorded checksum
+    for it is stale or missing — e.g. someone wrote the correct rendered text straight to
+    ``.claude/team/charter/*.md`` (a hand-applied "fix" or a copy from another checkout)
+    without going through ``install_charter``, so the manifest was never regenerated
+    (#216). That divergence is invisible to a canonical-vs-live text diff alone, but it
+    corrupts the NEXT ``refresh()``: ``install_charter`` trusts the manifest checksum to
+    decide "unmodified since last render" (safe to propagate a config change) vs.
+    "hand-evolved" (preserve). A stale manifest entry makes that call on stale evidence.
+    So a module is flagged as drift if EITHER its content disagrees with canonical OR its
+    on-disk checksum disagrees with what the manifest claims was last rendered.
     """
     if cfg is None:
         cfg = _load_runtime_config(claude_root)
     rendered = render_canonical_charter(cfg)
     charter_dir = claude_root / "team" / "charter"
+    manifest = bootstrap._load_charter_manifest(claude_root)
     drift: list[str] = []
     for name in sorted(rendered):
         expected_text = rendered[name]
@@ -115,6 +135,13 @@ def plan(claude_root: Path = _DEFAULT_CLAUDE_ROOT, cfg: dict | None = None) -> l
             drift.append(rel)
             continue
         if actual_text != expected_text:
+            drift.append(rel)
+            continue
+        recorded_checksum = manifest.get(name)
+        if recorded_checksum is None or recorded_checksum != bootstrap._sha256(actual_text):
+            # Content matches canonical, but the render manifest disagrees (or has no
+            # entry) about the checksum it last recorded for this module — a charter
+            # edit that skipped manifest regeneration (#216).
             drift.append(rel)
     return drift
 
@@ -147,14 +174,15 @@ def main(argv: list[str] | None = None) -> int:
     if drift:
         print(
             "charter-drift: DRIFT — these runtime charter modules differ from the canonical "
-            f"template rendered with {claude_root}/framework.config.json:"
+            f"template rendered with {claude_root}/framework.config.json, or their "
+            "team/.charter-manifest.json checksum is stale/missing:"
         )
         for d in drift:
             print(f"  {d}")
         print(
             "Fix: re-render the drifted module(s) from canonical for the current config "
-            "(install_charter(..., force=True) in framework/install/bootstrap.py), then "
-            "re-run this check."
+            "(install_charter(..., force=True) in framework/install/bootstrap.py) — this "
+            "also rewrites their team/.charter-manifest.json checksum — then re-run this check."
         )
         return 1
     print(f"charter-drift: {claude_root}/team/charter/ matches canonical for this config.")

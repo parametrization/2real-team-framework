@@ -32,7 +32,7 @@
     "allow_emails": ["owner@example.com"]
   },
   "policy": {
-    "reviewers_required": 2,
+    "reviewers_required": 1,
     "pr_review_gate_enabled": false,
     "merge_model": "wave-branch",
     "admin_merge_exceptions": {

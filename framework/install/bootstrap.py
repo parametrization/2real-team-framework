@@ -1204,20 +1204,54 @@ def ensure_gitignore_entries(target: Path, entries: tuple[str, ...], *, dry_run:
     written once) — a hand-authored ``.gitignore`` is never rewritten or
     reordered, and a re-run adds nothing new. ``dry_run`` reports what would be
     added without touching the file.
+
+    Normalized for idempotency (#216) so repeated/differently-ordered installer
+    runs never churn the file byte-for-byte:
+
+    * **Deduped input** — a caller-supplied ``entries`` tuple with repeats (or
+      two separate calls for the same logical entry) never appends a path more
+      than once.
+    * **Stable ordering** — the entries actually appended are sorted, so the
+      appended block is a pure function of the *set* of missing entries, not of
+      the order the caller happened to pass them in (two installer runs asking
+      for the same entries in a different order produce byte-identical output).
+    * **No blank-line accumulation** — trailing blank lines left by a PRIOR
+      managed-block write are collapsed before appending, so the separator
+      between pre-existing content and the managed block never grows across
+      repeated calls that each add a new entry, and the file always ends in
+      exactly one trailing newline.
     """
     gi_path = target / ".gitignore"
     existing_lines = gi_path.read_text(encoding="utf-8").splitlines() if gi_path.is_file() else []
     existing_set = set(existing_lines)
-    missing = [e for e in entries if e not in existing_set]
+
+    # Dedupe the requested entries themselves (stable, first-seen order) before
+    # computing what's missing, so a repeated/duplicated request never grows the
+    # file more than once for the same logical entry.
+    deduped_entries: list[str] = []
+    seen: set[str] = set()
+    for e in entries:
+        if e not in seen:
+            seen.add(e)
+            deduped_entries.append(e)
+
+    missing = sorted(e for e in deduped_entries if e not in existing_set)
     if not missing:
         return "up to date (0 added)"
     plural = "y" if len(missing) == 1 else "ies"
     if dry_run:
         return f"would add {len(missing)} entr{plural}: {', '.join(missing)}"
+
+    # Collapse any trailing blank lines already present (e.g. left by a prior
+    # managed-block append) so the separator before our block never grows.
+    while existing_lines and existing_lines[-1] == "":
+        existing_lines.pop()
+
+    header_missing = _GITIGNORE_HEADER not in existing_set
     block: list[str] = []
-    if existing_lines and existing_lines[-1] != "":
+    if existing_lines and header_missing:
         block.append("")
-    if _GITIGNORE_HEADER not in existing_set:
+    if header_missing:
         block.append(_GITIGNORE_HEADER)
     block.extend(missing)
     gi_path.write_text("\n".join(existing_lines + block) + "\n", encoding="utf-8")
