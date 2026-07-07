@@ -21,6 +21,13 @@ blocked.
   in `.claude/framework.config.json` is the N-reviewer gate. Read it — a PR needs
   that many DISTINCT approving reviewers before it can merge, so your approval may
   be only one of several required.
+- **When `policy.pr_review_gate_enabled` is true, that bar is mechanically enforced:**
+  the `validate_pr_review` hook BLOCKS `gh pr ready` / `gh pr merge` until the oracle
+  reports the PR `approved` (`reviewers_required` distinct clean approvals AND no
+  unresolved `Must-fix:`). Your clean verdict is then load-bearing — the merge cannot
+  land without it. (Escape hatch if the team ever wedges: an owner reverts the flag with
+  a direct config-only commit to the default branch; the gate is also fail-open on an
+  oracle error.) When the flag is false the same bar is advisory, not blocked.
 
 ## Instructions
 1. Fetch PR diff: `gh pr diff {number}`
