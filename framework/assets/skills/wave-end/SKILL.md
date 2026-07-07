@@ -46,8 +46,11 @@ and reads the counters recorded here.
    ```
 
    Count them from the actual merged-PR set, not from memory: `--pr-count` = merged PRs
-   this wave, `--cr-cycles` = ChangesRequested verdicts across them, `--concentration` =
-   max(PRs by one author) × 100 / total.
+   this wave, `--cr-cycles` = **PRs** that took >=1 changes-requested round (per-PR, not
+   per-verdict — a PR with `reviewers_required=2` can carry 2 ChangesRequested verdicts in
+   one round; count the PR once). This mirrors `trust_signals.py`'s `rework_cycles` signal
+   ("PRs they authored that needed >=1 rework round") so the two counters never drift.
+   `--concentration` = max(PRs by one author) × 100 / total.
 4. Run `git worktree prune`
 5. Scan docs/ and diagrams for staleness against changes
 6. If this is the final wave of the phase, create a PR to the default branch (User
