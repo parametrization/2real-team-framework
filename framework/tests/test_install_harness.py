@@ -25,6 +25,7 @@ import install_config  # noqa: E402  (framework/install sibling — the resolved
 from framework.harness import (  # noqa: E402
     buckets,
     compare,
+    installers,
     manifest,
     metrics,
     real_provision,
@@ -297,6 +298,107 @@ def test_no_backup_litter_ignores_preexisting_checked_in_baks(tmp_path: Path) ->
     assert m2.observed["baks"] == ["CLAUDE.md.20260705T000000Z.bak"]
 
 
+# -------------------------------- #148/#224: cli_bridge_soft_degrade metric + fixture
+
+
+def _soft_result(out: str, *, rc: int = 0, timed_out: bool = False) -> installers.RunResult:
+    return installers.RunResult(argv=[], returncode=rc, stdout=out, stderr="",
+                                duration_s=0.1, timed_out=timed_out)
+
+
+def _lay_soft_degrade_tree(root: Path, *, charter: bool = True,
+                           claude_md: bool = True, runtime: bool = False) -> Path:
+    """A post-run target tree in the soft-degrade shape (team scaffolded, runtime skipped).
+
+    The soft-notice is asserted from the RunResult stdout the caller passes, not from disk.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    if charter:
+        (root / ".claude" / "team").mkdir(parents=True, exist_ok=True)
+        (root / ".claude" / "team" / "charter.md").write_text("charter\n", encoding="utf-8")
+    if claude_md:
+        (root / "CLAUDE.md").write_text("# team\n", encoding="utf-8")
+    if runtime:  # the runtime step did NOT skip (bundled assets were present) — a regression
+        (root / ".claude").mkdir(parents=True, exist_ok=True)
+        (root / ".claude" / "framework.config.json").write_text("{}\n", encoding="utf-8")
+    return root
+
+
+def test_cli_bridge_soft_degrade_passes_on_notice_and_skipped_runtime(tmp_path: Path) -> None:
+    """Green: soft notice + exit 0 + team scaffolded (charter + CLAUDE.md) + runtime skipped."""
+    _lay_soft_degrade_tree(tmp_path)
+    ctx = metrics.CellContext(
+        workdir=tmp_path, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result("Framework runtime not installed: bundled assets not found\n"),
+    )
+    m = metrics.m_cli_bridge_soft_degrade(ctx)
+    assert m.passed is True and m.value is True
+
+
+def test_cli_bridge_soft_degrade_fails_each_broken_condition(tmp_path: Path) -> None:
+    """Each pass-condition is load-bearing — dropping any one flips the metric to FAIL."""
+    notice = "Framework runtime not installed: bundled assets not found\n"
+
+    # (a) non-zero exit — the bridge raised instead of soft-degrading.
+    d = tmp_path / "a"
+    _lay_soft_degrade_tree(d)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result(notice, rc=1))).passed is False
+
+    # (b) no soft notice in stdout — degraded silently.
+    d = tmp_path / "b"
+    _lay_soft_degrade_tree(d)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result("Installed the framework runtime.\n"))).passed is False
+
+    # (c) team scaffolding absent — charter not laid.
+    d = tmp_path / "c"
+    _lay_soft_degrade_tree(d, charter=False)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result(notice))).passed is False
+
+    # (d) root CLAUDE.md missing.
+    d = tmp_path / "d"
+    _lay_soft_degrade_tree(d, claude_md=False)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result(notice))).passed is False
+
+    # (e) runtime step NOT skipped — framework.config.json present means the bridge did NOT
+    #     degrade; that is the regression the gate must catch.
+    d = tmp_path / "e"
+    _lay_soft_degrade_tree(d, runtime=True)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result(notice))).passed is False
+
+    # (f) timed out (hang) — not a graceful degrade.
+    d = tmp_path / "f"
+    _lay_soft_degrade_tree(d)
+    assert metrics.m_cli_bridge_soft_degrade(metrics.CellContext(
+        workdir=d, installer="cli_soft_degrade", permutation={},
+        primary=_soft_result(notice, rc=124, timed_out=True))).passed is False
+
+
+def test_prov_cli_soft_degrade_isolates_framework(tmp_path: Path) -> None:
+    """The fixture copies real_team + data dirs but OMITS framework/ so the bridge can't
+    resolve it; the importable package root is exposed in extra.iso_src."""
+    wd = tmp_path / "wd"
+    wd.mkdir()
+    fixture = buckets._prov_cli_soft_degrade(wd, {})
+    iso_src = Path(fixture["extra"]["iso_src"])
+    assert (iso_src / "real_team" / "cli.py").is_file()          # CLI package copied
+    assert iso_src.parents[1] == wd / "iso"
+    # parents[2] of the package (= <wd>/iso) has presets but NOT framework — the whole point.
+    pkg_parents2 = (iso_src / "real_team").parents[2]
+    assert (pkg_parents2 / "presets").is_dir()
+    assert not (pkg_parents2 / "framework").exists()
+    assert not (iso_src / "real_team" / "_bundled").exists()
+
+
 # --------------------------------------------------------------- buckets matrix
 
 
@@ -350,6 +452,27 @@ def test_run_matrix_hermetic_bucket_all_green(bucket_id: str) -> None:
     assert graded, "no graded metrics produced"
     failed = [r for r in graded if not r["pass"]]
     assert not failed, f"unexpected failures: {[r['record_id'] for r in failed]}"
+    assert doc["rollup"]["install_success_rate"] == 1.0
+
+
+def test_run_matrix_b13_cli_soft_degrade_all_green() -> None:
+    """B13 end-to-end through the REAL CLI bridge: with the framework payload isolated away,
+    `2real-team init` soft-degrades (notice + exit 0) and every graded metric passes.
+
+    Requires the `real_team` CLI (+ typer/rich) importable by this interpreter — the harness
+    invokes it via ``sys.executable``. Skips cleanly where the CLI is not installed (e.g. the
+    stdlib-only ``framework`` CI job); the ``install-quality-gate`` workflow installs it."""
+    pytest.importorskip("real_team")
+    pytest.importorskip("typer")
+    env = run_matrix({"buckets": ["B13"], "installers": ["cli_soft_degrade"], "dogfood": False})
+    doc = env.to_dict()
+    graded = [r for r in doc["records"] if r["pass"] is not None
+              and r["kind"] in ("pass_fail", "scored")]
+    assert graded, "no graded metrics produced"
+    sd = [r for r in doc["records"] if r["metric"] == "cli_bridge_soft_degrade"]
+    assert len(sd) == 1 and sd[0]["pass"] is True, sd
+    failed = [r for r in graded if not r["pass"]]
+    assert not failed, f"unexpected failures: {[(r['record_id'], r['observed']) for r in failed]}"
     assert doc["rollup"]["install_success_rate"] == 1.0
 
 

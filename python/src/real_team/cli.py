@@ -566,6 +566,46 @@ def status(
         console.print(f"\nSkills installed: {skill_count}")
 
 
+@app.command()
+def uninstall(
+    target: str = typer.Option(".", help="Target directory"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview what would be removed; write nothing"
+    ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt; proceed without the confirmation gate (automation)",
+    ),
+) -> None:
+    """Uninstall the framework runtime — restore the repo to its pre-install state.
+
+    Removes exactly the framework-owned install set (hooks/lib/skills/config, charter, team
+    artifacts, generated ontology, the managed .gitignore block, the pre-push hook) and restores
+    any pre-install assets a consented install archived. Idempotent; a non-installed repo is a
+    clean no-op.
+    """
+    from .framework_install import uninstall_framework
+
+    target_path = Path(target).resolve()
+    proc = uninstall_framework(
+        target_path, dry_run=dry_run, non_interactive=non_interactive
+    )
+    if proc is None:
+        console.print(
+            "[yellow]Cannot uninstall:[/yellow] bundled framework assets not found "
+            "(re-run from a source checkout, or use the standalone framework uninstaller)."
+        )
+        raise typer.Exit(1)
+    if proc.stdout:
+        console.print(proc.stdout.rstrip())
+    if proc.returncode != 0:
+        if proc.stderr:
+            console.print(f"[red]{proc.stderr.strip()}[/red]")
+        raise typer.Exit(proc.returncode)
+    console.print("\n[bold green]Framework runtime uninstalled.[/bold green]")
+
+
 def _extract_field(content: str, field: str) -> str | None:
     """Extract a field value from a roster card."""
     for line in content.splitlines():

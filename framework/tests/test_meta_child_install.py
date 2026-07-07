@@ -10,6 +10,7 @@ table, and the interactive children multi-select (input stubbed).
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -555,6 +556,45 @@ class TestMetaOntologyInstall:
         assert r2.returncode == 0, r2.stderr or r2.stdout
         assert "structural index:  fresh" in r2.stdout
         assert central.read_text() == first
+
+    def test_meta_install_reports_fresh_despite_newer_source_mtime(
+        self, tmp_path: Path
+    ) -> None:
+        # Regression for #141: under full-suite load a discovered source can carry an
+        # mtime NEWER than the just-written index (coarse-granularity / same-tick timing)
+        # even though its content is unchanged. The cheap staleness heuristic then fires,
+        # but the regeneration barrier must recognise that a deterministic regenerate
+        # reproduces the index byte-for-byte and still report "fresh" — not a phantom
+        # "generated". We force the flaky condition deterministically with os.utime so the
+        # regression exercises the under-load path without depending on the FS clock.
+        meta, r1 = self._install_meta_with_seeded_children(tmp_path)
+        assert r1.returncode == 0, r1.stderr or r1.stdout
+        central = meta / "ontology" / "structural" / "cross-repo-graph.json"
+        first = central.read_text()
+        index = meta / "ontology" / "structural" / "code-graph.json"
+
+        # Make a discovered parent source strictly newer than the index, content untouched.
+        future = index.stat().st_mtime + 100
+        os.utime(meta / "core.py", (future, future))
+
+        r2 = _run(str(meta), "--install-config", str(meta.parent / "install.yaml"),
+                  "--non-interactive")
+        assert r2.returncode == 0, r2.stderr or r2.stdout
+        # Barrier holds: byte-identical regenerate ⇒ "fresh", roll-up left untouched.
+        assert "structural index:  fresh" in r2.stdout, r2.stdout
+        assert central.read_text() == first
+
+        # And the barrier does NOT blind real staleness: a genuine STRUCTURAL edit (a new
+        # symbol changes the graph) must still regenerate and re-aggregate.
+        (meta / "core.py").write_text(
+            "def parent_fn():\n    return 1\n\n\ndef added_fn():\n    return 2\n",
+            encoding="utf-8",
+        )
+        r3 = _run(str(meta), "--install-config", str(meta.parent / "install.yaml"),
+                  "--non-interactive")
+        assert r3.returncode == 0, r3.stderr or r3.stdout
+        assert "structural index:  generated" in r3.stdout, r3.stdout
+        assert central.read_text() != first
 
     def test_meta_install_missing_child_index_degrades_gracefully(
         self, tmp_path: Path

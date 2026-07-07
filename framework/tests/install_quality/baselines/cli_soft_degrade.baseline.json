@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "run": {
+    "run_id": "2026-07-07T13:17:17Z-2e5c9e9",
+    "git_sha": "2e5c9e93e93604ca3fde9e4d175aad12ebc5a128",
+    "started_at": "2026-07-07T13:17:17Z",
+    "finished_at": "2026-07-07T13:17:18Z",
+    "harness_version": "0.1.0",
+    "host_kind": "local",
+    "installers": [
+      "cli_soft_degrade"
+    ],
+    "buckets": [
+      "B13"
+    ]
+  },
+  "records": [
+    {
+      "record_id": "B13/cli_soft_degrade/soft-degrade/cli_bridge_soft_degrade",
+      "bucket": "B13",
+      "fixture": "cli-bridge-soft-degrade",
+      "installer": "cli_soft_degrade",
+      "permutation": {
+        "model": "single-repo",
+        "installer": "cli",
+        "bundled_assets": "absent",
+        "team": true
+      },
+      "metric": "cli_bridge_soft_degrade",
+      "category": "A",
+      "kind": "pass_fail",
+      "value": true,
+      "pass": true,
+      "expected": {
+        "exit": 0,
+        "soft_notice": true,
+        "team_scaffolded": true,
+        "root_CLAUDE.md": true,
+        "runtime_step": "skipped"
+      },
+      "observed": {
+        "exit": 0,
+        "timed_out": false,
+        "notice": true,
+        "charter": true,
+        "claude_md": true,
+        "runtime_skipped": true,
+        "stdout_excerpt": "Generating team for proj...\n\nCreated 15 files:\n  .claude/team/charter.md\n  .claude/team/roster/manager_greta_yamamoto.md\n  .claude/team/roster/tech_lead_sakura_ueda.md\n  .claude/team/roster/software_engineer_kwame_vargas.md\n  .claude/team/roster/software_engineer_marco_okonkwo.md\n  .claude/team/roster/qa_engineer_yuki_singh.md\n  .claude/team/trust_matrix.md\n  .claude/team/feedback_log.md\n  CLAUDE.md\n  .claude/skills/retro.md\n  .claude/skills/wave-start.md\n  .claude/skills/wave-end.md\n  .claude/skills/review-pr.md\n  .claude/skills/plan-phase.md\n  .claude/skills/close-stale-issues.md\n\nFramework  \u2026[truncated]"
+      },
+      "duration_s": 0.0,
+      "timestamp": "2026-07-07T13:17:18Z",
+      "git_sha": "2e5c9e93e93604ca3fde9e4d175aad12ebc5a128",
+      "notes": ""
+    },
+    {
+      "record_id": "B13/cli_soft_degrade/soft-degrade/install_exit_status",
+      "bucket": "B13",
+      "fixture": "cli-bridge-soft-degrade",
+      "installer": "cli_soft_degrade",
+      "permutation": {
+        "model": "single-repo",
+        "installer": "cli",
+        "bundled_assets": "absent",
+        "team": true
+      },
+      "metric": "install_exit_status",
+      "category": "A",
+      "kind": "pass_fail",
+      "value": true,
+      "pass": true,
+      "expected": {
+        "exit": 0
+      },
+      "observed": {
+        "exit": 0,
+        "timed_out": false
+      },
+      "duration_s": 0.0,
+      "timestamp": "2026-07-07T13:17:18Z",
+      "git_sha": "2e5c9e93e93604ca3fde9e4d175aad12ebc5a128",
+      "notes": ""
+    },
+    {
+      "record_id": "B13/cli_soft_degrade/soft-degrade/non_interactive_zero_prompts",
+      "bucket": "B13",
+      "fixture": "cli-bridge-soft-degrade",
+      "installer": "cli_soft_degrade",
+      "permutation": {
+        "model": "single-repo",
+        "installer": "cli",
+        "bundled_assets": "absent",
+        "team": true
+      },
+      "metric": "non_interactive_zero_prompts",
+      "category": "A",
+      "kind": "pass_fail",
+      "value": true,
+      "pass": true,
+      "expected": {
+        "completed_without_stdin": true
+      },
+      "observed": {
+        "timed_out": false,
+        "duration_s": 0.327
+      },
+      "duration_s": 0.0,
+      "timestamp": "2026-07-07T13:17:18Z",
+      "git_sha": "2e5c9e93e93604ca3fde9e4d175aad12ebc5a128",
+      "notes": ""
+    }
+  ],
+  "rollup": {
+    "per_bucket_pass_rate": {
+      "B13": 1.0
+    },
+    "per_category_pass_rate": {
+      "A": 1.0
+    },
+    "install_success_rate": 1.0,
+    "reinstall_parity_clean": null,
+    "trend": {}
+  }
+}
