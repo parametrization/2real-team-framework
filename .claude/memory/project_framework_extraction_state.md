@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.8.0 (Phase 6 Wave 3: fail-closed foundation + flagship #102-P0 asset port), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.8.1 (Phase 6 Wave 4: dogfooded the #102-P0 promotion pipeline + closed the charter-tree dual-deploy hole), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,15 +11,48 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-06): released v0.8.0 — Phase 6 Wave 3 (fail-closed foundation + flagship
-#102-P0 asset port) COMPLETE, merged to main, published to PyPI + npm.** Phase 4 ("self-hosting &
-quality machinery") made the framework trustworthy run on itself; **Phase 5** ("installer robustness",
-v0.5.0) made the installer trustworthy on repos *other than this one*; **Phase 6 Wave 1** (v0.6.0)
-*proved it in the wild* against real diverged forks; **Phase 6 Wave 2** (v0.7.0) *closed the loop on
-the framework's own quality machinery*; **Phase 6 Wave 3** (v0.8.0) *hardened the fail-closed guarantee
-and began porting the mined noorinalabs assets* (#102 P0 + ready P1 donors). See [[handoff]] for the
-exact pickup (next = owner picks the theme — no wave reserved; standing candidate = #102 **P2 tranche**,
-now unblocked by the P0 pipeline). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+**Current baseline (2026-07-07): released v0.8.1 — Phase 6 Wave 4 (dogfood the promotion pipeline +
+close the charter-tree dual-deploy hole) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
+("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
+**Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
+(v0.7.0) *closed the loop on the framework's own quality machinery*; **Phase 6 Wave 3** (v0.8.0)
+*hardened the fail-closed guarantee and began porting the mined noorinalabs assets* (#102 P0 + ready P1
+donors); **Phase 6 Wave 4** (v0.8.1) *validated the #102-P0 promotion pipeline in anger and closed the
+charter-tree dual-deploy hole* (both W3-retro proposals applied). See [[handoff]] for the exact pickup
+(next = owner picks the theme — no wave reserved; standing candidate = #102 **P2 tranche**, now on a
+**dogfooded** pipeline). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 4 → v0.8.1 (2026-07-07, rollup PR #192 → main @ merge `bdb4bd9`, bump `61f725d`,
+wrapup `2f2572f`) — "Trust the promotion pipeline."** Deliberately small hardening/dogfood wave
+applying **both** W3-retro proposals before #102 P2 builds on the pipeline. **2 PRs, 0 CR cycles (both
+Replied first pass), 50% concentration, 0 CI-red, 645 tests** (+16). OIDC published (npm `latest`=0.8.1;
+PyPI `/0.8.1/json`=200); GH Release `v0.8.1` + lightweight tag `deployments-phase6-wave-4` on merge
+commit. Both PRs merged clean (no conflicts).
+- **S1 #189/PR#190** (Ibrahim → review Nia) — **charter-tree dual-deploy gate**: new read-only
+  `framework/install/charter_drift.py --check` renders each canonical charter module with THIS repo's
+  config and diffs vs runtime `.claude/team/charter/*.md`, failing CI on genuine content divergence only
+  (placeholder substitutions never false-positive). Closes the #116 hole where `reinstall.py`'s
+  `_MANAGED_TREES` covered only `skills/`. **Caught + remediated 4 pre-existing drifted charter modules
+  on first run** (branching/charter/hooks/pull-requests) + added the missing `.charter-manifest.json`
+  (repo predated #77). Wired as pytest gate `test_charter_drift.py`. *Applies W3-retro proposal #1.*
+- **S2 #187/PR#191** (Paloma → review Tariq) — **first real dogfood of the #102-P0 pipeline + ledger
+  policy settle**: ran `promotion-audit` on the real 3-candidate ledger (all classified DECIDE, none
+  mis-auto-promoted); determinism re-verified byte-identical. **Caught + fixed a real bug** —
+  `has_promotion_markers()` bare-substring-matched, so `charter/skills.md` (which quotes the marker in a
+  fenced ``` block) false-positived as AUTO; fix strips fenced code before matching, regression tests
+  pinned against the real doc (load-bearing). **Ledger policy settled:** live `generic_prompt_ledger.json`
+  stays gitignored (transient queue), durable trail = committed per-wave audit log
+  (`paths.promotion_audit_log/wave_<id>.md`), and `bootstrap.ensure_gitignore_entries()` wires the
+  gitignore default into every install path (standalone/meta-parent/meta-child/standalone-child) so
+  downstream adopters auto-get it. Closes #187. *Applies W3-retro proposal #2.*
+- **Trust: all delta 0** (clean wave, `trust_signals.py score 9`). Ibrahim 4→4, Paloma 4→4 (both clean
+  single PRs, no bump per policy); Nia 5, Tariq 5 hold reserved-5s from W8 (no scoring catch this wave —
+  both Replied; per-wave/decaying, a substantive PR or real catch due to keep them anchored).
+- **New tech-debt (feedback_log, 2 fold-in proposals):** (1) `charter_drift.py plan()` doesn't
+  cross-check `.charter-manifest.json` checksums vs live charter (Nia) → manifest blind spot; (2)
+  `ensure_gitignore_entries` exact-line match could dup a variant existing form + `is_owned` now treats
+  any `.gitignore` at any depth as owned (Tariq).
 
 **Phase 6 Wave 3 → v0.8.0 (2026-07-06, rollup PR #186 → main @ merge `4af3866`, bump `bb2bcd7`,
 retro `0945b1c`) — "Fail-closed foundation + flagship asset port."** **5 PRs, 1 CR cycle, 40%
