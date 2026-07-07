@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.0 (Phase 6 Wave 5: PR-review state machine — oracle + submission guard + dormant merge gate), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.1 (Phase 6 Wave 6: ACTIVATED the PR-review gate on this repo — reviewers_required=2 + gate enabled; defaults stay dormant), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,8 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.9.0 — Phase 6 Wave 5 (PR-review state machine, shipped
-dormant) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-07): released v0.9.1 — Phase 6 Wave 6 (ACTIVATE the review gate on this
+repo) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
@@ -20,9 +20,41 @@ dormant) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 *hardened the fail-closed guarantee and began porting the mined noorinalabs assets* (#102 P0 + ready P1
 donors); **Phase 6 Wave 4** (v0.8.1) *validated the #102-P0 promotion pipeline in anger and closed the
 charter-tree dual-deploy hole*; **Phase 6 Wave 5** (v0.9.0) *shipped the #102 P2 review-gate flagship —
-a PR-review state machine, dormant by default*. See [[handoff]] for the exact pickup
-(next = owner picks the theme — no wave reserved; #102 **P2 tranche partially landed**, more P2
-material remains). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+a PR-review state machine, dormant by default*; **Phase 6 Wave 6** (v0.9.1) *ACTIVATED that gate on this
+repo* (reviewers_required=2 + pr_review_gate_enabled=true; defaults stay dormant) *and formalized the
+process (integration-owner + pin-contracts rules, N=2 assignment)*. See [[handoff]] for the exact pickup
+(next = owner picks the theme — no wave reserved; a **gate-activation hardening wave** (#207/#208/#211 +
+2 W9 carry-overs) is the standing candidate). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0)
+below.
+
+**Phase 6 Wave 6 → v0.9.1 (2026-07-07, rollup PR #212 → main @ merge `191918e`, bump `911ccd6`,
+wrapup `bcea7f6`, ontology `734787a`) — "Activate the review gate."** Turned on what W5 shipped dormant.
+**3 PRs, 0 CR cycles, 33% concentration, 706 tests** (+6). **First wave under the 2-reviewer regime — 6
+clean verdicts across 3 PRs, every PR cleared 2 distinct approvals first pass.** OIDC published (npm
+`latest`=0.9.1; PyPI `/0.9.1/json`=200); GH Release `v0.9.1` + tag `deployments-phase6-wave-6` on merge
+`191918e`. Meta #201 + stories #202/#203/#204 closed.
+- **THE GATE IS NOW ARMED ON THIS REPO:** `.claude/framework.config.json` has `policy.reviewers_required=2`
+  + `policy.pr_review_gate_enabled=true`. `gh pr ready`/`gh pr merge` on a PR with <2 distinct clean
+  reviewer verdicts (or any unresolved Must-fix) is BLOCKED. **Framework DEFAULTS stay dormant** (schema/
+  `_DEFAULTS`/example: gate off, reviewers_required=1) so downstream adopters still install inert.
+  **Escape hatch:** disarm via a direct config-only commit to `main` (direct push is NOT gated; gate is
+  fail-open on oracle *exception*). Practical consequence for future waves: **every PR now needs 2
+  distinct reviewers**; rollup→main merges are done while local main is still dormant (or via the hatch),
+  wrapup/bump/memory are direct pushes (ungated).
+- **S1 #202/PR#206 (Paloma → Nia + Tariq):** armed the gate + proved it LIVE (self-contained throwaway PR
+  #205: blocked 0/2 → passed 2/2); integration test binds to the real repo config; charter merge-rule +
+  escape hatch documented.
+- **S3 #204/PR#209 (Nia → Ibrahim + Tariq):** folded both W5 proposals into `charter/issues.md` (new
+  "Wave Planning: Shared Artifacts & Frozen Contracts" section) + N=2 assignment rule into
+  `charter/pull-requests.md`; both marked APPLIED. Nia was **sole charter integration-owner** (dogfooding
+  proposal #1 in the same wave it was written).
+- **S2 #203/PR#210 (Ibrahim → Paloma + Tariq):** proved the oracle N-of-M on **real** 2-reviewer data
+  (PR #206's own Nia+Tariq verdicts) + mutation-proved no 1-reviewer assumption survives in
+  `trust_signals`/`lifecycle`. Tests-only. Routed the `--cr-cycles` wording finding (#211) to S3/Manager.
+- **3 tracked follow-ups from this activation (out of scope):** #207 (gate blocks rather than fail-opens
+  on a transient comment-fetch error — `review_state` swallows it to `pending`), #208 (example.json ships
+  `reviewers_required=2` — latent footgun if adopter later enables), #211 (`wave-end` `--cr-cycles`
+  wording double-counts at N≥2 vs per-PR `rework_cycles`).
 
 **Phase 6 Wave 5 → v0.9.0 (2026-07-07, rollup PR #200 → main @ merge `12300f3`, bump `03dba99`,
 wrapup `afbe386`, ontology `30e4f7e`) — "PR-review state machine (dormant)."** The #102 **P2**
