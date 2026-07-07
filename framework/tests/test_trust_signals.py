@@ -1230,3 +1230,294 @@ def test_cli_record_catch_appends_to_state_file(tmp_path) -> None:
             "recorded_at": "2026-07-06T00:00:00Z",
         }
     ]
+
+
+# ===========================================================================
+# #229 — trust scorer reads reality: edit-history catch crediting + difficulty
+# weight. The gate oracle (pr_review_state) REQUIRES a reviewer to resolve a
+# blocking Request by editing it in place to Replied; the scorer read that same
+# current state, so an amended catch scored must_fix_caught=0 / must_fix_received
+# =0 (W13: Tariq's real data-loss catch scored mechanically zero). These credit
+# the catch from GitHub's comment edit history instead, and add a coarse per-PR
+# difficulty weight so the reserved-5 rotation is mechanical.
+# ===========================================================================
+
+
+# ----------------------------------------------------------- difficulty_weight
+
+
+def test_difficulty_weight_trivial_is_tier_1() -> None:
+    # A one-line config change / doc typo.
+    assert ts.difficulty_weight(1, 0, 1) == 1
+    assert ts.difficulty_weight(0, 0, 0) == 1
+    assert ts.difficulty_weight(39, 0, 2) == 1  # just under both tier-2 bars
+
+
+def test_difficulty_weight_moderate_is_tier_2() -> None:
+    assert ts.difficulty_weight(40, 0, 1) == 2  # lines bar
+    assert ts.difficulty_weight(0, 0, 3) == 2  # files bar
+    assert ts.difficulty_weight(199, 0, 7) == 2  # just under both tier-3 bars
+
+
+def test_difficulty_weight_flagship_is_tier_3() -> None:
+    assert ts.difficulty_weight(200, 0, 1) == 3  # lines bar
+    assert ts.difficulty_weight(0, 0, 8) == 3  # files bar
+    # #227 (the W13 flagship): 1101 additions across 6 files → tier 3.
+    assert ts.difficulty_weight(1101, 0, 6) == 3
+
+
+def test_difficulty_weight_counts_deletions_and_clamps_garbage() -> None:
+    # A large deletion is still work; negatives clamp to 0 (never < tier 1).
+    assert ts.difficulty_weight(0, 250, 1) == 3
+    assert ts.difficulty_weight(-500, -9, -3) == 1
+
+
+def test_pr_diffstat_reads_record_fail_open() -> None:
+    assert ts._pr_diffstat({"additions": 200, "deletions": 5, "changedFiles": 6}) == (
+        200,
+        5,
+        6,
+    )
+    # Missing / non-int fields degrade to 0, never raise.
+    assert ts._pr_diffstat({}) == (0, 0, 0)
+    assert ts._pr_diffstat({"additions": "x", "deletions": None}) == (0, 0, 0)
+
+
+# ------------------------------------------------- _collapse_history / verdicts
+
+
+def test_collapse_history_credits_amended_away_catch() -> None:
+    """The core #229 case: a blocking Request amended in place to a clean Replied
+    still yields a changes_requested Verdict attributed to the original reviewer."""
+    current = _verdict_body("Tariq.Morales", "Replied", None)  # amended clean
+    original = _verdict_body("Tariq.Morales", "Request", "Data-loss in the amend path.")
+    v = ts._collapse_history([current, original])
+    assert v is not None
+    assert v.changes_requested is True
+    assert v.requestor == "Tariq.Morales"
+    assert v.requestee == "Paloma.Gupta"
+
+
+def test_collapse_history_no_edits_matches_parse_verdicts() -> None:
+    """Backward-compat: a never-edited comment (single revision) collapses to
+    exactly parse_verdicts([body])[0] — a clean no-amend wave is unchanged."""
+    for body in (
+        _verdict_body("Nia.Rossi", "Replied", None),
+        _verdict_body("Tariq.Morales", "Request", "Fix this."),
+    ):
+        collapsed = ts._collapse_history([body])
+        (expected,) = ts.parse_verdicts([body])
+        assert collapsed == expected
+
+
+def test_collapse_history_non_verdict_comment_is_none() -> None:
+    assert ts._collapse_history(["just a plain chat comment, no verdict header"]) is None
+
+
+def test_collapse_history_false_positive_taken_from_current_body() -> None:
+    """A retraction lives only in the live comment — false_positive comes from the
+    CURRENT revision, not resurrected from a historical blocking revision."""
+    current = (
+        "Requestor: Nia.Rossi\nRequestee: Paloma.Gupta\nRequestOrReplied: Replied\n\n"
+        "**Review**\nMust-fix:\n1. Withdrawn — this was a false-positive on my part.\n"
+    )
+    original = _verdict_body("Nia.Rossi", "Request", "Original blocking finding.")
+    v = ts._collapse_history([current, original])
+    assert v is not None
+    assert v.changes_requested is True  # credited from history
+    assert v.false_positive is True  # detected from the current retraction body
+
+
+def test_verdicts_from_histories_drops_non_verdicts_and_keeps_one_per_comment() -> None:
+    histories = [
+        [_verdict_body("Tariq.Morales", "Replied", None),
+         _verdict_body("Tariq.Morales", "Request", "Blocking.")],
+        ["plain non-verdict comment"],
+        [_verdict_body("Nia.Rossi", "Replied", None)],
+    ]
+    vs = ts.verdicts_from_histories(histories)
+    assert len(vs) == 2  # the plain comment is dropped
+    assert vs[0].changes_requested is True
+    assert vs[1].changes_requested is False
+
+
+# --------------------------------------- _account_pr with comment_histories
+
+
+def test_account_pr_credits_amended_catch_from_history(tmp_path) -> None:
+    """The mutation bar for #229: reading histories, an amended-away catch still
+    credits the reviewer (must_fix_caught) and author (must_fix_received).
+
+    Mutation bar: reverting _account_pr to parse the CURRENT bodies only (the
+    W13 bug) makes must_fix_caught == 0 and must_fix_received == 0 → this fails.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=600,
+        comment_histories=[
+            # Tariq's blocking Request, later amended in place to a clean Replied.
+            [_verdict_body("Tariq.Morales", "Replied", None),
+             _verdict_body("Tariq.Morales", "Request", "Data-loss in amend path.")],
+        ],
+        ci_red=False,
+        difficulty=3,
+    )
+    assert sigs["Tariq Morales"].must_fix_caught == 1  # survived the amendment
+    assert sigs["Paloma Gupta"].must_fix_received == 1
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+    assert sigs["Paloma Gupta"].difficulty_points == 3
+
+
+def test_account_pr_history_clean_wave_scores_no_catch(tmp_path) -> None:
+    """Backward-compat via the history path: a clean review (no revision ever
+    blocking) yields no catch — identical to the legacy live-comment path."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=601,
+        comment_histories=[[_verdict_body("Tariq.Morales", "Replied", None)]],
+        ci_red=False,
+        difficulty=1,
+    )
+    assert sigs["Paloma Gupta"].must_fix_received == 0
+    assert sigs["Paloma Gupta"].rework_cycles == 0
+    assert "Tariq Morales" not in sigs
+    assert sigs["Paloma Gupta"].difficulty_points == 1
+
+
+def test_account_pr_ledger_still_authoritative_over_history(tmp_path) -> None:
+    """The #164 ledger takes precedence over the #229 history path when present —
+    belts-and-braces, never double-counting."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=602,
+        # History ALSO shows the catch; the ledger must not add a second one.
+        comment_histories=[
+            [_verdict_body("Tariq.Morales", "Replied", None),
+             _verdict_body("Tariq.Morales", "Request", "Blocking.")],
+        ],
+        ci_red=False,
+        review_catches=[
+            {"repo": "o/r", "pr": 602, "requestor": "Tariq.Morales",
+             "requestee": "Paloma.Gupta"},
+        ],
+    )
+    assert sigs["Tariq Morales"].must_fix_caught == 1  # once, not twice
+    assert sigs["Paloma Gupta"].must_fix_received == 1
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+
+
+# ------------------------------------------- wave-13 re-score (the AC anchor)
+
+
+def test_wave13_rescore_credits_tariq_catch_and_paloma_received(tmp_path) -> None:
+    """Re-scoring W13's flagship PR #227 with the fix credits Tariq's real
+    data-loss catch and Paloma's received must-fix — reconstructed from the real
+    comment edit history (Tariq's Request amended in place to Replied; three
+    other clean reviews never edited). Before #229 both scored zero (finding #1).
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    # Real #227 history shape: Tariq's blocking comment (id 4904379564) was edited
+    # in place from Request+Must-fix to Replied+Must-fix:None; the other three
+    # comments (two of Nia's, one Tariq follow-up) were clean and never edited.
+    tariq_current = _verdict_body("Tariq.Morales", "Replied", None)
+    tariq_original = _verdict_body(
+        "Tariq.Morales", "Request",
+        "Amend-disposition surgical removal deletes pre-existing user files — "
+        "unrecoverable data loss.",
+    )
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="parametrization/2real-team-framework",
+        number=227,
+        comment_histories=[
+            [tariq_current, tariq_original],                       # the catch
+            [_verdict_body("Nia.Rossi", "Replied", None)],         # clean
+            [_verdict_body("Tariq.Morales", "Replied", None)],     # clean follow-up
+            [_verdict_body("Nia.Rossi", "Replied", None)],         # clean re-review
+        ],
+        ci_red=False,
+        difficulty=ts.difficulty_weight(1101, 0, 6),  # the real diffstat → tier 3
+    )
+    assert sigs["Tariq Morales"].must_fix_caught == 1  # was 0 pre-#229
+    assert sigs["Paloma Gupta"].must_fix_received == 1  # was 0 pre-#229
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+    assert sigs["Paloma Gupta"].difficulty_points == 3  # flagship, not a one-liner
+
+
+# ------------------------------------------- difficulty in distribution
+
+
+def test_difficulty_breaks_reserved_5_toward_flagship_author() -> None:
+    """The reserved-5 goes to the flagship author mechanically: two engineers with
+    identical PR counts and clean records, but one shipped a tier-3 flagship and
+    the other a tier-1 one-liner — only the flagship author keeps the proposed 5.
+    """
+    flagship = ts.Signals(prs_merged=1, difficulty_points=3)
+    trivial = ts.Signals(prs_merged=1, difficulty_points=1)
+    out = ts.apply_distribution_discipline(
+        {
+            "Flagship": (ts.MAX_SCORE, flagship),
+            "Trivial": (ts.MAX_SCORE, trivial),
+        }
+    )
+    assert out["Flagship"] == ts.MAX_SCORE  # top composite keeps the 5
+    assert out["Trivial"] == ts.MAX_SCORE - 1  # capped to 4
+
+
+def test_distribution_unchanged_without_difficulty() -> None:
+    """Backward-compat: with difficulty_points == 0 for everyone the composite
+    ranking is exactly as before (difficulty is purely additive from 0)."""
+    a = ts.Signals(prs_merged=2, must_fix_caught=2)
+    b = ts.Signals(prs_merged=1)
+    out = ts.apply_distribution_discipline(
+        {"A": (ts.MAX_SCORE, a), "B": (ts.MAX_SCORE, b)}
+    )
+    assert out["A"] == ts.MAX_SCORE
+    assert out["B"] == ts.MAX_SCORE - 1
+
+
+# ------------------------------------------- _pr_comment_histories (I/O, mocked)
+
+
+def test_pr_comment_histories_parses_graphql(monkeypatch) -> None:
+    canned = json.dumps(
+        {"data": {"repository": {"pullRequest": {"comments": {"nodes": [
+            {"body": "CURRENT",
+             "userContentEdits": {"nodes": [{"diff": "NEWEST"}, {"diff": "ORIGINAL"}]}},
+            {"body": "CLEAN", "userContentEdits": {"nodes": []}},
+        ]}}}}}
+    )
+    monkeypatch.setattr(ts, "_run_gh", lambda args: canned)
+    got = ts._pr_comment_histories("o/r", 700)
+    assert got == [["CURRENT", "NEWEST", "ORIGINAL"], ["CLEAN"]]
+
+
+def test_pr_comment_histories_fail_open_on_error(monkeypatch) -> None:
+    def boom(args):
+        raise ts.subprocess.CalledProcessError(1, ["gh"])
+
+    monkeypatch.setattr(ts, "_run_gh", boom)
+    # Fail-open sentinel is None (distinct from [] = a PR with zero comments).
+    assert ts._pr_comment_histories("o/r", 701) is None
+
+
+def test_pr_comment_histories_bad_repo_is_none() -> None:
+    assert ts._pr_comment_histories("no-slash-repo", 702) is None
