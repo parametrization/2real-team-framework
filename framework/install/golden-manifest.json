@@ -12,6 +12,7 @@
     ".claude/hooks/_framework_log.py",
     ".claude/hooks/_repo_flag_parse.py",
     ".claude/hooks/_shell_parse.py",
+    ".claude/hooks/block_gh_pr_review.py",
     ".claude/hooks/block_git_config.py",
     ".claude/hooks/block_no_verify.py",
     ".claude/hooks/block_squash_wave_merge.py",

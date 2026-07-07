@@ -136,6 +136,7 @@ def _schema_defaults() -> dict:
                 "warn_zsh_wordsplit",
                 "validate_labels",
                 "validate_review_comment_format",
+                "block_gh_pr_review",
                 "validate_workflow_paths_coverage",
                 "require_load_bearing_test",
                 "validate_branch_freshness",
