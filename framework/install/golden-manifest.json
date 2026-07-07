@@ -71,6 +71,7 @@
     ".claude/skills/team-reset/SKILL.md",
     ".claude/skills/wave-audit/SKILL.md",
     ".claude/skills/wave-end/SKILL.md",
+    ".claude/skills/wave-end/review_load.py",
     ".claude/skills/wave-lifecycle/SKILL.md",
     ".claude/skills/wave-retro/SKILL.md",
     ".claude/skills/wave-start/SKILL.md",
