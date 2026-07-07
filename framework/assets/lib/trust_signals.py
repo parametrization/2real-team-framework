@@ -55,6 +55,39 @@ CLI: ``trust_signals.py record-catch <wave> --repo O/N --pr P --requestor R
 --requestee E`` — meant to be invoked immediately after posting a blocking
 verdict comment (see the module CLI section below).
 
+Edit-history catch crediting + difficulty weight (#229)
+-------------------------------------------------------
+The #164 ledger only credits a catch that someone *remembered* to record at
+issue time. Wave 13 exposed the gap: the merge-gate oracle (``pr_review_state``)
+REQUIRES a reviewer to resolve a blocking ``Request`` by editing it in place to
+``Replied`` / ``Must-fix: None`` (any *current* comment parsing as a Must-fix
+blocks the merge), but the scorer read that same current state — so once the
+reviewer amended their comment the catch scored ``must_fix_caught=0`` (reviewer)
+and ``must_fix_received=0`` (author). The wave's single most valuable review — a
+real data-loss catch — scored mechanically zero.
+
+Fix (design option (a), complementary to the #164 ledger): source the catch from
+GitHub's comment **edit history**. :func:`_pr_comment_histories` fetches, per
+comment, its current body plus every prior revision (``userContentEdits.diff``,
+the full body at each revision). :func:`verdicts_from_histories` /
+:func:`_collapse_history` collapse each comment to one Verdict that credits a
+changes-requested catch if ANY revision was blocking — so an amended-away
+``Request`` still counts. FAIL-OPEN: an unavailable history degrades to the live
+comment bodies; the scorer never crashes. This is deliberately NOT wired into
+:func:`parse_verdicts` (the oracle depends on that reading current state so an
+amended-clean Request clears the gate) — only the scorer's extraction path uses
+it. The ledger and edit-history paths are belts-and-braces: the ledger survives a
+comment *deleted outright*; the edit-history path recovers a catch nobody
+recorded.
+
+The same wave also could not mechanically justify the reserved-5:
+:func:`difficulty_weight` derives a coarse per-PR tier (1-3) from diff magnitude
+(changed lines / files), summed per engineer into ``difficulty_points`` and fed
+into the distribution-discipline composite (:func:`apply_distribution_discipline`)
+so a flagship correctness fix outranks a one-liner without a narrative argument.
+Difficulty feeds ONLY the reserved-5 tiebreak, never :func:`score_delta`, so a
+clean no-diffstat wave scores exactly as before.
+
 Signals per engineer (all integers, all countable from the merged-PR set):
 
   ===========================  ============================================
@@ -75,6 +108,9 @@ Signals per engineer (all integers, all countable from the merged-PR set):
   review_false_positives       must-fix items they raised that were later
                                marked withdrawn/false-positive (negative —
                                review-quality signal).
+  difficulty_points            summed coarse difficulty weight (1-3 per PR,
+                               :func:`difficulty_weight`) over authored PRs;
+                               feeds the reserved-5 tiebreak, not score_delta.
   ===========================  ============================================
 
 CLI:
@@ -192,6 +228,14 @@ class Signals:
     ci_red_merges: int = 0
     rework_cycles: int = 0
     review_false_positives: int = 0
+    # Summed coarse per-PR difficulty weight over the engineer's authored PRs
+    # (:func:`difficulty_weight`, #229). A flagship correctness fix accrues 3, a
+    # one-line config change 1, so a wave of hard work outranks a wave of trivial
+    # churn even at equal PR *count*. Feeds the distribution-discipline composite
+    # (reserved-5 tiebreak) — NOT :func:`score_delta`, which stays purely
+    # negative/positive-signal driven, so a clean no-diffstat wave scores exactly
+    # as before (difficulty defaults to 0).
+    difficulty_points: int = 0
     # PR numbers the engineer authored (for the evidence citation in the line).
     authored_prs: list[int] = field(default_factory=list)
 
@@ -575,6 +619,195 @@ def _pr_comment_bodies(repo: str, number: int) -> list[str]:
     return [str(b) for b in parsed]
 
 
+# GraphQL query fetching every issue-comment on a PR together with its full
+# edit history. GitHub exposes each prior revision's *entire body* (not a unified
+# diff) as ``userContentEdits.diff`` — so the union of a comment's current body
+# and every ``diff`` is every body that comment has ever carried. ``{repo}`` /
+# ``{owner}`` / ``{number}`` are substituted by :func:`_pr_comment_histories`.
+_COMMENT_HISTORY_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      comments(first: 100) {
+        nodes {
+          body
+          userContentEdits(first: 100) {
+            nodes { diff }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _pr_comment_histories(repo: str, number: int) -> list[list[str]] | None:
+    """Per-comment body revisions on a PR — current body + every prior revision.
+
+    Returns one list per issue-comment: ``[current_body, *historical_bodies]``,
+    where the historical bodies come from GitHub's comment edit API
+    (``userContentEdits.diff`` — the full body at each prior revision, not a
+    unified diff). A comment never edited yields a single-element list. This is
+    the durable signal #229 needs: a blocking ``Request`` / ``Must-fix:`` later
+    amended in place to ``Replied`` / ``Must-fix: None`` (the charter Reply
+    Protocol the oracle requires) still leaves its original changes-requested
+    body in the edit history, so the catch survives the amendment.
+
+    FAIL-OPEN: any error — a ``gh`` failure/timeout, malformed JSON, or an
+    unexpected shape — returns ``None`` (not ``[]``), the sentinel telling
+    :func:`extract_signals` "edit history is unavailable, fall back to the live
+    comment bodies". Never raises; the scorer must never crash on a history
+    fetch. (``[]`` is a legitimate value — a PR with zero comments — and is
+    therefore distinct from the unavailable sentinel.)
+    """
+    if "/" not in repo:
+        return None
+    owner, name = repo.split("/", 1)
+    try:
+        raw = _run_gh(
+            [
+                "api",
+                "graphql",
+                "-f",
+                f"query={_COMMENT_HISTORY_QUERY}",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"name={name}",
+                "-F",
+                f"number={int(number)}",
+            ]
+        )
+        data = json.loads(raw or "{}")
+        nodes = (
+            data["data"]["repository"]["pullRequest"]["comments"]["nodes"]
+        )
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+    histories: list[list[str]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        revisions = [str(node.get("body") or "")]
+        edits = ((node.get("userContentEdits") or {}).get("nodes")) or []
+        for edit in edits:
+            if isinstance(edit, dict) and edit.get("diff") is not None:
+                revisions.append(str(edit["diff"]))
+        histories.append(revisions)
+    return histories
+
+
+def _pr_diffstat(pr: dict) -> tuple[int, int, int]:
+    """Extract ``(additions, deletions, changed_files)`` from a merged-PR record.
+
+    The diffstat travels on the ``pr list --json`` record :func:`merged_prs`
+    builds, so no extra network call is needed. Fail-open: any missing/non-int
+    field degrades to 0 (→ the minimum difficulty tier), never raises.
+    """
+
+    def _int(key: str) -> int:
+        try:
+            return int(pr.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return _int("additions"), _int("deletions"), _int("changedFiles")
+
+
+def difficulty_weight(additions: int, deletions: int, changed_files: int) -> int:
+    """Coarse per-PR difficulty tier in ``{1, 2, 3}`` from diff magnitude. Pure.
+
+    Deliberately three buckets, not a continuous score — the point (#229) is to
+    tell a flagship correctness fix apart from a one-line config change so the
+    reserved-5 rotation is mechanical, NOT to pretend line count measures value
+    precisely. The thresholds are intentionally generous and defensible:
+
+      * **3 (substantial / flagship):** >= 200 changed lines OR >= 8 files —
+        a cross-cutting change (e.g. #227 was 1101 additions across 6 files).
+      * **2 (moderate):** >= 40 changed lines OR >= 3 files.
+      * **1 (trivial):** anything smaller — a one-liner, a config bump, a doc
+        typo.
+
+    "Changed lines" is additions + deletions (a large deletion is still work).
+    Negative/garbage inputs are clamped to 0, so the worst case is tier 1 — it
+    never raises and never returns outside ``{1, 2, 3}``.
+    """
+    lines = max(0, additions) + max(0, deletions)
+    files = max(0, changed_files)
+    if lines >= 200 or files >= 8:
+        return 3
+    if lines >= 40 or files >= 3:
+        return 2
+    return 1
+
+
+def _collapse_history(revisions: list[str]) -> "Verdict | None":
+    """Collapse one comment's body revisions to a single durable-credit Verdict.
+
+    *revisions* is ``[current_body, *historical_bodies]`` (see
+    :func:`_pr_comment_histories`). The rule (#229): if ANY revision was a real
+    changes-requested verdict (a ``Request`` + enumerated ``Must-fix:``), the
+    returned Verdict carries ``changes_requested=True`` attributed to that
+    revision's ``Requestor:`` / ``Requestee:`` — **even if the current body was
+    amended clean**. Otherwise the current revision's verdict is returned
+    unchanged. A comment no revision of which parses as a verdict → ``None``.
+
+    ``false_positive`` is always taken from the CURRENT body: a retraction
+    ("withdrawn" / "false-positive") is only ever expressed in the live comment,
+    never recovered from history. Pure — no I/O.
+
+    Backward-compatible by construction: a comment never edited has a
+    single-element *revisions* list, so this returns exactly
+    ``parse_verdicts([body])[0]`` (or ``None``) — a clean no-amend wave is
+    scored identically to the legacy live-comment path.
+    """
+    parsed = [
+        (vs[0] if (vs := parse_verdicts([rev])) else None) for rev in revisions
+    ]
+    current = parsed[0] if parsed else None
+    catch = next((v for v in parsed if v is not None and v.changes_requested), None)
+    if catch is None:
+        return current
+    return Verdict(
+        requestor=catch.requestor,
+        requestee=catch.requestee,
+        verdict=catch.verdict,
+        false_positive=current.false_positive if current is not None else False,
+        changes_requested=True,
+    )
+
+
+def verdicts_from_histories(comment_histories: list[list[str]]) -> list[Verdict]:
+    """History-aware analogue of :func:`parse_verdicts`, one Verdict per comment.
+
+    Maps each comment's revision list through :func:`_collapse_history` and drops
+    the non-verdict comments. The result is the same ``list[Verdict]`` shape
+    :func:`parse_verdicts` returns, so :func:`_account_pr` consumes it unchanged
+    — but a catch that was amended away in the live comment body is preserved
+    here from the edit history. Pure — no I/O.
+
+    NOTE: this is intentionally NOT wired into :func:`parse_verdicts` itself,
+    because ``pr_review_state`` (the merge-gate oracle) depends on
+    ``parse_verdicts`` reading the CURRENT state — an amended-clean Request must
+    parse clean there so the gate clears. The scorer wants the opposite (durable
+    credit), so only the scorer's extraction path uses this function.
+    """
+    out: list[Verdict] = []
+    for revisions in comment_histories:
+        v = _collapse_history(revisions)
+        if v is not None:
+            out.append(v)
+    return out
+
+
 def _pr_ci_is_red(repo: str, number: int) -> bool:
     """True if the PR's latest status rollup carries a failing required check.
 
@@ -642,7 +875,7 @@ def merged_prs(
             "--base",
             base,
             "--json",
-            "number,headRefOid,mergedAt,author",
+            "number,headRefOid,mergedAt,author,additions,deletions,changedFiles",
         ]
         if label:
             list_args += ["--label", label]
@@ -668,6 +901,9 @@ def merged_prs(
                     "headRefOid": sha,
                     "author": (pr.get("author") or {}).get("login"),
                     "commit_author_name": commit_author,
+                    "additions": pr.get("additions"),
+                    "deletions": pr.get("deletions"),
+                    "changedFiles": pr.get("changedFiles"),
                 }
             )
     return out
@@ -738,8 +974,10 @@ def _account_pr(
     author: str,
     repo: str,
     number: int,
-    comment_bodies: list[str],
+    comment_bodies: list[str] | None = None,
+    comment_histories: list[list[str]] | None = None,
     ci_red: bool,
+    difficulty: int = 0,
     review_catches: list[dict] | None = None,
 ) -> None:
     """Fold one merged PR's contribution into *signals* (mutates in place).
@@ -748,17 +986,32 @@ def _account_pr(
     :func:`extract_signals` (live gh-backed) and tests (hand-built PR data), so
     the two never drift.
 
+    Verdicts are derived from ``comment_histories`` when supplied
+    (edit-history-aware, #229 — see :func:`verdicts_from_histories`) so a catch
+    amended away in the live comment body is still credited; otherwise from
+    ``comment_bodies`` via the legacy :func:`parse_verdicts` path. Exactly one of
+    the two should be supplied (histories preferred); an empty/absent pair yields
+    no verdicts.
+
     ``review_catches`` is the full wave-scoped durable ledger (#164,
     :func:`_review_catches_for_wave`); entries are filtered here to this
     ``(repo, number)``. When that filtered set is non-empty it is
     **authoritative** for this PR's changes-requested accounting
     (``must_fix_received`` / ``must_fix_caught`` / ``rework_cycles``) — it
-    supersedes re-deriving those from ``comment_bodies``, so a verdict comment
-    later amended in place (the charter's amendment convention) cannot erase a
-    catch that was durably recorded at issue time. A PR with no ledger entries
-    falls back to the legacy live-comment-parsing path unchanged. False-positive
-    detection is untouched by the ledger — it is always read from the live
-    comment body (a retraction is itself only ever expressed there).
+    supersedes re-deriving those from the comments, so a verdict comment later
+    amended in place (the charter's amendment convention) cannot erase a catch
+    that was durably recorded at issue time. The ledger and the #229 edit-history
+    path are complementary belts-and-braces: the ledger credits a catch recorded
+    at issue time even if the comment is later deleted outright; the edit-history
+    path recovers a catch nobody remembered to record, straight from GitHub. A PR
+    covered by neither falls back to the legacy live-comment-parsing path
+    unchanged. False-positive detection is untouched by the ledger — it is always
+    read from the (current) comment body (a retraction is itself only ever
+    expressed there).
+
+    ``difficulty`` is the PR's coarse difficulty weight (:func:`difficulty_weight`,
+    #229); it accrues to the author's ``difficulty_points`` and feeds only the
+    distribution-discipline reserved-5 tiebreak, never :func:`score_delta`.
     """
 
     def bucket(name: str) -> Signals:
@@ -767,11 +1020,15 @@ def _account_pr(
     author_sig = bucket(author)
     author_sig.prs_merged += 1
     author_sig.authored_prs.append(number)
+    author_sig.difficulty_points += difficulty
 
     if ci_red:
         author_sig.ci_red_merges += 1
 
-    verdicts = parse_verdicts(comment_bodies)
+    if comment_histories is not None:
+        verdicts = verdicts_from_histories(comment_histories)
+    else:
+        verdicts = parse_verdicts(comment_bodies or [])
     catches = [
         c
         for c in (review_catches or [])
@@ -836,15 +1093,24 @@ def extract_signals(
         author = pr.get("commit_author_name") or "(unknown)"
         repo = pr["repo"]
         number = pr["number"]
+        # Prefer the edit-history-aware path (#229): a catch amended away in the
+        # live comment body is recovered from GitHub's comment edit history. On
+        # any history-fetch failure (returns None) fall back to the live comment
+        # bodies — never crash, never lose the legacy behaviour.
+        histories = _pr_comment_histories(repo, number)
+        kwargs: dict = {"comment_histories": histories}
+        if histories is None:
+            kwargs = {"comment_bodies": _pr_comment_bodies(repo, number)}
         _account_pr(
             signals,
             canon,
             author=author,
             repo=repo,
             number=number,
-            comment_bodies=_pr_comment_bodies(repo, number),
             ci_red=_pr_ci_is_red(repo, number),
+            difficulty=difficulty_weight(*_pr_diffstat(pr)),
             review_catches=review_catches,
+            **kwargs,
         )
 
     return signals
@@ -918,11 +1184,17 @@ def apply_distribution_discipline(
     """
 
     def composite(s: Signals) -> int:
-        # Reward output + good reviewing; penalise the negatives. Pure ranking
-        # key, not a trust score.
+        # Reward output + good reviewing + difficulty of the work shipped;
+        # penalise the negatives. Pure ranking key, not a trust score. Adding
+        # ``difficulty_points`` (#229) is what makes the reserved-5 mechanical: a
+        # flagship correctness fix (weight 3) outranks a one-liner (weight 1) at
+        # equal PR count, so the top slot is not a narrative argument. Waves with
+        # no diffstat plumbed (``difficulty_points == 0`` for everyone — e.g. a
+        # hand-built Signals dict) rank exactly as before.
         return (
             s.prs_merged
             + s.must_fix_caught
+            + s.difficulty_points
             - s.must_fix_received
             - 2 * s.ci_red_merges
             - 2 * s.review_false_positives
