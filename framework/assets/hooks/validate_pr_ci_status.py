@@ -3,10 +3,38 @@
 
 Queries `gh pr view --json statusCheckRollup` and blocks merge when any check
 has failed, been cancelled, timed out, or requires action. Pending checks block
-unless the user passes `--auto` (GitHub merges on green; warn-but-allow).
+unless the user passes `--auto` AND the base branch genuinely enforces those
+checks via branch protection (see `--auto` semantics below).
 
 The whole gate is active only when `ci.merge_requires_green` is true (default).
 If a project does not require green CI before merge, `check()` returns None.
+
+`--auto` only warn-allows pending when GitHub will actually hold the merge (#230)
+=============================================================================
+
+`gh pr merge --auto` asks GitHub to complete the merge once the PR's *branch-
+protection required status checks* pass. If the base branch has NO required
+status checks configured (an unprotected branch — this repo, and most fresh
+installs), GitHub has nothing to wait for and merges IMMEDIATELY. A check that
+is still pending at that moment then finishes — possibly RED — *after* the merge
+already landed. That is exactly how Wave-13 merged S2 #226 with a red `node (20)`
+check: `--auto` was treated as "GitHub will hold for green", but with no branch
+protection there was nothing to hold it.
+
+So the pending + `--auto` warn-allow is now conditional on real enforcement:
+
+  - base branch enforces required checks (non-empty required-status-checks set)
+        → GitHub genuinely holds the merge until green → warn-allow (as before).
+  - base branch does NOT enforce them (unprotected / empty required set; the
+        endpoint 404s) → `--auto` would merge NOW, before CI finishes → BLOCK.
+        Pending != green when nothing will hold the merge.
+  - enforcement undeterminable (no base ref, or a transport/permission error on
+        the protection query) → fail-open warn-allow (never manufacture a block
+        on an inability to read), with a caveat surfaced in the message.
+
+A pending merge WITHOUT `--auto` blocks unconditionally, as before. A check that
+is already RED at merge time blocks regardless of `--auto`. The audited `--admin`
++ ADMIN_MERGE_EXCEPTION path remains the sanctioned override for all of the above.
 
 Empty rollup
 ============
@@ -205,6 +233,65 @@ def fetch_pr_base_ref(pr_number: str | None, repo: str | None) -> str | None:
         return json.loads(result.stdout).get("baseRefName") or None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
         return None
+
+
+def base_branch_enforces_required_checks(repo: str | None, base: str | None) -> bool | None:
+    """Does *base* enforce required status checks via GitHub branch protection?
+
+    Answers the one question the `--auto`/pending path needs: will GitHub HOLD an
+    `--auto` merge until CI goes green? It does so only when the base branch has a
+    non-empty required-status-checks set.
+
+    Returns:
+      True  — the base has a non-empty required-status-checks set. GitHub holds an
+              `--auto` merge until those checks pass, so a still-pending check is
+              safe to warn-allow (GitHub really will wait for green).
+      False — the base has NO required status checks: an unprotected branch, or a
+              protected branch with an empty required set (both 404 this
+              endpoint). GitHub will NOT hold an `--auto` merge for CI, so a
+              pending check can fail AFTER the merge already landed (the W13
+              `node (20)` slip, #230).
+      None  — undeterminable: no repo/base, or a transport/permission error on the
+              query. The caller preserves the fail-open posture and warn-allows,
+              never manufacturing a block on an inability to read.
+
+    A 404 / "branch not protected" is a DEFINITIVE "no required checks configured"
+    (→ False), deliberately kept distinct from a transport error (→ None): the
+    server answering "there is no required-checks config here" is not the same as
+    being unable to ask at all. Conflating them would either wedge merges on a
+    flaky API call (if a 404 fell through to a block) or re-open the slip on every
+    unprotected repo (if a real error were read as "not enforced" and allowed).
+    """
+    if not repo or not base:
+        return None
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/branches/{base}/protection/required_status_checks"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        blob = f"{result.stdout}\n{result.stderr}".lower()
+        # A 404 / "branch not protected" / "not found" is a definitive "no
+        # required checks configured" → NOT enforced. Any other failure
+        # (permission, transport, rate-limit) is undeterminable → fail-open None.
+        if "not protected" in blob or "404" in blob or "not found" in blob:
+            return False
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    # `contexts` is the legacy list; `checks` the current app-aware form. Either
+    # being non-empty means at least one required status check is enforced.
+    contexts = data.get("contexts") or []
+    checks = data.get("checks") or []
+    return bool(contexts or checks)
 
 
 def covering_pr_workflow_exists(repo: str | None, base: str | None) -> bool | None:
@@ -448,21 +535,71 @@ def check(input_data: dict) -> dict | None:
         return result
 
     if pending:
+        # A pending check is only safe to warn-allow under `--auto` if GitHub will
+        # actually HOLD the merge until it goes green — which it does only when the
+        # base branch enforces that check via branch-protection required status
+        # checks. With NO branch protection (this repo, most fresh installs),
+        # `gh pr merge --auto` merges IMMEDIATELY, so a still-pending check that
+        # later fails lands AFTER the merge — the W13 `node (20)` slip (#230). So
+        # `--auto` warn-allows pending ONLY when protection genuinely enforces it.
         if "--auto" in command:
-            return {
-                "decision": "allow",
-                "systemMessage": (
-                    f"WARNING: PR {pr_display} has {len(pending)} pending CI check(s); "
-                    "`--auto` will let GitHub merge when they finish.\n"
-                    f"{format_check_list(pending)}"
+            base_ref = fetch_pr_base_ref(pr_number, repo)
+            enforces = base_branch_enforces_required_checks(repo, base_ref)
+            if enforces is None:
+                # Undeterminable (no base ref, or a transport/permission error on
+                # the protection query). Preserve the fail-open posture: warn-allow
+                # rather than manufacture a block on an inability to read — but
+                # surface that GitHub may NOT hold the merge if the base is in fact
+                # unprotected.
+                return {
+                    "decision": "allow",
+                    "systemMessage": (
+                        f"WARNING: PR {pr_display} has {len(pending)} pending CI check(s) and "
+                        "`--auto` was passed, but branch protection on the base could not be "
+                        "determined (fail-open allow). If the base does NOT enforce these checks, "
+                        "`--auto` merges immediately and a check that later fails will have already "
+                        "landed — verify branch protection or wait for green.\n"
+                        f"{format_check_list(pending)}"
+                    ),
+                }
+            if enforces:
+                return {
+                    "decision": "allow",
+                    "systemMessage": (
+                        f"WARNING: PR {pr_display} has {len(pending)} pending CI check(s); "
+                        "the base branch enforces required checks via branch protection, so "
+                        "`--auto` will let GitHub merge only once they finish green.\n"
+                        f"{format_check_list(pending)}"
+                    ),
+                }
+            # enforces is False: the base has NO required-status-check enforcement.
+            # `--auto` would merge NOW, before these checks finish — pending != green
+            # when nothing will hold the merge. BLOCK (the W13 slip fix, #230).
+            result = {
+                "decision": "block",
+                "reason": (
+                    f"BLOCKED: PR {pr_display} has {len(pending)} pending CI check(s) and "
+                    "`--auto` was passed, but the base branch has NO branch-protection required "
+                    "status checks — GitHub would merge IMMEDIATELY without waiting for CI, so a "
+                    "check that later fails would land after the merge (the exact W13 `node (20)` "
+                    "slip). `--auto` cannot substitute for green CI when nothing enforces it.\n"
+                    f"Pending checks:\n{format_check_list(pending)}\n\n"
+                    "Wait for CI to finish and merge on green, configure branch protection to make "
+                    "these checks required, or pass `--admin` with an ADMIN_MERGE_EXCEPTION for an "
+                    "audited emergency override."
                 ),
             }
+            log_pretooluse_block(
+                "validate_pr_ci_status", command, result["reason"], input_data=input_data
+            )
+            return result
         result = {
             "decision": "block",
             "reason": (
                 f"BLOCKED: PR {pr_display} has {len(pending)} pending CI check(s). "
-                "Wait for CI to finish, pass `--auto` to let GitHub merge on green, "
-                "or pass `--admin` for emergency overrides.\n"
+                "Wait for CI to finish, pass `--auto` to let GitHub merge on green (honored only "
+                "when branch protection enforces the checks), or pass `--admin` for emergency "
+                "overrides.\n"
                 f"Pending checks:\n{format_check_list(pending)}"
             ),
         }
