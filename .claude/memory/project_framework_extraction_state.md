@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.8.1 (Phase 6 Wave 4: dogfooded the #102-P0 promotion pipeline + closed the charter-tree dual-deploy hole), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.0 (Phase 6 Wave 5: PR-review state machine — oracle + submission guard + dormant merge gate), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,17 +11,43 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.8.1 — Phase 6 Wave 4 (dogfood the promotion pipeline +
-close the charter-tree dual-deploy hole) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-07): released v0.9.0 — Phase 6 Wave 5 (PR-review state machine, shipped
+dormant) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
 (v0.7.0) *closed the loop on the framework's own quality machinery*; **Phase 6 Wave 3** (v0.8.0)
 *hardened the fail-closed guarantee and began porting the mined noorinalabs assets* (#102 P0 + ready P1
 donors); **Phase 6 Wave 4** (v0.8.1) *validated the #102-P0 promotion pipeline in anger and closed the
-charter-tree dual-deploy hole* (both W3-retro proposals applied). See [[handoff]] for the exact pickup
-(next = owner picks the theme — no wave reserved; standing candidate = #102 **P2 tranche**, now on a
-**dogfooded** pipeline). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+charter-tree dual-deploy hole*; **Phase 6 Wave 5** (v0.9.0) *shipped the #102 P2 review-gate flagship —
+a PR-review state machine, dormant by default*. See [[handoff]] for the exact pickup
+(next = owner picks the theme — no wave reserved; #102 **P2 tranche partially landed**, more P2
+material remains). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 5 → v0.9.0 (2026-07-07, rollup PR #200 → main @ merge `12300f3`, bump `03dba99`,
+wrapup `afbe386`, ontology `30e4f7e`) — "PR-review state machine (dormant)."** The #102 **P2**
+review-gate flagship. **3 PRs, 0 CR cycles (all three Replied first pass), 33% concentration (3 distinct
+authors), 0 CI-red, 694 tests** (+33). OIDC published (npm `latest`=0.9.0; PyPI `/0.9.0/json`=200); GH
+Release `v0.9.0` + lightweight tag `deployments-phase6-wave-5` on merge `12300f3`. Meta #193 + stories
+#194/#195/#196 closed; #102 stays OPEN (more P2 remains).
+- **S1 #194/PR#197 (Paloma → Tariq):** flagship `framework/assets/lib/pr_review_state.py` — a pure,
+  unit-testable `compute_state(verdicts, reviewers_required)` + a thin fail-open `review_state(repo, pr)`
+  wrapper that **reuses** `trust_signals.parse_verdicts`/`_pr_comment_bodies` (no parallel parser).
+  `ReviewState = {state, approvals, reviewers_required, unresolved_must_fix}`; `approved` iff distinct
+  **Requestor** (reviewer) clean approvals ≥ required AND no unresolved Must-fix; any unresolved Must-fix
+  ⇒ `changes_requested`; else `pending`. Fetch error degrades to `pending`, never a false `approved`.
+  Caught a real bug in the frozen contract (it said "requestees"; the charter grammar makes the reviewer
+  the `Requestor:`) and escalated it — Hiro confirmed on #193.
+- **S3 #196/PR#198 (Nia → Tariq):** `framework/assets/hooks/block_gh_pr_review.py` (PreToolUse, **live**,
+  unflagged — only blocks always-wrong cases: raw `gh pr review`, malformed grammar, self-review;
+  `Requestee: N/A` status turns exempt) reusing `validate_review_comment_format` (pinned reuse-guard) +
+  enriched `review-pr` skill (config-aware, gate-compatible templates).
+- **S2 #195/PR#199 (Ibrahim → Nia):** `framework/assets/hooks/validate_pr_review.py` (PreToolUse merge
+  gate) — blocks `gh pr ready`/`gh pr merge` on a not-approved PR, but **SHIPS DORMANT** behind new
+  `policy.pr_review_gate_enabled` (default **false**). `reviewers_required=1` is live here, so a live gate
+  would self-lock; the flag check short-circuits *before* the oracle is consulted (Nia verified
+  structurally). Activation is a deliberate future follow-up. Fail-open. Both new hooks registered in
+  `hooks.pre_bash` across all sync points (schema/`_DEFAULTS`/bootstrap/example/this-repo).
 
 **Phase 6 Wave 4 → v0.8.1 (2026-07-07, rollup PR #192 → main @ merge `bdb4bd9`, bump `61f725d`,
 wrapup `2f2572f`) — "Trust the promotion pipeline."** Deliberately small hardening/dogfood wave
