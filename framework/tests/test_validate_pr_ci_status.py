@@ -274,6 +274,35 @@ def test_rollup_unreadable_fail_open_allows(monkeypatch) -> None:
     assert result["decision"] == "allow"
 
 
+def test_admin_without_exception_blocks(monkeypatch) -> None:
+    # The audited `--admin` path is preserved by the #230 fix: with no configured
+    # exception (and none in the env), `--admin` fails safe -> block. Reverting the
+    # validate_admin_exception guard to an unconditional allow flips this to None.
+    _cfg(monkeypatch)  # policy.admin_merge_exceptions absent -> any --admin blocks
+    monkeypatch.delenv("ADMIN_MERGE_EXCEPTION", raising=False)
+    # fetch_checks must never even be consulted on the --admin path; make it explode
+    # if it is, so this test also pins that --admin is evaluated before the rollup.
+    monkeypatch.setattr(
+        hook, "fetch_checks", lambda pr, repo: (_ for _ in ()).throw(AssertionError("fetched"))
+    )
+    result = hook.check(_bash(_MERGE + " --admin"))
+    assert result is not None
+    assert result["decision"] == "block"
+    assert "--admin" in result["reason"]
+
+
+def test_admin_with_valid_exception_allows(monkeypatch) -> None:
+    # A recognized exception class + non-empty rationale authorizes the audited
+    # override -> allow (None), and the authorization is logged for the audit trail.
+    _cfg(monkeypatch, {"policy.admin_merge_exceptions": {"hotfix": "prod incident"}})
+    calls: list = []
+    monkeypatch.setattr(hook, "log_pretooluse_block", lambda *a, **k: calls.append((a, k)))
+    data = _bash(_MERGE + " --admin")
+    data["env"] = {"ADMIN_MERGE_EXCEPTION": "hotfix: page P1 fix"}
+    assert hook.check(data) is None
+    assert calls, "expected the authorized --admin use to be logged for audit"
+
+
 def test_pending_auto_no_protection_is_logged(monkeypatch) -> None:
     # The slip-fix block is audited like every other block.
     calls: list = []
