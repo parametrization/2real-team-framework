@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.1 (Phase 6 Wave 6: ACTIVATED the PR-review gate on this repo — reviewers_required=2 + gate enabled; defaults stay dormant), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.2 (Phase 6 Wave 7: HARDENED the armed PR-review gate — oracle fail-open on fetch error, example.json default→1, cr-cycles wording, + cleared the W9 carry-overs; deferred-debt list now empty), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,8 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.9.1 — Phase 6 Wave 6 (ACTIVATE the review gate on this
-repo) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-07): released v0.9.2 — Phase 6 Wave 7 (HARDEN the armed review gate)
+COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
@@ -22,10 +22,44 @@ donors); **Phase 6 Wave 4** (v0.8.1) *validated the #102-P0 promotion pipeline i
 charter-tree dual-deploy hole*; **Phase 6 Wave 5** (v0.9.0) *shipped the #102 P2 review-gate flagship —
 a PR-review state machine, dormant by default*; **Phase 6 Wave 6** (v0.9.1) *ACTIVATED that gate on this
 repo* (reviewers_required=2 + pr_review_gate_enabled=true; defaults stay dormant) *and formalized the
-process (integration-owner + pin-contracts rules, N=2 assignment)*. See [[handoff]] for the exact pickup
-(next = owner picks the theme — no wave reserved; a **gate-activation hardening wave** (#207/#208/#211 +
-2 W9 carry-overs) is the standing candidate). The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0)
-below.
+process*; **Phase 6 Wave 7** (v0.9.2) *HARDENED the armed gate* (oracle fail-open on comment-fetch error
+via `unknown` sentinel; example.json `reviewers_required`→1; per-PR cr-cycles wording) *and cleared the
+entire deferred-debt tail* (the 3 gate follow-ups #207/#208/#211 + both W9 carry-overs) — **deferred-debt
+list now EMPTY**. See [[handoff]] for the exact pickup (next = owner picks the theme — no wave reserved).
+The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 7 → v0.9.2 (2026-07-07, rollup PR #220 → main @ direct-push merge `adce920`, bump
+`0a1c5d0`, wrapup `beb3998`, ontology `21e671f`) — "Harden the armed gate."** Hardened the gate armed in
+W6 and **cleared the entire deferred-debt tail** (5 items / 3 waves). **3 PRs, 0 CR cycles, 33%
+concentration (3 distinct authors), 717 tests** (+11). OIDC published (npm `latest`=0.9.2; PyPI
+`/0.9.2/json`=200); GH Release `v0.9.2` + tag `deployments-phase6-wave-7`. Meta #213 + stories
+#214/#215/#216 closed; folded debt #207/#208/#211 closed. **First wave whose story merges were themselves
+governed by the LIVE 2-reviewer gate** (the oracle allowed #217/#218/#219 only after 2 distinct clean
+verdicts each) — the gate governed its own maintenance.
+- **S1 #214/PR#218 (Tariq → Nia + Paloma):** fail-open the oracle on comment-**fetch** error. Added an
+  `unknown` sentinel to `pr_review_state.review_state()` (returned on transport error instead of masking
+  as `pending`); `validate_pr_review` treats `unknown` as fail-open **ALLOW** while genuine
+  `pending`/`changes_requested` still BLOCK; `compute_state()` (pure) untouched, still never fabricates
+  `approved`. End-to-end test (stubs only `_pr_comment_bodies`) pins fetch-error→ALLOW. Closes #207.
+- **S2 #215/PR#217 (Ibrahim → Paloma + Tariq):** `framework.config.example.json` `reviewers_required`
+  2→1 (matches schema/`_DEFAULTS` default — adopters who later enable the gate no longer inherit a silent
+  2-bar) + guard test pinning it to the schema default; wave-end `--cr-cycles` wording rebound to per-PR
+  ("PRs that took ≥1 changes-requested round") to match `trust_signals.rework_cycles` at N≥2. This repo's
+  armed runtime `.claude/framework.config.json` (=2) untouched. Closes #208, #211.
+- **S3 #216/PR#219 (Paloma → Nia + Ibrahim):** `charter_drift.py plan()` now cross-checks each rendered
+  charter module's on-disk sha256 against `.charter-manifest.json` (catches byte-match-but-stale-manifest);
+  `ensure_gitignore_entries` normalized for idempotency (dedup/sort/blank-collapse). Both W9 carry-overs.
+  Paloma held **sole golden-manifest integration-owner** (no regen needed — zero installed-path changes).
+- **Trust (score 12 + distribution discipline): all implementers delta 0; reserved-5 ROTATES on
+  pre-registered criteria.** **Tariq 4→5** (re-earned: authored the flagship #207 correctness fix — the
+  W11-registered "own a tracked follow-up" path). **Nia 5→4** (decay: clean-no-catch wave, 0 authored
+  PRs, 2 Replied reviews — the exact W11-pre-registered decay condition, parity with Tariq's W10). Paloma
+  4→4, Ibrahim 4→4 (clean single PRs).
+- **Operational finding (new):** with the gate now *permanently* armed (unlike W6, where local main was
+  still dormant at rollup time), the rollup PR can't clear `gh pr merge` (it carries no verdicts of its
+  own). Landed #220 via the documented **direct-push escape hatch** (direct push to main is not gated).
+  W12 retro proposes codifying this as a named step. **Deferred-debt list is now EMPTY** (both W11
+  proposals applied in-wave: hardening slot = this wave; review-load balanced Nia2/Paloma2/Tariq1/Ibrahim1).
 
 **Phase 6 Wave 6 → v0.9.1 (2026-07-07, rollup PR #212 → main @ merge `191918e`, bump `911ccd6`,
 wrapup `bcea7f6`, ontology `734787a`) — "Activate the review gate."** Turned on what W5 shipped dormant.
