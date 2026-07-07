@@ -53,16 +53,24 @@ never hard-fail the caller.
   shared config, which fail-opens to its schema default (1) when the config is
   missing/unreadable; a non-integer/negative value or a config-load exception
   degrades to :data:`_FAIL_OPEN_REVIEWERS_REQUIRED`.
-* :func:`review_state` catches comment-fetch / parse errors and returns a
-  ``pending`` state (approvals=0, no must-fix) rather than raising or inventing
-  an approval — the safe, non-blocking degradation.
+* :func:`review_state` catches comment-fetch / parse errors and returns an
+  ``unknown`` state (approvals=0, no must-fix) rather than raising or inventing
+  an approval — "couldn't determine the state" (#207/#214). This is
+  deliberately NOT ``pending``: ``pending`` means the oracle *evaluated* the PR
+  and found it genuinely not-yet-approved (a real, actionable state a caller
+  should block on); ``unknown`` means the oracle *could not evaluate* the PR at
+  all (a transient comment-fetch/transport error). Collapsing the two used to
+  let a flaky GitHub API call read identically to a real "not approved" and
+  BLOCK ``gh pr merge`` — the opposite of the fail-open promise. Callers (see
+  ``validate_pr_review.py``) must treat ``unknown`` like an oracle exception:
+  fail-open ALLOW, never block on it.
 
-State machine (PINNED CONTRACT — frozen for S2/S3)
-==================================================
+State machine (PINNED CONTRACT — frozen for S2/S3; ``unknown`` added #214)
+==========================================================================
 ``ReviewState`` is a plain dict::
 
     {
-      "state": "pending" | "changes_requested" | "approved",
+      "state": "pending" | "changes_requested" | "approved" | "unknown",
       "approvals": int,            # distinct reviewers (Requestors) with a
                                    # current clean/approved verdict
       "reviewers_required": int,   # policy.reviewers_required (fail-open default)
@@ -73,14 +81,26 @@ State machine (PINNED CONTRACT — frozen for S2/S3)
                                      AND unresolved_must_fix == []
     state == "changes_requested" iff any current verdict carries an unresolved
                                      Must-fix (takes precedence over approvals)
+    state == "unknown"           iff the oracle could not fetch/parse the PR's
+                                     comments at all (fail-open — never
+                                     produced by :func:`compute_state`, only by
+                                     the :func:`review_state` I/O wrapper on a
+                                     caught exception)
     else                             "pending"
+
+    INVARIANT: the oracle must NEVER fabricate an "approved" verdict. On any
+    doubt (including "unknown") it reports something a caller can safely
+    fail-open on instead of a false approval.
 
 CLI::
 
     python3 lib/pr_review_state.py <pr_number> --repo <owner/repo> [--json]
 
-Exit codes: 0 approved, 1 not-approved (pending / changes_requested). The I/O
-wrapper itself fail-opens to pending, so a fetch error prints pending / exit 1.
+Exit codes: 0 approved, 1 otherwise (pending / changes_requested / unknown). The
+I/O wrapper fail-opens to ``unknown`` on a fetch error (never ``pending``, and
+never a fabricated ``approved``), so the CLI prints ``UNKNOWN`` / exit 1 in that
+case — a caller scripting against this CLI's exit code should check ``--json``
+``state`` if it needs to distinguish "not approved" from "couldn't tell".
 """
 
 from __future__ import annotations
@@ -114,10 +134,16 @@ FAIL_OPEN = True
 #: non-zero bar; a value of 0 would make an unreviewed PR read "approved".
 _FAIL_OPEN_REVIEWERS_REQUIRED = 1
 
-# The three legal states, exported for callers/tests that assert the vocabulary.
+# The legal states, exported for callers/tests that assert the vocabulary.
 PENDING = "pending"
 CHANGES_REQUESTED = "changes_requested"
 APPROVED = "approved"
+#: "The oracle could not determine the state" (comment-fetch/transport error) —
+#: NOT a synonym for PENDING. Produced only by :func:`review_state`'s exception
+#: handler, never by :func:`compute_state`. Callers must fail-open ALLOW on this,
+#: exactly like an oracle exception (#207/#214) — never fabricate "approved",
+#: but also never let "couldn't tell" masquerade as "not approved" and block.
+UNKNOWN = "unknown"
 
 
 class MustFixEntry(TypedDict):
@@ -230,17 +256,21 @@ def review_state(repo: str, pr: int, *, cfg: Any = None) -> ReviewState:
     reads ``reviewers_required`` from shared config, and returns the pinned
     :class:`ReviewState`.
 
-    Fail-open: any comment-fetch / parse error returns a ``pending`` state
+    Fail-open: any comment-fetch / parse error returns an ``unknown`` state
     (approvals=0, no must-fix) rather than raising or inventing an approval — an
-    error must never manufacture a false "approved".
+    error must never manufacture a false "approved". ``unknown`` is deliberately
+    NOT ``pending``: it says "the oracle could not tell", which callers (the
+    ``validate_pr_review`` gate) must treat as a fail-open ALLOW, exactly like a
+    raised exception — a transient comment-fetch failure must never read as an
+    ordinary "not approved" and BLOCK a merge (#207/#214).
     """
     required = _reviewers_required(cfg)
     try:
         bodies = ts._pr_comment_bodies(repo, int(pr))
         verdicts = ts.parse_verdicts(bodies)
-    except Exception:  # noqa: BLE001 — fail-open: degrade to pending, never raise
+    except Exception:  # noqa: BLE001 — fail-open: degrade to unknown, never raise
         return {
-            "state": PENDING,
+            "state": UNKNOWN,
             "approvals": 0,
             "reviewers_required": required,
             "unresolved_must_fix": [],
