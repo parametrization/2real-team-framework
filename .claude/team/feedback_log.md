@@ -705,3 +705,75 @@ v0.9.2 (patch). PRs #217/#218/#219 → wave branch → rollup #220 → main.
 ### Carry-over
 - **NONE.** The deferred-debt list is empty for the first time this phase — both W9 carry-overs landed in
   S3 this wave. Future waves start from a clean debt slate.
+
+---
+
+## Wave 13 Retro (2026-07-07) — Phase 6 Wave 8: "Complete the installer"
+
+**3 PRs · 1 changes-requested cycle · 33% concentration (3 distinct authors) · 746 tests · shipped v0.10.0
+(minor — new `2real-team uninstall` command; PyPI + npm OIDC).** The first NON-flawless wave under the
+2-reviewer regime, and the more valuable for it: the gate intercepted a real user-data-loss bug on the
+flagship destructive command before it could reach main.
+
+### What went well
+1. **The gate paid for itself — a real defect interception.** On the flagship `uninstall`, Tariq (reviewer)
+   caught that the amend-disposition teardown blind-unlinked a pre-existing USER file colliding with a
+   framework manifest path (unrecoverable data loss). This is the first wave with a genuine blocking catch
+   — the prior three were flawless, so the 2-reviewer cost had bought nothing yet. This wave it stopped a
+   destructive bug one step before main. That is the entire justification for the regime, realized.
+2. **The reserved-5 self-justified via same-PR contrast.** On ONE PR (#227), Tariq caught the data-loss and
+   Nia clean-approved past it. No narrative needed to defend 5=Tariq / 4=Nia — the split is visible in the
+   PR history. Last wave the reserved-5 was re-earned on authorship (hypothetical catch); this wave it was
+   validated on a real catch.
+3. **File-disjoint story design held perfectly.** Three stories, zero shared files (install+package /
+   ontology-freshness / harness+CI). Parallel authoring AND parallel review with no merge contention; the
+   only integration step (folding wave-8 into the flagship branch) was a clean no-conflict ort merge that
+   changed only the other two stories' files.
+4. **The fix cycle ran cleanly through the live gate.** Request → fix (byte-provenance guard) → both
+   reviewers re-verified → amend-in-place → oracle `approved` → merge. The gate governed a real
+   changes-requested round, not just clean first-passes.
+
+### Pain points / findings
+1. **HEADLINE: amend-in-place ERASES the review-cycle trust signals.** The gate oracle requires a reviewer
+   to resolve a `Request` by editing it in place to `Replied` (any *current* comment parsing as a Must-fix
+   blocks the merge). But `trust_signals score` reads the same current comment state — so once Tariq
+   amended his blocking S1 comment, the scorer saw **must_fix_caught=0 (Tariq)** and **must_fix_received=0
+   (Paloma)**. The wave's single most valuable review contribution — a real data-loss catch — scored
+   mechanically ZERO, and the author's rework was invisible. The gate and the scorer both read "current
+   state" but want opposite things from a resolved Request. The distribution had to override the raw delta
+   by hand (documented in trust_matrix W13).
+2. **A PR merged with a red CI check.** S2 #226's head carried a `node (20)` failure (a flake — S2 is
+   Python-only and cannot affect the Node package; main is green). It merged anyway because the merge step
+   gates on the review oracle, NOT on CI-green. A flake this time; a real red next time would slip the same
+   way. (The scorer *did* catch it as ci_red_merges=1 — but attributed it to the Python author.)
+3. **Reviewers instinctively post a NEW comment instead of amending in place.** Tariq's first re-review was
+   a fresh `Replied` comment; the oracle stayed `changes_requested` (the old `Request` still stood) until
+   he amended the original in place. The amend-in-place convention is load-bearing for the oracle but
+   neither obvious nor enforced.
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **Credit resolved catches in `trust_signals` (fixes finding #1 — top priority).** Score the review cycle
+   from something durable, not the mutable current state: parse the comment EDIT history (GitHub exposes
+   it) so an amended-away `Request` still counts `must_fix_caught`/`must_fix_received`, OR require the
+   resolving reviewer to leave a preserved "resolved: was-Must-fix" marker the scorer counts. Without this,
+   the scorer systematically under-credits exactly the reviews that did the most — the ones that caught a
+   real bug and got it fixed.
+2. **Add a CI-green precondition to the merge step (fixes finding #2).** The orchestrator's merge should
+   require the PR's required checks green (or explicitly surface a red at merge time), not trust
+   suite-local green. Plus: investigate `node (20)` flakiness so it stops manufacturing false ci_red
+   signals. (Adjacent: this also stops the scorer mis-attributing infra flakes to authors.)
+3. **Make amend-in-place explicit in the reviewer flow (fixes finding #3).** A named step in
+   `pull-requests.md` / a wave-review helper: "to clear your Request, EDIT it in place to Replied — do not
+   post a new comment." Consider a tiny helper that PATCHes the reviewer's own verdict comment.
+4. **(Carried from W11/W12, still unimplemented) Mechanize review-load + rollup escape-hatch in wrapup.**
+   Per-reviewer verdict counts next to concentration; and codify the rollup direct-push escape hatch as a
+   named `wave-end` step (used again cleanly this wave).
+
+### Carry-over
+- **Deliberately deferred (the natural S1 follow-on, kept out to preserve file-disjointness):** #162
+  (amend-path leaves stale config module lists) and #155 (5 provisioner-hardening items) — both live in
+  `bootstrap.py`/provisioner code that would have collided with the flagship. Prime candidates for a
+  focused installer-hardening follow-up.
+- **Tech-debt surfaced in S3/S1 reviews (non-blocking):** `_derivable_asset_bytes` re-implements the
+  charter `{{key}}` substitution inline rather than sharing `install_charter`'s render path (guarded by the
+  round-trip test); harness PYTHONPATH-shadow assert; width-sensitive soft-degrade notice marker.
