@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.9.2 (Phase 6 Wave 7: HARDENED the armed PR-review gate — oracle fail-open on fetch error, example.json default→1, cr-cycles wording, + cleared the W9 carry-overs; deferred-debt list now empty), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.0 (Phase 6 Wave 8: COMPLETED the installer — product `2real-team uninstall`/`--teardown` with a byte-provenance guard, killed the ontology mtime freshness flake, armed the `--compare` install-quality CI gate; first wave with a REAL blocking catch through the live gate), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,7 +11,7 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.9.2 — Phase 6 Wave 7 (HARDEN the armed review gate)
+**Current baseline (2026-07-07): released v0.10.0 — Phase 6 Wave 8 (COMPLETE the installer)
 COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
@@ -24,9 +24,46 @@ a PR-review state machine, dormant by default*; **Phase 6 Wave 6** (v0.9.1) *ACT
 repo* (reviewers_required=2 + pr_review_gate_enabled=true; defaults stay dormant) *and formalized the
 process*; **Phase 6 Wave 7** (v0.9.2) *HARDENED the armed gate* (oracle fail-open on comment-fetch error
 via `unknown` sentinel; example.json `reviewers_required`→1; per-PR cr-cycles wording) *and cleared the
-entire deferred-debt tail* (the 3 gate follow-ups #207/#208/#211 + both W9 carry-overs) — **deferred-debt
-list now EMPTY**. See [[handoff]] for the exact pickup (next = owner picks the theme — no wave reserved).
-The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+entire deferred-debt tail*; **Phase 6 Wave 8** (v0.10.0) *COMPLETED the installer* — shipped the product
+`2real-team uninstall`/`--teardown` (byte-provenance guarded), killed the ontology mtime freshness flake,
+and armed the `--compare` install-quality CI gate; **the first wave with a REAL blocking catch** (a
+reviewer stopped user-data-loss on the flagship before it reached main). See [[handoff]] for the exact
+pickup (next = owner picks the theme — no wave reserved). The foundation (PR #41) shipped long ago; Phase
+3 (v0.4.0) below.
+
+**Phase 6 Wave 8 → v0.10.0 (2026-07-07, rollup direct-push merge `8210ad4`, bump `25dd116`, wrapup
+`e04a849`, ontology `ae38d22`) — "Complete the installer."** Finished the installer story with a new
+user-facing capability. **3 PRs, 1 changes-requested cycle, 33% concentration (3 distinct authors), 746
+tests** (+29). Minor bump (new command). OIDC published (npm `latest`=0.10.0; PyPI `/0.10.0/json`=200);
+GH Release `v0.10.0` + tag `deployments-phase6-wave-8`. Meta #221 + stories #222/#223/#224 closed; tracked
+issues #142/#141/#148 closed. Stories were file-disjoint (install+package / ontology-freshness /
+harness+CI). **The first NON-flawless wave under the 2-reviewer regime — and the first with a genuine
+blocking catch:** on the flagship destructive `uninstall`, reviewer Tariq caught that the amend-disposition
+teardown blind-unlinked a pre-existing USER file colliding with a framework manifest path (unrecoverable
+data loss) that co-reviewer Nia had clean-approved past.
+- **S1 #222/PR#227 (Paloma → Nia + Tariq):** product `2real-team uninstall` / `bootstrap.py --teardown` —
+  reverse an install to byte-identical pre-install state. New `framework/install/uninstall.py` (+ package
+  bridge `framework_install.py` + `cli.py` command). Removes exactly the golden-manifest set **gated on
+  framework byte-provenance** (`_derivable_asset_bytes` reconstructs shipped/rendered bytes; a
+  user-modified/foreign file at a manifest path is PRESERVED, never unlinked — this is the fix for Tariq's
+  amend-path data-loss must-fix), restores consented-archive backups, idempotent, `--non-interactive`/
+  `--dry-run` safe. Closes #142. **1 changes-requested fix cycle.**
+- **S2 #223/PR#226 (Ibrahim → Nia + Paloma):** kill the ontology mtime freshness flake. A **regeneration
+  barrier** in `ontology_gen/refresh.py`: when the staleness guard fires, byte-compare a deterministic
+  regen against the prior index; byte-identical ⇒ report `fresh` (not a phantom `regenerated`). Closes
+  #141. (Merged with a `node (20)` CI flake on its head — Python-only change, main green.)
+- **S3 #224/PR#225 (Tariq → Ibrahim + Paloma):** implement `cli_bridge_soft_degrade` metric (bundled
+  assets absent → exit 0 + notice) + grade it; arm the `--compare` regression gate as a CI job
+  (`install-quality-gate.yml`) against a committed baseline. Closes #148.
+- **Trust (`score 13` + distribution):** reserved-5 (Tariq) **VALIDATED on a real blocking catch** (last
+  wave re-earned on authorship, this wave exercised the catch the 5 rewards). Paloma 4→4 (flagship author,
+  clean fix of a legit must-fix). Ibrahim 4→4 (mechanical −1 for the node flake OVERRIDDEN). Nia 4→4 (deep
+  reviews, but a documented review-MISS on the same PR — one more decays to 3). **⚠️ Headline finding:
+  amend-in-place (required by the gate oracle) ERASES the review-cycle trust signals — `must_fix_caught`
+  (reviewer) + `must_fix_received` (author) both read 0 once a Request is resolved in place, so the wave's
+  best review scored mechanically zero and the distribution overrode by hand.** W13 retro proposals: credit
+  resolved catches from comment edit-history; add a CI-green precondition to the merge step; make
+  amend-in-place explicit in the reviewer flow.
 
 **Phase 6 Wave 7 → v0.9.2 (2026-07-07, rollup PR #220 → main @ direct-push merge `adce920`, bump
 `0a1c5d0`, wrapup `beb3998`, ontology `21e671f`) — "Harden the armed gate."** Hardened the gate armed in
