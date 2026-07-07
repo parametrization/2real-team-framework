@@ -33,6 +33,7 @@
   },
   "policy": {
     "reviewers_required": 2,
+    "pr_review_gate_enabled": false,
     "merge_model": "wave-branch",
     "admin_merge_exceptions": {
       "wave-merge": "the wave->main wrapup merge (orchestrator-merged)",
@@ -76,6 +77,7 @@
       "require_load_bearing_test",
       "validate_branch_freshness",
       "validate_pr_ci_status",
+      "validate_pr_review",
       "block_squash_wave_merge"
     ],
     "post_bash": ["warn_pipe_mask_rc"],
