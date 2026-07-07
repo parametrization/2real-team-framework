@@ -777,3 +777,66 @@ flagship destructive command before it could reach main.
 - **Tech-debt surfaced in S3/S1 reviews (non-blocking):** `_derivable_asset_bytes` re-implements the
   charter `{{key}}` substitution inline rather than sharing `install_charter`'s render path (guarded by the
   round-trip test); harness PYTHONPATH-shadow assert; width-sensitive soft-degrade notice marker.
+
+---
+
+## Wave 14 Retro (2026-07-07) — Phase 6 Wave 9: "Fix the gate & scorer"
+
+**3 PRs · 0 changes-requested cycles · 33% concentration (3 distinct authors) · ~797 tests · shipped
+v0.10.1 (patch, PyPI + npm OIDC).** Applied the W13 retro proposals — the wave hardened the trust/gate
+machinery it ran through. Clean deliverables, but TWO orchestration-level execution incidents made this the
+messiest-run wave of the phase. Both are the orchestrator's, not the engineers'.
+
+### What went well
+1. **The machinery now reads reality.** S1 credits resolved catches from comment edit-history (closing the
+   W13 erasure — verified by re-scoring live #227) + adds difficulty weighting; S2 closes the real
+   pending-checks merge-slip; S3 documents amend-in-place + the rollup escape-hatch and mechanizes
+   review-load. The three W13 proposals landed in one wave.
+2. **A mis-scoped story was corrected by investigation, not obedience.** The manager pointed S2 at the wrong
+   file (unaware `validate_pr_ci_status.py` already existed). Tariq investigated, found the real root cause
+   (no branch protection → the existing gate's pending warn-allow is the actual hole), and refused to fork a
+   duplicate gate. "Reconcile, don't duplicate" caught a manager error before code was written.
+3. **Engineers recovered from a live worktree collision with ZERO work lost.** Ibrahim non-destructively
+   moved his commit off the wrong branch by explicit SHA and reset the other branch to base; Nia self-caught
+   and fully recovered a commit that briefly landed on local `main` (origin untouched); Tariq held correctly
+   when asked. Adverse-condition judgment was excellent across the board.
+
+### Incidents / pain points
+1. **Worktree-isolation failure from reused agent names (orchestration).** Re-spawning W9 authors with the
+   same names (Nia/Tariq/Ibrahim) while the W8 namesakes were still shutting down routed the new agents into
+   the ORCHESTRATOR's shared worktree instead of isolated ones → branches tangled (S3's commit briefly on
+   S2's branch, etc.). No data lost, but hours of recovery. ROOT CAUSE: name reuse during shutdown overlap +
+   not using the explicit `isolation: worktree` spawn parameter. Once re-spawned with distinct names +
+   explicit isolation, it could not recur.
+2. **Orchestrator merged S1 with a red CI check — the exact mistake S2 fixes.** The merge command and the
+   CI-result read landed in the same step, so the merge fired before the red `framework (3.12)` was seen. It
+   was an infra flake (zero failed steps; re-run green), but the process gap is real. The irony: this is
+   precisely the W13 slip S2 just fixed — but S2's hook wasn't on `main` yet at merge time, and the
+   orchestrator's manual merge discipline is separate from the hook.
+3. **The difficulty weight doesn't break a tie of equals.** All three authors scored difficulty tier 3, so
+   the new weight didn't mechanize the Tariq-vs-Nia reserved-5 call — judgment still decided, and Nia
+   (flagship author) is 5-ready but stalled behind the incumbent 5. The 3-bucket coarseness is intentional
+   but leaves near-equal substantial PRs to narrative.
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **Codify safe re-spawning (fixes incident #1).** When spawning/re-spawning wave agents: ALWAYS use the
+   explicit `isolation: worktree` parameter and names distinct from any still-terminating agent. Add it as a
+   wave-kickoff checklist line so orchestration can't repeat the collision.
+2. **Reinstall v0.10.1's CI-green hook onto THIS repo so the next wave is protected by the fix this wave
+   shipped (fixes incident #2 mechanically).** The `validate_pr_ci_status.py` gate is wired in place, so its
+   new pending-block logic is live on `main` now — but confirm it (check `settings.json` wiring) and, going
+   forward, the orchestrator must gate `gh pr merge` on CONFIRMED-green `gh pr checks` conclusions (and
+   re-run a suspected flake rather than merge through it), until/unless the hook fully covers the manual
+   path. (Aligns with the standing "reinstall on this repo" rule, #116.)
+3. **Reserved-5 vs. difficulty ties.** Consider a finer difficulty signal (or additive review-load) so two
+   near-equal flagship authors don't both stall behind an incumbent 5 — or make the reserved-5 explicitly
+   rotational on a difficulty tie. Nia has now authored flagship-caliber PRs two of the last three waves
+   without taking the 5.
+
+### Carry-over
+- **Rulesets-vs-classic branch-protection probe (Nia's S2 tech-debt):** the CI-gate uses the *classic*
+  `branches/{base}/protection` endpoint, which 404s for repos enforcing checks via the newer **rulesets**
+  feature → those read as unenforced and get a safe-side OVER-block (never a slip). A rulesets probe is the
+  completeness follow-up.
+- **#234** — node RNG seed + name-dedupe root fix (then remove the S2 `vitest --retry` quarantine).
+- Minor nit: unused `pr_key` loop var in `review_load.py` (Tariq's S3 review).

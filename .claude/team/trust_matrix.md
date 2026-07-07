@@ -394,3 +394,36 @@ Rows = the team member rating. Columns = the team member being rated.
 | Paloma Gupta | Shipped a 590-line destructive-reversal flagship with byte-exact round-trips, then took a real must-fix gracefully and fixed it with a pattern-consistent provenance guard (no install-path churn) — Principal-grade authorship + recovery | received a blocking must-fix on an edge your own 19-test suite missed (amend + pre-existing user file, no archive) — the fix was clean, but the gap was a real reversal-safety hole on a destructive command; broaden the adversarial test matrix (user-collision × disposition) when you own the dangerous seam. |
 | Ibrahim El-Amin | Regeneration-barrier fix correctly killed a real mtime flake by content-hash invariant rather than a sleep/retry hack; clean scope, mutation-proved by both reviewers | your PR merged with a red `node (20)` check — a flake you couldn't have caused, but it exposes that the merge step didn't require CI-green; nothing to fix in your code, but a reminder to flag a red check at merge time rather than trust the suite-local green. |
 | Nia Rossi | TL-depth reviewing incl. rare outside-the-harness re-verification of the uninstall guard (real install→teardown, git-clean) — the kind of proof the flagship needed on re-review | **review-miss on the flagship**: clean-approved the amend collateral-deletion that Tariq caught on the same PR — the exact guarantee-defeating class the charter says reviewers must catch; held at 4 only because it was subtle and your re-review was strong, but one more miss of this class decays to 3. |
+
+## Wave 14 Trust Updates (2026-07-07) — Phase 6 Wave 9: "Fix the gate & scorer"
+
+> **3 PRs, 0 changes-requested cycles, 33% top concentration (3 distinct authors), ~797 tests. All 6
+> reviewer verdicts clean first-pass.** This wave hardened the trust/gate machinery itself. Shipped as
+> **v0.10.1** (patch — internal machinery). `trust_signals score 14` is the FIRST run of the new
+> edit-history-aware + difficulty-weighted scorer (S1 shipped it): all three authors `difficulty_points=3`
+> (substantial diffs), delta 0. The edit-history catch-crediting did NOT fire — there were no amend-in-place
+> catches to credit (a clean wave) — but it is now live for future waves, closing the W13 erasure.
+>
+> **⚠️ Two execution incidents this wave, BOTH orchestration-level (mine), not engineer failures — and the
+> engineers recovered cleanly.** (1) A reused-agent-name collision put three engineers in a shared worktree;
+> Ibrahim non-destructively recovered his own commit off the wrong branch, Nia self-caught + fully recovered
+> a commit that briefly landed on local `main` (origin never touched), Tariq held correctly when asked. (2)
+> The orchestrator merged S1 with a red `framework (3.12)` check that turned out to be an infra flake
+> (re-run green). Neither is charged against an engineer; the clean recovery under adverse conditions is a
+> POSITIVE judgment signal for Nia and Ibrahim.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | reserved-5 **HELD** — the wave's standout analytical contribution. Authored S2 (#235, difficulty 3): when handed a mis-scoped story (the manager pointed him at `validate_pr_review.py` unaware `validate_pr_ci_status.py` already existed), he INVESTIGATED and corrected the premise — found the real W13 hole (this repo has no branch protection, so the existing gate's pending warn-allow is the actual slip), refused to fork a duplicate gate ("reconcile, don't duplicate"), root-caused the node RNG/dedupe bug (filed #234), and pinned the `--admin` guarantee with tests a reviewer flagged. Plus 2 clean reviews (S1, S3) and correct hold-discipline during the worktree incident. Analytical root-causing on a story the manager got wrong is exactly what the 5 rewards. delta 0, difficulty 3, must_fix_received=0, ci_red=0. |
+| Nia Rossi | 4 | **4** | Authored the FLAGSHIP S1 (#233, difficulty 3, ~296 lines): the edit-history trust-scorer fix (GraphQL `userContentEdits`, fail-open `None` sentinel, backward-compatible) + the difficulty weight — a genuinely architectural PR, verified by re-scoring the live W13 #227 history (Tariq's erased catch now scores 1). This IS her registered re-earn path ("a substantive authored PR"), and she's **5-ready** — held at 4 ONLY because the single reserved-5 is Tariq's and he did not decay this wave (equal difficulty-3 authorship; his S2 analysis edged the standout). Also 1 clean review (S2) + a clean self-recovery of her local-main slip. Firmly 4, first in line for the next rotation. delta 0. |
+| Ibrahim El-Amin | 4 | **4** | Authored S3 (#232, difficulty 3): the amend-in-place + rollup-escape-hatch charter steps + `wave-end` review_load mechanization — solid, correctly dual-deployed (all 3 `--check` 0). Plus 1 clean review (S2) and a non-destructive self-recovery of his commit that the shared-worktree collision put on the wrong branch (moved it to his branch by explicit SHA, reset the other branch to base, preserved Tariq's uncommitted work — textbook careful recovery). delta 0, clean. Held at 4. |
+| Paloma Gupta | 4 | **4** | Not an implementer this wave; reviewed S1 (#233) and S3 (#232), both clean `Replied` with real substance — mutation-checked S1's edit-history seam ("return current only" → 5 tests fail), verified S3's dual-deploy byte-identity, confirmed file-disjointness both directions. Textbook Principal reviewing from a properly isolated worktree. must_fix_caught=0 (nothing was wrong — a genuinely clean wave). Held at 4. |
+
+### Done Well / Needs Improvement (Wave 14 / Phase 6 Wave 9)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | Corrected a mis-scoped story by investigation rather than building what was asked — found the real root cause, reconciled instead of duplicating, root-caused the node bug; the wave's standout | metrics clean, caught=0 — the reserved-5 now rides on analytical authorship each wave; the rulesets-vs-classic branch-protection probe Nia flagged is a natural follow-up to own. |
+| Nia Rossi | Flagship architectural PR that fixed the exact W13 scorer-erasure, verified against live history; clean self-recovery of a local-main slip | 5-ready but blocked by the single reserved-5; the local-main `cd`-to-root slip (now a recorded hazard memory) is the one blemish — avoid it next time and the flagship pattern takes the 5. |
+| Ibrahim El-Amin | Correct, dual-deployed S3 + a textbook non-destructive recovery of a wrong-branch commit under a live collision | metrics clean, caught=0; S3 was the lightest story (docs + a counting helper) — to move toward 5, author something architecturally load-bearing or land a real blocking catch. |
+| Paloma Gupta | Two genuine mutation-checked reviews from clean isolation; the only engineer who neither authored nor hit an incident — pure steady reviewing | caught=0 across 2 reviews (clean wave, nothing to catch); consider authoring next wave — a reviewer-only wave can't move you off 4. |
