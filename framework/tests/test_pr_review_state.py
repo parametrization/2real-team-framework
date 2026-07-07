@@ -290,3 +290,65 @@ def test_review_state_wrapper_surfaces_must_fix_from_real_body(monkeypatch):
     state = prs.review_state("acme/widget", 99, cfg=_Cfg())
     assert state["state"] == "changes_requested"
     assert len(state["unresolved_must_fix"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# N=2 end-to-end matrix (#203): the three review outcomes at reviewers_required=2,
+# driven through the full fetch→parse→compute chain on charter-format bodies whose
+# shape is taken from the real wave-6 multi-reviewer PR (#206: two distinct clean
+# Requestors — Nia.Rossi + Tariq.Morales) and a real blocking verdict (#93 shape).
+# This is the regression anchor for the live proof captured in the #203 PR body:
+# the oracle's N-of-M path, exercised end-to-end rather than only on hand-built
+# Verdict objects.
+# ---------------------------------------------------------------------------
+
+# Two distinct clean Requestors — the exact shape PR #206 carries.
+_N2_CLEAN_TARIQ = (
+    "Requestor: Tariq.Morales\nRequestee: Paloma.Gupta\nRequestOrReplied: Replied\n\n"
+    "**Review: verified — ships as-is**\nMust-fix: None\nTech-debt: None\n"
+)
+_N2_CLEAN_NIA = (
+    "Requestor: Nia.Rossi\nRequestee: Paloma.Gupta\nRequestOrReplied: Replied\n\n"
+    "**Review: LGTM — ships as-is**\nMust-fix: None\nTech-debt: None\n"
+)
+# A real blocking verdict (bold Must-fix label, one enumerated item — the #93 shape).
+_N2_MUSTFIX_NIA = (
+    "Requestor: Nia.Rossi\nRequestee: Paloma.Gupta\nRequestOrReplied: Request\n\n"
+    "**Review: one must-fix**\n**Must-fix:**\n1. Correct the recorded numbers.\n"
+    "**Tech-debt:** None\n"
+)
+
+
+def _n2_state(bodies, monkeypatch):
+    monkeypatch.setattr(ts, "_pr_comment_bodies", lambda _repo, _num: bodies)
+
+    class _Cfg:  # reviewers_required = 2 (the standing N=2 bar)
+        def get(self, _dotted, default=None):
+            return 2
+
+    return prs.review_state("acme/widget", 206, cfg=_Cfg())
+
+
+def test_n2_two_distinct_clean_requestors_approved(monkeypatch):
+    """2 distinct clean Requestors ⇒ approved, approvals=2 (the PR #206 case)."""
+    state = _n2_state([_N2_CLEAN_TARIQ, _N2_CLEAN_NIA], monkeypatch)
+    assert state["state"] == "approved"
+    assert state["approvals"] == 2
+    assert state["reviewers_required"] == 2
+    assert state["unresolved_must_fix"] == []
+
+
+def test_n2_one_clean_one_unresolved_mustfix_changes_requested(monkeypatch):
+    """1 clean + 1 unresolved Must-fix ⇒ changes_requested (must-fix precedence)."""
+    state = _n2_state([_N2_CLEAN_TARIQ, _N2_MUSTFIX_NIA], monkeypatch)
+    assert state["state"] == "changes_requested"
+    assert state["approvals"] == 1  # the clean reviewer still counts
+    assert len(state["unresolved_must_fix"]) == 1
+
+
+def test_n2_one_clean_only_pending(monkeypatch):
+    """1 clean approval only ⇒ pending (approvals below the required 2)."""
+    state = _n2_state([_N2_CLEAN_TARIQ], monkeypatch)
+    assert state["state"] == "pending"
+    assert state["approvals"] == 1
+    assert state["reviewers_required"] == 2
