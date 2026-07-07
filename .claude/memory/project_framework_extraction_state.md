@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.0 (Phase 6 Wave 8: COMPLETED the installer — product `2real-team uninstall`/`--teardown` with a byte-provenance guard, killed the ontology mtime freshness flake, armed the `--compare` install-quality CI gate; first wave with a REAL blocking catch through the live gate), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.1 (Phase 6 Wave 9: FIXED the gate & scorer — trust scorer credits resolved catches from comment edit-history + difficulty weight, CI-green merge precondition blocks pending merges on unenforced bases, documented amend-in-place + rollup escape-hatch, wave-end review-load; applied the W13 retro proposals), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,7 +11,7 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.10.0 — Phase 6 Wave 8 (COMPLETE the installer)
+**Current baseline (2026-07-07): released v0.10.1 — Phase 6 Wave 9 (FIX the gate & scorer)
 COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
@@ -27,9 +27,43 @@ via `unknown` sentinel; example.json `reviewers_required`→1; per-PR cr-cycles 
 entire deferred-debt tail*; **Phase 6 Wave 8** (v0.10.0) *COMPLETED the installer* — shipped the product
 `2real-team uninstall`/`--teardown` (byte-provenance guarded), killed the ontology mtime freshness flake,
 and armed the `--compare` install-quality CI gate; **the first wave with a REAL blocking catch** (a
-reviewer stopped user-data-loss on the flagship before it reached main). See [[handoff]] for the exact
-pickup (next = owner picks the theme — no wave reserved). The foundation (PR #41) shipped long ago; Phase
-3 (v0.4.0) below.
+reviewer stopped user-data-loss on the flagship before it reached main); **Phase 6 Wave 9** (v0.10.1)
+*FIXED the gate & scorer* — applied the W13 retro proposals: trust scorer credits resolved catches from
+comment edit-history (closing the amend-in-place erasure) + difficulty weight, CI-green merge precondition
+blocks a pending merge when the base has no branch-protection enforcement, documented amend-in-place +
+rollup escape-hatch, mechanized wave-end review-load. See [[handoff]] for the exact pickup (next = owner
+picks the theme — installer-hardening #162/#155 the deferred W8 follow-on; no wave reserved). The
+foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 9 → v0.10.1 (2026-07-07, rollup direct-push merge `7ee2bdb`, bump `9e8b2fa`, wrapup
+`1495b46`, ontology `9368687`) — "Fix the gate & scorer."** Hardened the trust/gate machinery the team
+runs on, applying the W13 retro proposals. **3 PRs, 0 changes-requested cycles, 33% concentration (3
+distinct authors), ~797 tests. All 6 reviewer verdicts clean first-pass.** Patch bump (internal machinery).
+OIDC published; GH Release `v0.10.1` + tag `deployments-phase6-wave-9`. Meta #228 + stories #229/#230/#231
+closed. File-disjoint (scorer lib / gate hook / charter+skill).
+- **S1 #229/PR#233 (Nia → Paloma + Tariq):** trust scorer reads reality. `trust_signals.py` now credits a
+  resolved catch (a `Request` amended-in-place to `Replied`, which the oracle REQUIRES) from GitHub comment
+  EDIT-HISTORY (GraphQL `userContentEdits`) — so `must_fix_caught`/`must_fix_received` are no longer zeroed
+  by amend-in-place (the W13 erasure). Fail-open (`None` sentinel → falls back to live bodies), oracle
+  untouched. Adds a coarse per-PR difficulty weight (diff magnitude → tier 1-3) feeding ONLY the reserved-5
+  tiebreak, never `score_delta`. Verified by re-scoring live #227 (Tariq's erased catch now scores 1).
+- **S2 #230/PR#235 (Tariq → Ibrahim + Nia):** CI-green merge precondition — story premise was CORRECTED by
+  Tariq's investigation (a CI gate `validate_pr_ci_status.py` already existed; reconcile-don't-duplicate).
+  The real W13 hole: no branch protection → the gate's pending path warn-allowed assuming GitHub holds the
+  merge. Now `base_branch_enforces_required_checks()` (tri-state via classic protection endpoint) BLOCKS a
+  pending/`--auto` merge when the base doesn't enforce the checks; fail-open + `--admin` exception preserved
+  (now tested); node-flake `vitest --retry` quarantine. Node RNG root fix tracked in #234.
+- **S3 #231/PR#232 (Ibrahim → Paloma + Tariq):** documented amend-in-place + the rollup direct-push
+  escape-hatch as named charter steps in `pull-requests.md`; mechanized per-reviewer verdict counts in the
+  `wave-end` skill (`review_load.py`).
+- **Trust (`score 14`, FIRST run of the new scorer):** all three authors difficulty=3, delta 0; edit-history
+  credited nothing (clean wave, no amend-in-place catches). Tariq 5→5 (HELD — standout S2 root-cause that
+  corrected a mis-scoped story), Nia 4→4 (flagship S1 author, 5-ready but blocked by the single reserved-5),
+  Ibrahim/Paloma 4→4. **⚠️ TWO orchestration-level incidents (mine, not the engineers'): a reused-agent-name
+  worktree collision [engineers self-recovered, zero work lost] and the orchestrator merging S1 with a red
+  CI check that was an infra flake [re-run green]. The CI-green hook the wave shipped is now LIVE on main, so
+  the next wave's merges are protected. Retro proposals: codify safe re-spawning [distinct names + explicit
+  `isolation: worktree`]; gate manual merges on confirmed-green CI; reserved-5-vs-difficulty-ties.**
 
 **Phase 6 Wave 8 → v0.10.0 (2026-07-07, rollup direct-push merge `8210ad4`, bump `25dd116`, wrapup
 `e04a849`, ontology `ae38d22`) — "Complete the installer."** Finished the installer story with a new
