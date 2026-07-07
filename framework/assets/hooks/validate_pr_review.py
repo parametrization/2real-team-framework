@@ -28,10 +28,22 @@ errors itself and ALLOWS (returns None) rather than relying only on the
 dispatcher's crash handling — an inability to *evaluate* the gate is never a
 block. An error must never manufacture a false "not approved" that stops a merge.
 
+This posture extends to the oracle's ``unknown`` state (#207/#214): when a
+transient comment-fetch/transport error keeps ``pr_review_state.review_state``
+from determining the PR's state at all, it returns ``state="unknown"`` rather
+than raising OR masking the failure as an ordinary ``"pending"``. This hook
+treats ``unknown`` exactly like a raised oracle exception — fail-open ALLOW —
+while still BLOCKING a genuine ``pending`` (the oracle successfully evaluated
+the PR and found too few approvals) or ``changes_requested`` (a standing
+Must-fix). A broken oracle must never be able to wedge the merge workflow, but
+it must also never fabricate an approval.
+
 Exit codes:
-  0 — allow (not a gated command, gate dormant, approved, or a fail-open
-      degradation: unresolvable repo/PR or an oracle error)
-  2 — block (gate enabled AND the oracle reports the PR is not approved)
+  0 — allow (not a gated command, gate dormant, approved, the oracle reports
+      "unknown", or a fail-open degradation: unresolvable repo/PR or an
+      oracle error)
+  2 — block (gate enabled AND the oracle reports the PR is genuinely not
+      approved: pending or changes_requested)
 """
 
 from __future__ import annotations
@@ -54,7 +66,7 @@ for _p in (_HERE, _LIB):
 from _framework_config import config  # noqa: E402
 from _framework_log import log_pretooluse_block  # noqa: E402
 from _repo_flag_parse import extract_repo  # noqa: E402
-from pr_review_state import APPROVED, review_state  # noqa: E402  (consume the oracle; no re-parse)
+from pr_review_state import APPROVED, UNKNOWN, review_state  # noqa: E402  (consume the oracle; no re-parse)
 
 #: Declares this hook's fail-direction to the dispatcher (#175): an uncaught
 #: exception allows the command rather than blocking on the hook's own bug. The
@@ -188,7 +200,12 @@ def check(input_data: dict) -> dict | None:
     except Exception:  # noqa: BLE001 — fail-open: degrade to allow, never block on our bug
         return None
 
-    if state.get("state") == APPROVED:
+    if state.get("state") in (APPROVED, UNKNOWN):
+        # UNKNOWN means the oracle couldn't fetch/parse the PR's comments (a
+        # transient error), NOT that it evaluated the PR and found it
+        # not-approved. Treat it exactly like an oracle exception: fail-open
+        # ALLOW. A broken comment fetch must never read as an ordinary
+        # "pending"/"changes_requested" and block the merge (#207/#214).
         return None
 
     reason = _block_reason(verb, f"#{pr}", state)
