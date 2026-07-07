@@ -100,6 +100,7 @@
       "description": "Process policy knobs read by the PR / merge / review gates.",
       "properties": {
         "reviewers_required": { "type": "integer", "default": 1, "minimum": 0, "description": "Approving reviewers required before merge (the N-reviewer gate)." },
+        "pr_review_gate_enabled": { "type": "boolean", "default": false, "description": "Arms the validate_pr_review PreToolUse gate (#195). When true, `gh pr ready`/`gh pr merge` is BLOCKED unless lib/pr_review_state reports the PR is approved (approvals >= reviewers_required AND no unresolved Must-fix). Defaults false: the gate SHIPS DORMANT (a no-op ALLOW) so installing it never blocks a merge; activation is a deliberate opt-in." },
         "merge_model": { "type": "string", "enum": ["wave-branch", "direct-to-main"], "default": "direct-to-main", "description": "Per-iteration merge model. wave-branch: PRs base on the integration branch, integration PR at wrapup. direct-to-main: PRs base on the default branch." },
         "admin_merge_exceptions": {
           "type": "object",
@@ -194,7 +195,7 @@
         "pre_bash": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_branch_freshness", "validate_pr_ci_status", "block_squash_wave_merge"],
+          "default": ["block_no_verify", "block_git_config", "no_worktree_self_delete", "warn_zsh_wordsplit", "validate_labels", "validate_review_comment_format", "block_gh_pr_review", "validate_workflow_paths_coverage", "require_load_bearing_test", "validate_branch_freshness", "validate_pr_ci_status", "validate_pr_review", "block_squash_wave_merge"],
           "description": "Ordered PreToolUse/Bash checks. Cheap/local first, network-calling (gh) last. First block wins."
         },
         "post_bash": {

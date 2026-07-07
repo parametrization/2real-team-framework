@@ -62,6 +62,11 @@ _DEFAULTS: dict[str, Any] = {
     },
     "policy": {
         "reviewers_required": 1,
+        # validate_pr_review gate (#195): SHIPS DORMANT. false => the gate is a
+        # no-op ALLOW (installing it never blocks a merge); true arms it to block
+        # `gh pr ready`/`gh pr merge` on a not-approved PR. Activation is a
+        # deliberate opt-in — see framework.config.schema.json for the contract.
+        "pr_review_gate_enabled": False,
         "merge_model": "direct-to-main",
         "admin_merge_exceptions": {},
         # Load-bearing-test pre-review gate (#167): map of <class> -> rationale
@@ -118,10 +123,12 @@ _DEFAULTS: dict[str, Any] = {
             "warn_zsh_wordsplit",
             "validate_labels",
             "validate_review_comment_format",
+            "block_gh_pr_review",
             "validate_workflow_paths_coverage",
             "require_load_bearing_test",
             "validate_branch_freshness",
             "validate_pr_ci_status",
+            "validate_pr_review",
             "block_squash_wave_merge",
         ],
         "post_bash": ["warn_pipe_mask_rc"],

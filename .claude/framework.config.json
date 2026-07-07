@@ -19,6 +19,7 @@
   },
   "policy": {
     "reviewers_required": 1,
+    "pr_review_gate_enabled": false,
     "merge_model": "wave-branch"
   },
   "ci": {
@@ -43,9 +44,11 @@
       "warn_zsh_wordsplit",
       "validate_labels",
       "validate_review_comment_format",
+      "block_gh_pr_review",
       "validate_workflow_paths_coverage",
       "require_load_bearing_test",
       "validate_pr_ci_status",
+      "validate_pr_review",
       "block_squash_wave_merge"
     ],
     "post_bash": ["warn_pipe_mask_rc"],
