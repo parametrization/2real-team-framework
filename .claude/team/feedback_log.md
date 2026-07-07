@@ -541,3 +541,52 @@ No wave reserved. Standing flagship candidate: **#102 P2 tranche** (governance c
 wave-lifecycle GH-Projects automation, ontology-consultation enforcement, headcount budget) — now on a
 **dogfooded** pipeline. Also open: installer-completeness (#162/#142/#148/#141/#155), #110, and the two
 small tech-debt proposals above (both fold cleanly into an early slot of any wave).
+
+---
+
+## Wave 10 Retro (2026-07-07) — Phase 6 Wave 5: "PR-review state machine (dormant)" → v0.9.0
+
+**Shape:** 3 stories / 3 PRs, **0 changes-requested cycles** (all three Replied first pass), 33% top
+concentration (3 distinct authors), 694 tests (+33), 0 CI-red, 0 Must-fix caught. Shipped the #102 P2
+review-gate flagship — `pr_review_state` oracle (S1), `block_gh_pr_review` submission guard (S3, live),
+`validate_pr_review` merge gate (S2, dormant). Released v0.9.0 (minor; new public API + hooks). PRs
+#197/#198/#199 → wave branch → rollup #200 → main.
+
+### Going well
+1. **Reconcile-not-duplicate held across all three stories.** Every hook built on 2real's existing
+   grammar (`trust_signals.parse_verdicts`, `validate_review_comment_format`) instead of porting the
+   upstream ~1189-line parallel parser — pinned by a reuse-guard test in S3. The discipline even surfaced
+   a real bug: Paloma caught that the *frozen contract* said "distinct requestees" where the charter
+   grammar makes the reviewer the `Requestor:` (a 2-reviewer bar could never clear), and escalated it.
+2. **Ship-dormant executed and proven, not just asserted.** The self-lock footgun (`reviewers_required=1`
+   is live here, so a live merge gate would brick the team's own merges mid-wave) was identified before
+   kickoff and mitigated with `policy.pr_review_gate_enabled=false`. Nia verified *structurally* that the
+   flag check short-circuits before the oracle is ever consulted — dormancy is airtight, not incidental.
+3. **Dependency sequencing worked.** S1+S3 ran in parallel (S3 is parsing-based, independent of the new
+   oracle); S2 was held until S1 merged so it built against the real API, not a guess. Every load-bearing
+   claim was independently reproduced by the reviewer (both mutation bars re-run), never taken on faith.
+
+### Pain points
+1. **The S2↔S3 config-sync conflict was predictable and not pre-empted.** Both stories were always going
+   to register a hook into the same `hooks.pre_bash` list across 5 sync points + regenerate the golden
+   manifest. It surfaced as a CONFLICTING PR and cost one resolution round-trip. Foreseeable at planning.
+2. **The oracle's N-of-M path is unexercised in anger.** `reviewers_required=1` on this repo means the
+   multi-reviewer approval logic is proven only by unit tests — the framework ships a state machine whose
+   real multi-reviewer behavior has never run live.
+3. **The frozen contract shipped with a real bug.** The pinned `ReviewState` contract was authored in
+   prose without checking it against the actual verdict grammar/`trust_signals` — the requestee/Requestor
+   error got through planning and was caught downstream by the implementer, later than it should've been.
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **Single integration-owner for shared registries.** When 2+ stories in a wave touch the same shared
+   config list / registry (`pre_bash`, `_DEFAULTS`, golden manifest), designate one story as the
+   integration owner for that list (or serialize those specific edits) so the predictable merge conflict
+   is pre-empted rather than resolved after the fact. Low effort, removes a recurring round-trip.
+2. **Pin contracts against code, not just prose.** When a wave freezes an inter-story contract, validate
+   it against the actual grammar/parsing layer at authoring time (a quick grammar check), not only in
+   narrative. Would have caught the requestee/Requestor bug before it reached an implementer.
+
+### Carry-over (still unapplied, from Wave 9 retro — no early slot claimed this flagship wave)
+- **Charter-manifest checksum cross-check** in `charter_drift.py plan()` (Nia's #190 tech-debt).
+- **Normalize `ensure_gitignore_entries` matching** before compare for idempotency (Tariq's #191 tech-debt).
+Both remain good early-slot fold-ins for the next hardening wave.
