@@ -15,6 +15,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -24,7 +25,13 @@ from typing import Callable
 from .real_provision import make_real_provisioner
 
 _FRAMEWORK_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _FRAMEWORK_ROOT.parent
 _BOOTSTRAP = _FRAMEWORK_ROOT / "install" / "bootstrap.py"
+
+#: Repo-root data dirs the CLI resolves via ``parents[2]`` in a source checkout. The
+#: soft-degrade fixture copies these (so team scaffolding still works) but deliberately
+#: OMITS ``framework/`` so the bridge's ``resolve_framework_root()`` returns None.
+_CLI_SOURCE_DATA_DIRS = ("presets", "templates", "skills")
 
 #: Default B9 scale (trivial .py files). #103 proposes ~2000; kept lower for CI wall-clock,
 #: overridable via ``--scale`` so the scale check can be dialed up on demand.
@@ -196,6 +203,27 @@ def _prov_invalid_config(wd: Path, opts: dict) -> dict:
     return {"config_json": str(bad)}
 
 
+def _prov_cli_soft_degrade(wd: Path, opts: dict) -> dict:
+    """Isolated *source-checkout* fixture MISSING the framework payload.
+
+    Lays ``<wd>/iso/python/src/real_team`` (a copy of the CLI package) plus the
+    ``presets/templates/skills`` data dirs at the package's ``parents[2]`` — but NO
+    ``framework/``. Run through ``run_cli_soft_degrade`` (which puts ``iso/python/src`` on
+    ``PYTHONPATH``), ``resolve_framework_root()`` finds neither ``_bundled/framework`` nor a
+    repo-root ``framework/``, so the bridge soft-degrades while team scaffolding still lands.
+    Returns the importable package root in ``extra.iso_src`` for the runner.
+    """
+    iso = wd / "iso"
+    src = iso / "python" / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(_REPO_ROOT / "python" / "src" / "real_team", src / "real_team")
+    for data in _CLI_SOURCE_DATA_DIRS:
+        origin = _REPO_ROOT / data
+        if origin.is_dir():
+            shutil.copytree(origin, iso / data)
+    return {"extra": {"iso_src": str(src)}}
+
+
 def _prov_large(wd: Path, opts: dict) -> dict:
     n = int(opts.get("scale", DEFAULT_B9_FILES))
     gen = wd / "gen"
@@ -333,6 +361,15 @@ def build_buckets() -> list[Bucket]:
                 # out of the way — B9 stresses scale/timing, not the fresh-vs-existing verdict.
                 _bootstrap_flags("--with-ontology", "--expect", "any", "--owner", "acme")),
         ]),
+        Bucket("B13", "cli-bridge-soft-degrade", _prov_cli_soft_degrade, [
+            Leg("soft-degrade", ("cli_soft_degrade",),
+                ["cli_bridge_soft_degrade", "install_exit_status",
+                 "non_interactive_zero_prompts"],
+                {"model": "single-repo", "installer": "cli", "bundled_assets": "absent",
+                 "team": True},
+                _bootstrap_flags("--preset", "library", "--owner", "acme"),
+                target_subdir="proj"),
+        ], installers_hint=("cli_soft_degrade",)),
         # --- [real] flag-gated OFF by default (owner-decision 1); provisioned by cloning the
         # live source at a pinned SHA into scratch (#153) only under --include-real. ---
         Bucket("B10", "meta-real-world", make_real_provisioner("B10"), [
