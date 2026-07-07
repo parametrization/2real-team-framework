@@ -1,4 +1,14 @@
 {
+  "wave_13_phase": 6,
+  "wave_13_phase_ordinal": 8,
+  "wave_13_active": true,
+  "wave_13_started_at": "2026-07-07T06:00:00Z",
+  "wave_13_repos_in_scope": [
+    "2real-team-framework"
+  ],
+  "wave_13_scope_reconciled_at": "2026-07-07T06:00:00Z",
+  "wave_13_kicked_off_at": "2026-07-07T06:00:00Z",
+  "wave_13_merge_model": "wave-branch",
   "wave_12_phase": 6,
   "wave_12_phase_ordinal": 7,
   "wave_12_active": false,
@@ -177,8 +187,8 @@
   "wave_2_changes_requested_cycles": 1,
   "wave_2_top_concentration_pct": 25,
   "last_completed_wave": "wave-12",
-  "current_wave": "wave-12",
-  "global_wave_seq": 12,
+  "current_wave": "wave-13",
+  "global_wave_seq": 13,
   "wave_1_phase": 3,
   "wave_1_phase_ordinal": 1,
   "wave_1_active": false,
@@ -197,5 +207,6 @@
   "wave_12_completed_at": "2026-07-07T05:15:00Z",
   "wave_12_final_pr_count": 3,
   "wave_12_changes_requested_cycles": 0,
-  "wave_12_top_concentration_pct": 33
+  "wave_12_top_concentration_pct": 33,
+  "wave_13_meta_issue": "#221"
 }
