@@ -530,6 +530,137 @@ def test_absent_reviewer_still_buckets_without_roster(tmp_path) -> None:
 
 
 # ===========================================================================
+# N=2 review process (#203): a single PR reviewed by TWO distinct reviewers.
+# These drive the REAL ``ts._account_pr`` (not a test mirror), so they are the
+# mutation bar for the attribution invariants that a 1-reviewer-era
+# implementation silently gets wrong: a catch must be credited to the RIGHT
+# Requestor (never dropped, never double-counted onto one reviewer), the author
+# must take one ``must_fix_received`` per blocking reviewer, and ``rework_cycles``
+# must count the PR ONCE regardless of how many reviewers blocked it.
+# ===========================================================================
+
+
+def _verdict_body(requestor: str, verdict: str, must_fix: str | None) -> str:
+    """A charter-format verdict comment; *must_fix* None → clean, str → blocking."""
+    mf = "Must-fix: None" if must_fix is None else f"Must-fix:\n1. {must_fix}"
+    return (
+        f"Requestor: {requestor}\n"
+        "Requestee: Paloma.Gupta\n"
+        f"RequestOrReplied: {verdict}\n\n"
+        "**Review**\n"
+        f"{mf}\n"
+        "Tech-debt: None\n"
+    )
+
+
+def test_two_distinct_reviewers_each_mustfix_credited_once(tmp_path) -> None:
+    """One PR, two DISTINCT reviewers each raise a must-fix (the N=2 case).
+
+    Every catch is credited to its own Requestor — exactly once each, never
+    dropped, never both folded onto one reviewer. The author takes one
+    ``must_fix_received`` per blocking reviewer (2), but the PR is a SINGLE
+    ``rework_cycles`` round.
+
+    Mutation bar (all in ``_account_pr``):
+      * moving ``rework_cycles += 1`` inside the per-verdict loop (the naive
+        1-reviewer shortcut) makes ``rework_cycles == 2`` → this test fails;
+      * crediting the catch to a single fixed reviewer instead of ``v.requestor``
+        drops one of the two ``must_fix_caught == 1`` assertions → fails;
+      * counting only the first blocking verdict makes ``must_fix_received == 1``
+        → fails.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=500,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Request", "Fix the thing."),
+            _verdict_body("Nia.Rossi", "Request", "Fix the other thing."),
+        ],
+        ci_red=False,
+    )
+    assert sigs["Paloma Gupta"].must_fix_received == 2  # one per blocking reviewer
+    assert sigs["Paloma Gupta"].rework_cycles == 1  # ONE PR, not one-per-verdict
+    assert sigs["Tariq Morales"].must_fix_caught == 1  # credited to the right reviewer
+    assert sigs["Nia Rossi"].must_fix_caught == 1  # the second catch is not dropped
+
+
+def test_two_reviewers_one_clean_one_mustfix_credits_only_blocker(tmp_path) -> None:
+    """One PR, two distinct reviewers: one clean approval, one must-fix.
+
+    Only the blocking reviewer earns the catch; the clean reviewer earns none.
+    The author takes exactly one ``must_fix_received`` and one ``rework_cycles``.
+
+    Mutation bar: crediting ``must_fix_caught`` off the clean verdict too (an
+    attribution that ignores ``v.changes_requested``) gives Tariq a phantom
+    bucket with a catch → the "Tariq absent" assertion fails. (A clean reviewer
+    produces no trust signal here — approvals are the oracle's concern, not this
+    scorer's — so a clean-only reviewer is legitimately not in the map.)
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=501,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),  # clean
+            _verdict_body("Nia.Rossi", "Request", "Fix this."),  # blocking
+        ],
+        ci_red=False,
+    )
+    assert sigs["Paloma Gupta"].must_fix_received == 1
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert "Tariq Morales" not in sigs  # clean reviewer earns no catch / no bucket
+
+
+def test_durable_ledger_attributes_two_distinct_reviewers(tmp_path) -> None:
+    """The #164 durable review-catch ledger, at N=2: two distinct reviewers each
+    recorded a catch on one PR, and both live comments were later amended clean.
+
+    The ledger stays authoritative for the whole PR — both catches survive the
+    amendment and land on the right (distinct) reviewers; the author still takes
+    two ``must_fix_received`` and one ``rework_cycles``.
+
+    Mutation bar: a 1-reviewer ledger read (e.g. only the first entry, or folding
+    every entry onto one reviewer) drops Nia's catch → the two
+    ``must_fix_caught == 1`` assertions fail. Reading the amended-clean live
+    comments instead of the ledger makes ``must_fix_received == 0`` → fails.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ledger = [
+        {"repo": "o/r", "pr": 502, "requestor": "Tariq.Morales", "requestee": "Paloma.Gupta"},
+        {"repo": "o/r", "pr": 502, "requestor": "Nia.Rossi", "requestee": "Paloma.Gupta"},
+    ]
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=502,
+        # Both blocking comments were amended in place to clean after the fix.
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Nia.Rossi", "Replied", None),
+        ],
+        ci_red=False,
+        review_catches=ledger,
+    )
+    assert sigs["Paloma Gupta"].must_fix_received == 2  # ledger, not amended comments
+    assert sigs["Paloma Gupta"].rework_cycles == 1
+    assert sigs["Tariq Morales"].must_fix_caught == 1
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+
+
+# ===========================================================================
 # Integration-branch resolution (#100): phase-aware branch.integration template.
 # ===========================================================================
 

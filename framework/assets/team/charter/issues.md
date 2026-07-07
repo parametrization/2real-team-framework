@@ -9,6 +9,50 @@
 3. Disputes about ownership are negotiated with the relevant lead and the Manager;
    the Manager makes the final call.
 
+## Wave Planning: Shared Artifacts & Frozen Contracts
+
+Two planning rules the Manager/lead apply when decomposing a wave into parallel
+stories. Both pre-empt a *predictable*, foreseeable-at-planning failure rather than
+resolving it after the fact.
+
+### Single Integration-Owner for Shared Registries
+
+When two or more stories in the same wave will touch the **same shared config list,
+registry, or module** — e.g. `hooks.pre_bash`, a `_DEFAULTS` / `_MANAGED_TREES` list,
+the golden install manifest, or a single charter module (`pull-requests.md`) — the
+Manager **designates exactly ONE story as the integration-owner** for that artifact at
+wave kickoff (or explicitly **serializes** those specific edits so they never land in
+parallel). Every other story routes the change it needs into that artifact **through the
+owner** (via the lead's relay) instead of editing the shared artifact itself.
+
+Rationale: two stories editing one append-only list — or one prose module — produce a
+**predictable** merge conflict that is foreseeable at planning, not an accident to
+resolve after the fact (Phase 6 Wave 5, #201: the S2↔S3 `hooks.pre_bash` conflict
+surfaced as a CONFLICTING PR and cost a resolution round-trip that kickoff could have
+pre-empted). Designating one owner removes the round-trip; serializing the edits is the
+fallback when no single owner is natural. The designation is recorded in the wave
+kickoff brief alongside reviewer assignment.
+
+If this rule ever becomes worth mechanically enforcing (e.g. a gate that flags two
+in-flight branches touching the same registry), file it as a follow-up issue — do not
+build the gate inline.
+
+### Pin Frozen Contracts Against Code, Not Prose
+
+When a wave **freezes an inter-story contract** — a data shape, API signature, hook
+grammar, or parsing vocabulary that a later story will build against — the frozen
+contract must be **validated against the actual code layer at authoring time**: check
+the real signature / grammar / parser it binds to, not only a narrative description of
+it. The kickoff brief that pins the contract carries the concrete check (the exact
+field name, token, or signature it must agree with), not prose alone.
+
+Rationale: a contract authored in prose alone can read as internally consistent and
+still be wrong against the code it names (Phase 6 Wave 5, #201: the frozen `ReviewState`
+contract said "distinct requestees" where the charter's verdict grammar makes the
+reviewer the `Requestor:` — so a 2-reviewer bar could never clear; caught downstream by
+the implementer, far later than authoring). A one-line grammar/signature check against
+the real code at freeze time moves that whole class of defect left of implementation.
+
 ## Issue Review Process
 
 Every newly created issue gets a review pass from each lead and senior contributor.

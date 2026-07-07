@@ -92,8 +92,30 @@ Closes #<issue-number>
 
 ## Review Workflow
 
-Every PR requires **1 review(s)** from team members who are not
+Every PR requires **2 review(s)** from team members who are not
 the branch author.
+
+### The N-reviewer merge gate (mechanically enforced when armed)
+
+The reviewer bar is not advisory when `policy.pr_review_gate_enabled` is **true**: the
+`validate_pr_review` PreToolUse hook (thin over the `lib/pr_review_state` oracle — see
+[hooks.md](hooks.md)) **blocks `gh pr ready` / `gh pr merge` until the PR is
+`approved`** — meaning **2 distinct clean reviewer approvals AND no
+unresolved `Must-fix:` verdict**. Approvals are counted over distinct `Requestor:`
+identities whose current verdict is clean (a `Replied` review with `Must-fix: None`, per
+[issues.md](issues.md)); a standing `Must-fix:` blocks regardless of the approval count.
+
+- **On THIS repo the gate is LIVE as of Phase 6 Wave 6** (`pr_review_gate_enabled=true`,
+  `reviewers_required=2`): a merge cannot land without 2 distinct clean approvals.
+- **The framework ships the gate DORMANT** (`pr_review_gate_enabled=false`): a downstream
+  install keeps this bar advisory until its owner flips the flag, so nothing here blocks a
+  fresh adopter's merges.
+- **Escape hatch (if the team wedges):** the gate must never trap the team. It can be
+  disarmed by a **direct config-only commit to `main`** setting
+  `policy.pr_review_gate_enabled` back to `false` (no PR merge required — the config edit
+  itself is not a gated verb). The gate is additionally **fail-open on oracle error**: an
+  inability to *evaluate* approval state ALLOWS the merge rather than hard-blocking it, so a
+  broken oracle can never wedge the workflow either.
 
 1. **Create the PR** and notify the assigned reviewer(s).
 2. **Reviewer reviews** and posts findings on the PR, classified as:
@@ -106,9 +128,23 @@ the branch author.
 4. **Merge into the integration branch** — the team merges these PRs itself; no
    owner approval is needed below `main`.
 
-Reviewers are assigned by the lead at wave kickoff (no self-review; spread the load).
-The reviewer runs the tests on the branch — a review is an act of verification, not
-a reading exercise.
+### Reviewer Assignment (distinct, author-exclusive)
+
+Reviewers are assigned by the lead at wave kickoff (spread the load). The reviewer runs
+the tests on the branch — a review is an act of verification, not a reading exercise.
+
+Every PR is assigned **2 distinct reviewers**, and the assignment
+is **author-exclusive**: a reviewer can never be the PR's own author — the `Requestee:`
+of that PR's verdicts, per the verdict grammar in [issues.md](issues.md). The
+2 reviewers must be 2 *different* people; the
+same reviewer counted twice does not satisfy the bar, and no self-review is permitted.
+
+This assignment convention is what the armed merge gate mechanically enforces (§ The
+N-reviewer merge gate): the oracle counts clean approvals over **distinct `Requestor:`
+identities other than the author**, so assigning fewer than 2
+distinct non-author reviewers leaves the PR unable to reach `approved` — it cannot
+merge. Assign the full slate at kickoff so the process the gate checks and the process
+the team runs are the same one.
 
 ## CI Gates
 

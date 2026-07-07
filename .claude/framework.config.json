@@ -18,8 +18,8 @@
     "allow_emails": ["parametrization@gmail.com"]
   },
   "policy": {
-    "reviewers_required": 1,
-    "pr_review_gate_enabled": false,
+    "reviewers_required": 2,
+    "pr_review_gate_enabled": true,
     "merge_model": "wave-branch"
   },
   "ci": {

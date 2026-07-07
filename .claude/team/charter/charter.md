@@ -30,7 +30,7 @@ documents (CLAUDE.md, roster cards, skills) should link here rather than restate
 - **Owner:** `parametrization` · **Default branch:** `main` ·
   **Merge model:** `wave-branch` (configured default; the effective model per
   wave is declared at kickoff via `lifecycle.py wave kickoff --merge-model …` and
-  recorded in the state file) · **Reviews required per PR:** 1
+  recorded in the state file) · **Reviews required per PR:** 2
 - **User approval gates.** Merging to `main`, creating releases, and
   kicking off a new wave all require explicit approval from the project owner. No
   team member may bypass these gates.
