@@ -42,6 +42,35 @@ def test_has_promotion_markers_requires_both_halves() -> None:
     assert pa.has_promotion_markers("plain content, no markers") is False
 
 
+def test_has_promotion_markers_ignores_fenced_code_examples() -> None:
+    """#187 dogfood finding: a doc ILLUSTRATING the marker convention inside a
+    fenced ``` code block must not itself read as a completed promotion — only
+    a live (unfenced) marker in the artifact's real prose counts."""
+    doc_with_fenced_example = (
+        "# Some charter module\n\n"
+        "Here is what a promoted module looks like:\n\n"
+        "```markdown\n"
+        "<!-- Promoted from memory: reference_widget (#1) -->\n"
+        "**Promotion provenance:** because reasons — promoted 2026-01-01.\n"
+        "```\n\n"
+        "The rest of this doc's own prose has no live marker.\n"
+    )
+    assert pa.has_promotion_markers(doc_with_fenced_example) is False
+    # A live (unfenced) marker elsewhere in the SAME doc still counts.
+    assert pa.has_promotion_markers(doc_with_fenced_example + "\n" + MARKED) is True
+
+
+def test_has_promotion_markers_false_on_real_skills_md_convention_doc() -> None:
+    """Regression pin for the #187 dogfood finding: the actual charter doc that
+    defines the marker convention (`team/charter/skills.md`) quotes the marker
+    shape verbatim in its own "Example" section. Before the fenced-code strip,
+    this doc false-positived as AUTO-tier the moment it was itself edited (it is
+    a `team/charter/**` candidate root the silent feeder hook records)."""
+    skills_md = _FRAMEWORK_ROOT / "assets" / "team" / "charter" / "skills.md"
+    content = skills_md.read_text(encoding="utf-8")
+    assert pa.has_promotion_markers(content) is False
+
+
 # --------------------------------------------------------------- classify_tier
 
 

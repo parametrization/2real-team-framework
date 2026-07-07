@@ -87,6 +87,8 @@ def is_owned(relpath: str) -> bool:
         return True
     if parts[-1].startswith("CLAUDE.md"):
         return True
+    if parts[-1] == ".gitignore":  # #187: installer ensures the ledger-ignore default
+        return True
     if ".git" in parts:  # an installed .git/hooks/pre-push at any depth (meta children)
         i = parts.index(".git")
         return i + 1 < len(parts) and parts[i + 1] == "hooks"

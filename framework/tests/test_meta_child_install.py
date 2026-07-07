@@ -143,10 +143,21 @@ class TestMetaInstall:
         assert not (meta / "api" / ".claude" / "hooks").exists()
         assert (meta / ".claude" / "hooks" / "dispatcher.py").is_file()
 
+        # #187: each child is its own git repo and inherits the parent's
+        # hooks.post_file (incl. suggest_generic_prompt) verbatim, so each gets
+        # its OWN gitignore entry for the transient ledger — same as the meta.
+        meta_gitignore = (meta / ".gitignore").read_text(encoding="utf-8")
+        assert ".claude/generic_prompt_ledger.json" in meta_gitignore.splitlines()
+        api_gitignore = (meta / "api" / ".gitignore").read_text(encoding="utf-8")
+        assert ".claude/generic_prompt_ledger.json" in api_gitignore.splitlines()
+        tf_gitignore = (meta / "infra" / "tf" / ".gitignore").read_text(encoding="utf-8")
+        assert ".claude/generic_prompt_ledger.json" in tf_gitignore.splitlines()
+
     def test_e2e_meta_rerun_is_idempotent(self, tmp_path: Path) -> None:
         meta, r1 = self._install_meta(tmp_path)
         assert r1.returncode == 0, r1.stderr or r1.stdout
         before = (meta / "api" / ".claude" / "settings.json").read_text(encoding="utf-8")
+        gitignore_before = (meta / "api" / ".gitignore").read_text(encoding="utf-8")
 
         yaml = tmp_path / "install.yaml"
         r2 = _run(str(meta), "--install-config", str(yaml), "--non-interactive")
@@ -156,6 +167,8 @@ class TestMetaInstall:
         assert "CLAUDE.md up to date" in r2.stdout
         assert (meta / "api" / ".claude" / "settings.json").read_text(encoding="utf-8") == before
         assert not list((meta / "api").glob("CLAUDE.md.bak*"))  # no backup churn
+        # #187: re-run never duplicates the gitignore entry.
+        assert (meta / "api" / ".gitignore").read_text(encoding="utf-8") == gitignore_before
 
     def test_missing_configured_child_is_fatal(self, tmp_path: Path) -> None:
         meta = tmp_path / "meta"
@@ -216,12 +229,16 @@ class TestChildInstall:
         snapshot = json.loads((child / ".claude" / "install.config.json").read_text())
         assert snapshot["project"]["model"] == "child"
         assert snapshot["parent"]["path"] == ".."
+        # #187: a standalone child is its own git repo — gets its own gitignore entry.
+        child_gitignore = (child / ".gitignore").read_text(encoding="utf-8")
+        assert ".claude/generic_prompt_ledger.json" in child_gitignore.splitlines()
 
         # Idempotent re-run.
         r2 = _run(str(child), "--install-config", str(yaml), "--non-interactive")
         assert r2.returncode == 0, r2.stderr or r2.stdout
         assert "already wired" in r2.stdout
         assert "up to date" in r2.stdout
+        assert (child / ".gitignore").read_text(encoding="utf-8") == child_gitignore
 
     def test_child_mode_without_installed_parent_is_fatal(self, tmp_path: Path) -> None:
         parent = tmp_path / "bare-parent"

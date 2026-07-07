@@ -15,7 +15,7 @@ gh pr create --base <integration-branch> --title "<short title>" --body-file /tm
   `wave-branch`; the effective model for a wave is declared at kickoff via
   `lifecycle.py wave kickoff --merge-model …` and recorded in the state file —
   see [branching.md](branching.md)). Under `wave-branch`, target the wave's
-  integration branch (`deployments/wave-{wave}`), never `main`
+  integration branch (`deployments/phase{phase}/wave-{wave}`), never `main`
   directly. Under `direct-to-main`, that base collapses to `main`
   and feature branches PR straight into it.
 - Title under 70 characters; body references the issue with `Closes #N`.
@@ -34,9 +34,18 @@ three Wave-1 retro process proposals, meta #165): all three Wave-1 must-fixes we
 new behavior shipped without a revert→fail test, caught only at QA. The
 `require_load_bearing_test` hook (see [hooks.md](hooks.md)) enforces the
 mechanical precondition at `gh pr create`/`gh pr ready` time — it blocks when the
-diff adds a substantive line to a behavior file with no accompanying test-file
-change in the same diff, and blocks (rather than the usual fail-open posture) when
-the diff itself cannot be verified (network/API failure, unresolvable repo/head).
+diff adds a substantive line to a behavior file with no test-file change PAIRED
+to that specific file in the same diff, and blocks (rather than the usual
+fail-open posture) when the diff itself cannot be verified (network/API failure,
+unresolvable repo/head).
+
+**Pairing is per behavior file** (Wave 3 S2, #174): a substantive test-file
+change elsewhere in the same PR, for an unrelated module, does NOT satisfy a
+different behavior file's own requirement. A behavior file counts as paired if
+the diff also substantively touches a test file named `test_<name>.py` /
+`<name>_test.py` for its stem, a test file in the same directory, or
+`conftest.py`. Touching every file's own test is the reliable way to satisfy
+this (not "touch any one test file in the PR").
 
 The hook is a lightweight, deterministic proxy — file-presence plus a substantive
 added line, not a semantic proof. It CANNOT verify that a touched test is actually
@@ -46,15 +55,25 @@ review, and QA's review-time verification (see § Review Workflow below) holds t
 same bar the hook only approximates.
 
 **Override:** short of a deliberate, documented exception, this gate cannot be
-bypassed. If a class is configured under `policy.load_bearing_test_exceptions`
-(empty by default — no bypass exists until a repo configures at least one),
-prefix the command:
+bypassed. Classes are configured under `policy.load_bearing_test_exceptions`,
+which ships pre-seeded with one class, `refactor` (Wave 3 S3, #176), for PRs
+that are a pure refactor with no external behavior change (so there is no new
+behavior to pair a test to). To use it:
+
+```bash
+LOAD_BEARING_TEST_EXCEPTION="refactor:<what you restructured, why behavior is unchanged>" gh pr create ...
+```
+
+More generally:
 
 ```bash
 LOAD_BEARING_TEST_EXCEPTION="<class>:<rationale>" gh pr create ...
 ```
 
-Every attempt — authorized or not — is logged to the events log for audit.
+where `<class>` must be a key configured under `policy.load_bearing_test_exceptions`
+and `<rationale>` a non-empty, specific justification — an unrecognized class or
+empty rationale still blocks. Every attempt — authorized or not — is logged to
+the events log for audit.
 
 **PR body template:**
 

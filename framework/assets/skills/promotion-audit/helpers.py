@@ -82,6 +82,21 @@ TIER_DECIDE = "DECIDE"
 _MARKER_COMMENT_RE = re.compile(r"<!--\s*Promoted from memory\b.*?-->", re.IGNORECASE | re.DOTALL)
 _PROVENANCE_LABEL_RE = re.compile(r"\*\*Promotion provenance:\*\*")
 
+# Dogfood finding (#187): the charter module that DOCUMENTS this convention
+# (``team/charter/skills.md``) quotes the marker shape verbatim inside fenced
+# ``` examples`` — a bare substring search over its own content therefore
+# false-positives as an AUTO-tier "already promoted" artifact the moment that
+# doc is edited (it is a `team/charter/**` candidate root, so the silent
+# feeder hook records it like any other touched charter module). Fenced code
+# blocks are stripped before matching so an illustrative example never counts
+# as a live marker — only markers in the artifact's real prose do.
+_FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
+
+
+def _strip_fenced_code(content: str) -> str:
+    """Drop fenced ``` code blocks so quoted examples never match as markers."""
+    return _FENCED_CODE_RE.sub("", content)
+
 
 # ---------------------------------------------------------------------------
 # Pure classification / rendering core (no I/O)
@@ -89,8 +104,14 @@ _PROVENANCE_LABEL_RE = re.compile(r"\*\*Promotion provenance:\*\*")
 
 
 def has_promotion_markers(content: str) -> bool:
-    """True when *content* carries BOTH halves of the marker convention."""
-    return bool(_MARKER_COMMENT_RE.search(content) and _PROVENANCE_LABEL_RE.search(content))
+    """True when *content* carries BOTH halves of the marker convention.
+
+    Matches are searched OUTSIDE fenced ``` code blocks only (see
+    ``_FENCED_CODE_RE``) — an illustrative example of the marker shape quoted
+    in documentation must never itself read as a completed promotion.
+    """
+    prose = _strip_fenced_code(content)
+    return bool(_MARKER_COMMENT_RE.search(prose) and _PROVENANCE_LABEL_RE.search(prose))
 
 
 def classify_tier(entry: dict, content: str | None) -> str:
