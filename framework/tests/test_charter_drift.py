@@ -119,6 +119,58 @@ def test_missing_runtime_module_is_drift(tmp_path: Path) -> None:
     assert ".claude/team/charter/commits.md" in drift
 
 
+def test_stale_manifest_checksum_is_caught_even_when_content_matches_canonical(
+    tmp_path: Path,
+) -> None:
+    """Load-bearing (#216): a module whose on-disk text still matches canonical, but whose
+    ``team/.charter-manifest.json`` checksum entry is stale/wrong, must be flagged as drift.
+
+    This is the gap a plain canonical-vs-live text diff cannot see: someone (or some other
+    tool) writes the correct rendered text straight to ``.claude/team/charter/*.md`` without
+    going through ``install_charter``, so the manifest is never regenerated. The live file
+    looks perfectly in sync — until the render manifest is consulted.
+
+    Mutation bar: revert the checksum cross-check in ``charter_drift.plan()`` (e.g. drop the
+    ``recorded_checksum`` block) and this test fails, because the content-only comparison
+    sees no drift here.
+    """
+    import json
+
+    r = _install(tmp_path)
+    assert r.returncode == 0, r.stderr
+
+    manifest_path = tmp_path / ".claude" / "team" / ".charter-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # Corrupt the recorded checksum for one module WITHOUT touching its .md content —
+    # simulating a charter edit that skipped manifest regeneration.
+    manifest["files"]["issues.md"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    # The .md content itself still matches canonical exactly.
+    drift = charter_drift.plan(claude_root=tmp_path / ".claude")
+    assert ".claude/team/charter/issues.md" in drift
+
+    rc = charter_drift.main(["--check", "--claude-root", str(tmp_path / ".claude")])
+    assert rc == 1
+
+
+def test_missing_manifest_entry_is_caught(tmp_path: Path) -> None:
+    """A module present in canonical + on disk but absent from the render manifest
+    (e.g. a manifest predating this module, or hand-deleted) is also drift."""
+    import json
+
+    r = _install(tmp_path)
+    assert r.returncode == 0, r.stderr
+
+    manifest_path = tmp_path / ".claude" / "team" / ".charter-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["files"]["commits.md"]
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    drift = charter_drift.plan(claude_root=tmp_path / ".claude")
+    assert ".claude/team/charter/commits.md" in drift
+
+
 def test_render_canonical_charter_matches_iter_charter_files() -> None:
     """render_canonical_charter reuses bootstrap's own iterator/context — same module set."""
     import bootstrap
