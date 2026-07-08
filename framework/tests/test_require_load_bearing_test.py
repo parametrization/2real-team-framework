@@ -1,5 +1,6 @@
 """Tests for require_load_bearing_test — the pre-review gate (#167, plus Wave 3
-S2 #174 per-file pairing and S3 #176 seeded refactor exception).
+S2 #174 per-file pairing, S3 #176 seeded refactor exception, and #284 the
+automatic docs/comment-only per-file exception).
 
 Exercised entirely via check() with `_fetch_compare_files` monkeypatched (no
 network) and an injected config (tmp_path/.claude/framework.config.json) for the
@@ -70,6 +71,39 @@ def _test_entry(patch: str, filename: str = "framework/tests/test_foo.py") -> di
 
 _SUBSTANTIVE_PATCH = "@@ -1,2 +1,3 @@\n line1\n+def new_behavior():\n+    return 42\n"
 _TRIVIAL_PATCH = "@@ -1,1 +1,3 @@\n line1\n+   \n+# just a comment\n"
+
+# Single-line docstring addition — the exact Wave 20 (#279/#284) shape: a
+# cross-reference docstring added to an existing behavior file, no code.
+_DOCSTRING_PATCH = (
+    '@@ -1,2 +1,3 @@\n'
+    ' def foo():\n'
+    '+    """Cross-reference: see bar() for the paired implementation."""\n'
+    '     return 1\n'
+)
+
+# Multi-line docstring addition, plus a blank line and a `#` comment inside —
+# exercises the open/interior/close state machine and comment-inside-docstring.
+_MULTILINE_DOCSTRING_PATCH = (
+    '@@ -1,1 +1,6 @@\n'
+    ' def foo():\n'
+    '+    """Longer explanation.\n'
+    '+\n'
+    '+    # not a real comment, just docstring text\n'
+    '+    See bar() for details.\n'
+    '+    """\n'
+    '     return 1\n'
+)
+
+# A docstring addition that ALSO smuggles in a real statement on its own added
+# line — the anti-loophole shape: mixing doc content with a hidden behavior
+# line in the same file must NOT read as docs-only.
+_DOCSTRING_WITH_HIDDEN_CODE_PATCH = (
+    '@@ -1,2 +1,4 @@\n'
+    ' def foo():\n'
+    '+    """Cross-reference: see bar()."""\n'
+    '+    _secret_state.append(1)\n'
+    '     return 1\n'
+)
 
 
 # --------------------------------------------------------------- command matching
@@ -432,6 +466,148 @@ def test_seeded_default_matches_schema_default_exactly() -> None:
     ]
     assert schema_default == _framework_config._DEFAULTS["policy"]["load_bearing_test_exceptions"]
     assert "refactor" in schema_default
+
+
+# --------------------------------------------------------------- automatic docs/comment-only exception (#284)
+
+
+def test_docstring_only_addition_allowed_when_docs_class_configured(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The #284 fix, end to end: a behavior file whose only added line is a
+    docstring is exempted automatically (no LOAD_BEARING_TEST_EXCEPTION env
+    var) once the repo's config seeds a `docs` class."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_DOCSTRING_PATCH)]))
+    assert rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path))) is None
+    _framework_config.clear_cache()
+
+
+def test_multiline_docstring_addition_allowed_when_docs_class_configured(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_MULTILINE_DOCSTRING_PATCH)])
+    )
+    assert rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path))) is None
+    _framework_config.clear_cache()
+
+
+def test_docstring_only_addition_still_blocked_without_docs_class(monkeypatch) -> None:
+    """Opt-in guard: a repo whose config resolution yields exception classes
+    WITHOUT `docs` (e.g. a fork of the schema that keeps only `refactor`) does
+    NOT get the automatic exemption — the same docstring-only diff still trips
+    the gate. Uses a fully mocked config (mirrors
+    test_seeded_refactor_class_would_be_rejected_without_the_seed) because a
+    REAL config file cannot zero out a class that ships in
+    _framework_config._DEFAULTS: dict-valued policy keys merge over the
+    runtime defaults rather than replacing them (see `_deep_merge`) — so this
+    is the only way to exercise "docs not configured" and pins that the
+    exemption really is gated on config, not unconditional."""
+
+    class _RefactorOnlyExceptionsConfig:
+        def get(self, dotted: str, default=None):
+            if dotted == "policy.load_bearing_test_exceptions":
+                return {"refactor": "pure refactor"}
+            return default
+
+    monkeypatch.setattr(rlbt, "config", lambda input_data=None: _RefactorOnlyExceptionsConfig())
+    monkeypatch.setattr(rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_DOCSTRING_PATCH)]))
+    r = rlbt.check(_bash(_CREATE_CMD))
+    assert r is not None and r["decision"] == "block"
+
+
+def test_real_behavior_change_still_blocked_under_docs_exception(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """ERR TIGHT: a real behavior change (new executable line, no docstring in
+    sight) still trips the gate even with the `docs` class active — the
+    automatic exception only ever exempts docs/comment-only diffs."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_SUBSTANTIVE_PATCH)]))
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    assert "framework/assets/hooks/foo.py" in r["reason"]
+    _framework_config.clear_cache()
+
+
+def test_docstring_hiding_a_real_statement_still_blocked_under_docs_exception(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Anti-loophole: a diff that pairs a genuine docstring line with a
+    smuggled-in real statement in the SAME file must not read as docs-only —
+    the classifier inspects every added line, not just the first/most-visible
+    one, so mixing doc content with hidden behavior does not buy a pass."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt,
+        "_fetch_compare_files",
+        _fake_files([_behavior_entry(_DOCSTRING_WITH_HIDDEN_CODE_PATCH)]),
+    )
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    _framework_config.clear_cache()
+
+
+def test_docs_exception_is_per_file_not_per_diff(monkeypatch, tmp_path: Path) -> None:
+    """Two behavior files in one diff: one docs-only, one a real behavior
+    change with no paired test. The docs-only file is exempted; the real one
+    still blocks — per-file granularity, matching the #174 pairing check it
+    sits alongside."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt,
+        "_fetch_compare_files",
+        _fake_files(
+            [
+                _behavior_entry(_DOCSTRING_PATCH, filename="framework/assets/hooks/foo.py"),
+                _behavior_entry(_SUBSTANTIVE_PATCH, filename="framework/assets/lib/bar.py"),
+            ]
+        ),
+    )
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    assert "framework/assets/lib/bar.py" in r["reason"]
+    assert "framework/assets/hooks/foo.py" not in r["reason"]
+    _framework_config.clear_cache()
+
+
+def test_docstring_only_addition_allowed_with_no_repo_config_at_all(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The #284 seed end to end, exercising the REAL shipped default (not an
+    injected fixture): `tmp_path` has no `.claude/framework.config.json`, so
+    `docs` is only present because it ships in `_framework_config._DEFAULTS`
+    alongside `refactor` — mirrors
+    test_seeded_refactor_class_allows_pure_refactor_with_no_repo_config."""
+    _framework_config.clear_cache()
+    monkeypatch.setattr(rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_DOCSTRING_PATCH)]))
+    assert rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path))) is None
+    _framework_config.clear_cache()
+
+
+def test_docs_class_seeded_in_runtime_defaults() -> None:
+    """The #284 seed itself: `docs` ships in the runtime default map alongside
+    `refactor` (#176), so a repo needs zero config of its own for the manual
+    `LOAD_BEARING_TEST_EXCEPTION=docs:...` override to be valid, matching the
+    pattern already established for `refactor` (see
+    test_seeded_refactor_class_allows_pure_refactor_with_no_repo_config)."""
+    assert "docs" in _framework_config._DEFAULTS["policy"]["load_bearing_test_exceptions"]
+
+
+def test_patch_is_docs_only() -> None:
+    assert rlbt._patch_is_docs_only(_DOCSTRING_PATCH) is True
+    assert rlbt._patch_is_docs_only(_MULTILINE_DOCSTRING_PATCH) is True
+    # A comment-only added line is genuinely docs/comment content...
+    assert rlbt._patch_is_docs_only("@@ -1,1 +1,2 @@\n line1\n+# just a comment\n") is True
+    # ...but an added blank-only line has NOTHING to exempt (no docs/comment
+    # content was seen at all), so it does not count as "docs only" either.
+    assert rlbt._patch_is_docs_only("@@ -1,1 +1,2 @@\n line1\n+   \n") is False
+    assert rlbt._patch_is_docs_only(_SUBSTANTIVE_PATCH) is False
+    assert rlbt._patch_is_docs_only(_DOCSTRING_WITH_HIDDEN_CODE_PATCH) is False
+    assert rlbt._patch_is_docs_only(None) is False
+    assert rlbt._patch_is_docs_only("") is False
 
 
 # --------------------------------------------------------------- pure helpers

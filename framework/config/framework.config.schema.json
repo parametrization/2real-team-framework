@@ -112,9 +112,10 @@
           "type": "object",
           "additionalProperties": { "type": "string" },
           "default": {
-            "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed."
+            "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed.",
+            "docs": "Pure documentation / comment diff (docstring or comment-only additions, no new/changed executable statement) - nothing new to test. Applied automatically per behavior file (#284) when every added line in that file's diff is docstring/comment content; state exactly what was documented if invoking the manual override instead."
           },
-          "description": "Map of <class> -> <human rationale> naming the bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Ships pre-seeded with a `refactor` class (#176) so a pure-refactor PR is not hard-blocked with zero configured bypass; a repo may add more classes."
+          "description": "Map of <class> -> <human rationale> naming the bypass classes the load-bearing-test pre-review gate (require_load_bearing_test.py, #167) accepts via LOAD_BEARING_TEST_EXCEPTION=<class>:<rationale> on `gh pr create`/`gh pr ready`. Ships pre-seeded with a `refactor` class (#176) so a pure-refactor PR is not hard-blocked with zero configured bypass, and a `docs` class (#284) which ALSO arms an automatic PER-FILE exemption (no env var needed) for a behavior file whose entire diff is docstring/comment content; a repo may add more classes."
         },
         "tech_debt_intake_pct": {
           "type": "integer",
