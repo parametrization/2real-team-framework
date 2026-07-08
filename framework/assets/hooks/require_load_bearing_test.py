@@ -375,10 +375,31 @@ def _patch_is_docs_only(patch: object) -> bool:
     (open/interior/close) makes the WHOLE patch "real code" and returns False
     immediately — a doc-only diff cannot hide a behavior line by mixing it in
     with genuine docstring content.
+
+    Bypass closed (#284 must-fix, reported independently by Paloma + Tariq
+    with working PoCs): the original check only looked at whether a line
+    ENDS with the closing quote to decide "this line self-closes the
+    docstring". A line that opens a triple-quoted string, closes it again a
+    few characters later, and then has trailing real code on the SAME line
+    (e.g. a bare word wrapped in triple-quotes immediately followed by
+    `;import os`) does NOT end with the closing quote, so the old check
+    misread it as an UNTERMINATED multi-line open and set
+    `in_docstring = True`, which then blindly swallowed every subsequent
+    added line (including the injected `os.system(...)` call) until some
+    later, unrelated line happened to end in a triple-quote. Fixed by
+    finding the closing quote's actual POSITION in the line (open case:
+    search the body after the opening quote; interior case: search the
+    whole line) and inspecting what follows it: empty or a `#` comment
+    closes the docstring cleanly; anything else is real code trailing a
+    self-close, and the whole patch is real code (fail SAFE — return False —
+    never fail open). This applies to both the open-line self-close and an
+    interior line closing a genuine multi-line docstring, since the exact
+    same trailing-code shape is possible on either.
     """
     if not patch or not isinstance(patch, str):
         return False
     in_docstring = False
+    close_quote = '"""'
     saw_docs_or_comment = False
     for raw in patch.splitlines():
         if raw.startswith("+++") or not raw.startswith("+"):
@@ -387,9 +408,15 @@ def _patch_is_docs_only(patch: object) -> bool:
         if not stripped:
             continue
         if in_docstring:
+            idx = stripped.find(close_quote)
+            if idx == -1:
+                saw_docs_or_comment = True  # whole line is docstring interior
+                continue
+            trailing = stripped[idx + 3 :].strip()
+            if trailing and not trailing.startswith("#"):
+                return False  # closes mid-line, then real code follows
             saw_docs_or_comment = True
-            if stripped.endswith('"""') or stripped.endswith("'''"):
-                in_docstring = False
+            in_docstring = False
             continue
         if stripped.startswith("#"):
             saw_docs_or_comment = True
@@ -397,11 +424,17 @@ def _patch_is_docs_only(patch: object) -> bool:
         opens = _DOCSTRING_OPEN_RE.match(stripped)
         if opens:
             quote = opens.group(1)
+            close_quote = quote
             body = stripped[3:]
+            idx = body.find(quote)
             saw_docs_or_comment = True
-            if not (len(body) >= 3 and body.endswith(quote)):
+            if idx == -1:
                 in_docstring = True  # unterminated on this line -> multi-line
-            continue
+                continue
+            trailing = body[idx + 3 :].strip()
+            if trailing and not trailing.startswith("#"):
+                return False  # self-closes, then real code follows on the SAME line
+            continue  # genuine single-line docstring, stays closed
         return False
     return saw_docs_or_comment and not in_docstring
 

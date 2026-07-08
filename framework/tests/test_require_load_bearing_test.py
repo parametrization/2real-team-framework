@@ -105,6 +105,55 @@ _DOCSTRING_WITH_HIDDEN_CODE_PATCH = (
     '     return 1\n'
 )
 
+# --- Classifier-bypass PoCs (must-fix, #284 review round 1: Paloma + Tariq,
+# independently converging on the same defect) -------------------------------
+#
+# `"""noop""";import os` self-closes the triple-quote right after "noop" but
+# has trailing real code — it does NOT end with the closing quote, so the
+# pre-fix classifier misread it as an UNTERMINATED multi-line docstring open
+# and swallowed every subsequent added line (including the injected
+# `os.system(...)`) as "docstring interior" until an unrelated later line
+# happened to end in `"""`. Paloma's exact PoC, reproduced verbatim.
+_SELF_CLOSE_TRAILING_CODE_PATCH = (
+    '@@ -1,1 +1,4 @@\n'
+    ' def foo():\n'
+    '+    """noop""";import os\n'
+    '+    os.system("touch /tmp/PWNED")\n'
+    '+    y = """end"""\n'
+)
+
+# Tariq's independent PoC (same defect class, different payload), reproduced
+# verbatim as its own single-added-line patch. In THIS isolated shape the
+# pre-fix classifier was already accidentally safe (falling off the end of
+# the patch still "in_docstring" makes the whole thing read as real code
+# regardless of the self-close bug) — kept as a direct-classifier regression
+# pinning the exact reported shape; the genuinely exploitable cross-line
+# variant is `_SELF_CLOSE_TRAILING_CODE_PATCH` / `_INTERIOR_CLOSE_TRAILING_
+# CODE_PATCH` above/below, where a LATER unrelated line closes the docstring.
+_SELF_CLOSE_TRAILING_CODE_SINGLE_LINE_PATCH = (
+    '@@ -1,1 +1,2 @@\n'
+    ' def foo():\n'
+    '+    """x"""; print(\'LEAK\')\n'
+)
+
+# The same bypass shape, but the self-close-with-trailing-code line is the
+# CLOSE of a genuine multi-line docstring (interior-close path), not the
+# opening line — pins that the fix also covers `in_docstring` interior lines,
+# not just the initial `_DOCSTRING_OPEN_RE` branch. A trailing well-formed
+# docstring close (`z = """end"""`) is included so this ISOLATES the
+# interior-close bug: without it, the pre-fix classifier already fails safe
+# by accident (falls off the end of the patch still "in_docstring", so the
+# whole thing reads as real code regardless) — it's this LATER, unrelated
+# close that let the pre-fix classifier wrongly conclude the docstring
+# closed cleanly and swallow the `os.system(...)` line in between.
+_INTERIOR_CLOSE_TRAILING_CODE_PATCH = (
+    '@@ -1,1 +1,4 @@\n'
+    ' def foo():\n'
+    '+    """Start of a docstring\n'
+    '+    """; os.system("pwn")\n'
+    '+    z = """end"""\n'
+)
+
 
 # --------------------------------------------------------------- command matching
 
@@ -608,6 +657,88 @@ def test_patch_is_docs_only() -> None:
     assert rlbt._patch_is_docs_only(_DOCSTRING_WITH_HIDDEN_CODE_PATCH) is False
     assert rlbt._patch_is_docs_only(None) is False
     assert rlbt._patch_is_docs_only("") is False
+
+
+# --------------------------------------------------------------- classifier-bypass regression (must-fix, review round 1)
+
+
+def test_self_close_with_trailing_code_is_real_code_not_docs_only() -> None:
+    """The must-fix itself, direct classifier assertion: a line that
+    self-closes a triple-quoted string and then has trailing real code on the
+    SAME line (`\"\"\"noop\"\"\";import os`) must classify as real code, not as
+    an unterminated multi-line docstring open. Pre-fix, this returned True
+    (misclassified) and swallowed the following `os.system(...)` line too."""
+    assert rlbt._patch_is_docs_only(_SELF_CLOSE_TRAILING_CODE_PATCH) is False
+    assert rlbt._patch_is_docs_only(_SELF_CLOSE_TRAILING_CODE_SINGLE_LINE_PATCH) is False
+    assert rlbt._patch_is_docs_only(_INTERIOR_CLOSE_TRAILING_CODE_PATCH) is False
+
+
+def test_self_close_with_trailing_code_still_blocks_end_to_end(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """End to end through check(): Paloma's exact PoC — a new behavior file
+    whose diff is entirely the self-close+trailing-code shape, ZERO paired
+    test, `docs` exception active — must still BLOCK. Pre-fix this returned
+    None (ALLOW): a new-behavior file with no test, gated past by a
+    misclassified docstring."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_SELF_CLOSE_TRAILING_CODE_PATCH)])
+    )
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    assert "framework/assets/hooks/foo.py" in r["reason"]
+    _framework_config.clear_cache()
+
+
+def test_self_close_with_trailing_code_single_line_still_blocks_end_to_end(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Tariq's independent PoC, end to end: same defect class, isolated to a
+    single added line, still blocks under an active `docs` exception."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt,
+        "_fetch_compare_files",
+        _fake_files([_behavior_entry(_SELF_CLOSE_TRAILING_CODE_SINGLE_LINE_PATCH)]),
+    )
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    _framework_config.clear_cache()
+
+
+def test_interior_close_with_trailing_code_still_blocks_end_to_end(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The interior-close variant (closing an already-open multi-line
+    docstring with trailing code on the close line), end to end: still
+    blocks. Pins that the fix covers the `in_docstring` branch too, not just
+    the initial `_DOCSTRING_OPEN_RE` branch."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(
+        rlbt,
+        "_fetch_compare_files",
+        _fake_files([_behavior_entry(_INTERIOR_CLOSE_TRAILING_CODE_PATCH)]),
+    )
+    r = rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path)))
+    assert r is not None and r["decision"] == "block"
+    _framework_config.clear_cache()
+
+
+def test_legitimate_docstrings_still_allowed_after_bypass_fix(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Regression guard on the fix itself: the legitimate single-line and
+    multi-line docstring-only diffs the exception exists FOR must still
+    allow — the bypass fix must not overcorrect into blocking real docs."""
+    _write_config(tmp_path, exceptions={"docs": "auto docs exception"})
+    monkeypatch.setattr(rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_DOCSTRING_PATCH)]))
+    assert rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path))) is None
+    monkeypatch.setattr(
+        rlbt, "_fetch_compare_files", _fake_files([_behavior_entry(_MULTILINE_DOCSTRING_PATCH)])
+    )
+    assert rlbt.check(_bash(_CREATE_CMD, cwd=str(tmp_path))) is None
+    _framework_config.clear_cache()
 
 
 # --------------------------------------------------------------- pure helpers
