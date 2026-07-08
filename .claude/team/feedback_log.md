@@ -1075,3 +1075,67 @@ at its structural floor for two stories and reads as healthy distribution, not f
 3. **Broaden the `Verified:` credited-token set** (consider `N passed`, `ruff clean`) so substantive suite
    evidence counts, not only the named-probe vocabulary. — Rationale: pain #2. (Separate judgment from the
    narrow #270 arrow fix.)
+
+---
+
+## Retrospective: Wave 20 (Phase 6 Wave 15 / global 20) — 2026-07-08 — "tech-debt cleanup + restore-story closeout + calibration watch"
+
+### Wave Metrics
+- **2 PRs merged / 1 changes-requested cycle / 50% concentration.** v0.11.0 shipped to main + PyPI + npm.
+- S1 #279/PR #283 (Ibrahim → Paloma + Tariq): git-native `2real-team install-branch` staging.
+- S2 #280/PR #282 (Nia → Ibrahim + Tariq): node CLI teardown/restore parity (`uninstall` + `restore`).
+- Issues closed: #279, #280, #281 (meta). Tech-debt filed: #284 (docs/refactor load-bearing exception).
+- **Counter corrections:** `changes_requested_cycles` claimed=1, current-state recompute=0 — claimed stands
+  (Tariq's #283 Request was cleared by editing the verdict in place to Replied per amendment convention;
+  the recompute under-counts edited-in-place verdicts). Documented in `wave_20_counter_corrections`.
+
+### Top-Implementer Concentration
+1 PR each by Nia (#282) and Ibrahim (#283) → max 1/2 = **50%** — even split, no fragility flag.
+
+### Per-Engineer Assessments (mechanical; deltas PARKED — see below)
+- **Ibrahim El-Amin** — author #283, difficulty=3, must_fix_received=1, rework=1, verified_reviews=1. delta 0.
+  Negative-signal: 1 must-fix received + 1 rework — install-branch CLI shipped with `install_config=None`
+  (`repo.expect=fresh`), refusing every realistic repo; fixed on re-review with an end-to-end success test.
+- **Nia Rossi** — author #282, clean_first_pass=1, difficulty=3, prs_merged=1. delta +1.
+  Negative-signal: metrics clean (prs_merged=1, no negatives); no reviewer-side verified block earned.
+- **Tariq Morales** — reviewer, **must_fix_caught=1**, verified_reviews=1, difficulty=0. delta 0.
+  Negative-signal: metrics clean; caught the wave's only defect but below the +1 reviewer bump threshold (≥2).
+- **Paloma Gupta** — reviewer, **missed_catches=1**, verified_reviews=1, difficulty=0. delta −1.
+  Negative-signal: 1 missed catch — clean Replied verdict on #283 that missed the `install_config=None`
+  defect Tariq subsequently caught.
+
+### ⚠️ Trust deltas PARKED (calibration watch #275 — data-point #2)
+Consistent with the W19 park, **W20 trust deltas are NOT applied.** Standing matrix HELD at **Tariq 5,
+Nia/Paloma/Ibrahim 4**. `distribution_health([5,5,3,4]) = spread 2, variance 0.69, degenerate=False` — a
+HEALTHY spread, NOT the W19 degeneracy (which now reads as an all-clean-wave artifact). But the mechanical
+result would rotate the reserved-5 from **Tariq (caught the wave's only defect) → Nia (clean author)**,
+because the reserved-5 composite is dominated by author-only `difficulty_points`. This reproduces W19
+finding #2 (pure-reviewer structural demotion). Full analysis + recommendation recorded as data-point #2 on
+#275. **Owner decision pending** — see Proposed Changes.
+
+### Top 3 Going Well
+1. **The symmetric ledger differentiated correctly on a real event.** A single must-fix flowed to three
+   scorecards as designed: Tariq +caught, Ibrahim +received/rework, Paloma +missed. The mechanism works.
+2. **QA caught a genuine functional defect before merge** (#283 refused every realistic repo) — the
+   2-reviewer gate did exactly its job; the fix shipped with a real end-to-end success test.
+3. **Restore-story family complete across both language surfaces** (#278 Python restore → #279 install-branch
+   → #280 node parity), cleanly closed out in one focused wave.
+
+### Top 3 Pain Points
+1. **Reserved-5 composite structurally demotes reviewers (#275 data-point #2).** The engineer who caught the
+   wave's only defect drops 5→4 while a clean author takes the 5, purely because `difficulty_points` is
+   author-only. Perverse incentive for high-value review work.
+2. **One reviewer missed a defect a peer caught (Paloma, #283).** Two reviewers, non-overlapping coverage —
+   the gate held because Tariq caught it, but a single-reviewer wave would have shipped the defect.
+3. **A docstring-only edit tripped the load-bearing-test gate** (#284) — the gate can't yet distinguish
+   pure-doc changes from behavior, forcing a revert of a legitimate doc cross-ref.
+
+### Proposed Process Changes (approval-gated — NOT applied)
+1. **Act on #275 with a targeted composite fix, not a range widen.** Credit `must_fix_caught` +
+   `verified_reviews` in the reserved-5 composite (or cap `difficulty_points`' share) so a high-value reviewer
+   can hold the 5. The scale-broadening trigger did NOT fire; the composite trigger fired twice. — Rationale:
+   pain #1.
+2. **Seed a narrow docs/refactor `load_bearing_test_exceptions` class (#284)** so pure-doc changes don't trip
+   the behavior gate, kept tight enough not to become a test-skipping loophole. — Rationale: pain #3.
+3. **Note reviewer coverage overlap in review assignment** — when two reviewers are assigned, nudge them to
+   target different surfaces (already done ad hoc this wave), to reduce simultaneous misses. — Rationale: pain #2.

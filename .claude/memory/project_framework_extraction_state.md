@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.5 (Phase 6 Wave 13: HARDEN THE MACHINERY — verified_reviews per-(reviewer,PR) dedup + tightened _VERIFIED_CHECK_RE [#258/#259], rulesets-aware CI gate [#262], require_children --real-config surface + node unparseable-card warn [#251/#252]; ⚠️ W13's own retro exposed #270: _VERIFIED_CHECK_RE misses `revert->red` ASCII arrow → glyph-decided the reserved-5 rotation), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.11.0 (Phase 6 Wave 15 "restore-story closeout": git-native `2real-team install-branch` staged install [#279] + node CLI teardown/restore parity [#280]; ⚠️ trust scoring STILL PARKED — #275 calibration data-point #2 fired the reserved-5-composite trigger [pure-reviewer structural demotion via author-only difficulty_points], scale-broadening trigger did NOT fire; matrix held at Tariq 5/others 4), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,9 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-08): released v0.10.5 — Phase 6 Wave 13 (HARDEN THE MACHINERY)
-COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-08): released v0.11.0 — Phase 6 Wave 15 (RESTORE-STORY CLOSEOUT)
+COMPLETE, merged to main, published to PyPI + npm.** (Wave-history detail for W15/W20 and the parked
+trust decision lives in the MEMORY.md pointer line + handoff.md.) Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
