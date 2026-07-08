@@ -235,25 +235,18 @@ def fetch_pr_base_ref(pr_number: str | None, repo: str | None) -> str | None:
         return None
 
 
-def base_branch_enforces_required_checks(repo: str | None, base: str | None) -> bool | None:
-    """Does *base* enforce required status checks via GitHub branch protection?
+def _classic_enforces_required_checks(repo: str | None, base: str | None) -> bool | None:
+    """Does *base* enforce required checks via CLASSIC branch protection?
 
-    Answers the one question the `--auto`/pending path needs: will GitHub HOLD an
-    `--auto` merge until CI goes green? It does so only when the base branch has a
-    non-empty required-status-checks set.
+    Reads only the legacy branch-protection endpoint
+    (`repos/{repo}/branches/{base}/protection/required_status_checks`).
 
     Returns:
-      True  — the base has a non-empty required-status-checks set. GitHub holds an
-              `--auto` merge until those checks pass, so a still-pending check is
-              safe to warn-allow (GitHub really will wait for green).
-      False — the base has NO required status checks: an unprotected branch, or a
-              protected branch with an empty required set (both 404 this
-              endpoint). GitHub will NOT hold an `--auto` merge for CI, so a
-              pending check can fail AFTER the merge already landed (the W13
-              `node (20)` slip, #230).
-      None  — undeterminable: no repo/base, or a transport/permission error on the
-              query. The caller preserves the fail-open posture and warn-allows,
-              never manufacturing a block on an inability to read.
+      True  — the base has a non-empty required-status-checks set.
+      False — the base has NO required status checks under classic protection: an
+              unprotected branch, or a protected branch with an empty required set
+              (both 404 this endpoint).
+      None  — undeterminable: no repo/base, or a transport/permission error.
 
     A 404 / "branch not protected" is a DEFINITIVE "no required checks configured"
     (→ False), deliberately kept distinct from a transport error (→ None): the
@@ -292,6 +285,106 @@ def base_branch_enforces_required_checks(repo: str | None, base: str | None) -> 
     contexts = data.get("contexts") or []
     checks = data.get("checks") or []
     return bool(contexts or checks)
+
+
+def _rulesets_enforce_required_checks(repo: str | None, base: str | None) -> bool | None:
+    """Does *base* enforce required checks via a GitHub RULESET (#262)?
+
+    Repos that migrated off classic branch protection to *rulesets* configure
+    required status checks under the rulesets API, not the classic
+    `protection/*` endpoints. The classic probe 404s on such a repo and reads it
+    as unenforced — a FALSE NEGATIVE that safe-sides the `--auto`/pending gate
+    into an over-block. This helper closes that gap by reading the branch's
+    effective rules (`repos/{repo}/rules/branches/{base}`), which flattens every
+    ruleset (repo- and org-level) that applies to the branch.
+
+    Returns:
+      True  — at least one applicable `required_status_checks` rule names a
+              non-empty required-checks set. GitHub holds an `--auto` merge until
+              those checks pass, exactly like a classic required set.
+      False — the branch's effective rules contain no enforcing
+              `required_status_checks` rule (this endpoint returns `200 []` for a
+              branch with no rules, so an empty answer is DEFINITIVE not-enforced),
+              or the repo/branch itself is absent (404).
+      None  — undeterminable: no repo/base, or a transport/permission error. The
+              caller preserves fail-open, never manufacturing a block on an
+              inability to read.
+    """
+    if not repo or not base:
+        return None
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/rules/branches/{base}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        blob = f"{result.stdout}\n{result.stderr}".lower()
+        # This endpoint returns `200 []` for a branch with no rules, so a
+        # non-zero exit is not the "no enforcement" signal a classic 404 is. A
+        # 404 here means the repo/branch itself is absent → definitively no
+        # ruleset enforcement (→ False). Any other failure is undeterminable →
+        # fail-open None.
+        if "404" in blob or "not found" in blob:
+            return False
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    for rule in data:
+        if not isinstance(rule, dict):
+            continue
+        if rule.get("type") != "required_status_checks":
+            continue
+        params = rule.get("parameters") or {}
+        required = params.get("required_status_checks") or []
+        if required:
+            return True
+    return False
+
+
+def base_branch_enforces_required_checks(repo: str | None, base: str | None) -> bool | None:
+    """Does *base* enforce required status checks (classic OR rulesets)?
+
+    Answers the one question the `--auto`/pending path needs: will GitHub HOLD an
+    `--auto` merge until CI goes green? It does so when the base branch has a
+    non-empty required-status-checks set — configured EITHER via classic branch
+    protection OR via a GitHub ruleset (#262). If EITHER source reports
+    enforcement, the base is treated as protected.
+
+    Returns:
+      True  — classic protection OR a ruleset enforces a non-empty required-checks
+              set. A still-pending check under `--auto` is safe to warn-allow
+              (GitHub really will wait for green).
+      False — BOTH sources definitively report no required checks: an unprotected
+              branch with no enforcing ruleset. GitHub will NOT hold an `--auto`
+              merge, so a pending check can fail AFTER the merge lands (the W13
+              `node (20)` slip, #230) → the caller blocks.
+      None  — undeterminable: no repo/base, or a transport/permission error on
+              EITHER probe with neither reporting enforcement. Fail-open: the
+              caller warn-allows, never manufacturing a block on an inability to
+              read. (A read error on one source cannot rule out that the other —
+              unread — source enforces, so a definitive "not enforced" would be
+              unsound.)
+    """
+    classic = _classic_enforces_required_checks(repo, base)
+    if classic is True:
+        return True
+    rulesets = _rulesets_enforce_required_checks(repo, base)
+    if rulesets is True:
+        return True
+    # Neither source reported True. Only assert the definitive "not enforced"
+    # (→ False, the #230 pending/--auto block) when BOTH probes answered
+    # definitively; if either was undeterminable, stay fail-open (None).
+    if classic is None or rulesets is None:
+        return None
+    return False
 
 
 def covering_pr_workflow_exists(repo: str | None, base: str | None) -> bool | None:
