@@ -15,6 +15,8 @@ import {
   randomizeMember,
   validateTeam,
   showStatus,
+  uninstall,
+  restore,
 } from "./bootstrap.js";
 import { readPackageVersion } from "./version.js";
 
@@ -129,6 +131,40 @@ program
   .option("--target <dir>", "Target directory", ".")
   .action(async (opts) => {
     showStatus({ target: opts.target });
+  });
+
+program
+  .command("uninstall")
+  .description("Uninstall the framework runtime — restore the repo to its pre-install state")
+  .option("--target <dir>", "Target directory", ".")
+  .option("--dry-run", "Preview what would be removed; write nothing")
+  .option(
+    "--non-interactive",
+    "Never prompt; proceed without the confirmation gate (automation)",
+  )
+  .action(async (opts) => {
+    uninstall({
+      target: opts.target,
+      dryRun: opts.dryRun,
+      nonInteractive: opts.nonInteractive,
+    });
+  });
+
+program
+  .command("restore")
+  .description("Restore this repo's pre-install originals — undo the install's tracked changes")
+  .option("--target <dir>", "Target directory", ".")
+  .option("--dry-run", "Preview exactly what would be restored/reverted; write nothing")
+  .option(
+    "--non-interactive",
+    "Never prompt; proceed without the confirmation gate (automation)",
+  )
+  .action(async (opts) => {
+    restore({
+      target: opts.target,
+      dryRun: opts.dryRun,
+      nonInteractive: opts.nonInteractive,
+    });
   });
 
 program.parse();
