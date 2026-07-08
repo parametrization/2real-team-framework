@@ -55,6 +55,24 @@ git -C <main-repo> worktree add <path> -b <branch> origin/<base>
 - An agent never removes the worktree it is standing in (enforced — see
   [hooks.md](hooks.md)).
 
+## Ad-hoc / e2e Check Hygiene
+
+Ad-hoc end-to-end checks (bootstrap runs, install dry-runs, throwaway scripts) MUST
+execute in an **explicit, pre-created scratch dir**. Chain the directory creation and
+the `cd` with `&&` so the `cd` cannot run unless the `mkdir` succeeded:
+
+```bash
+mkdir -p <scratch> && cd <scratch> && <command>
+```
+
+Never split `mkdir` and `cd` across a `;`-separated chain (or leave the `cd` on its
+own line) where an earlier command can be blocked or fail: a hook-blocked or failed
+`mkdir` leaves the following `cd` pointing at a directory that was never created, the
+`cd` fails silently, and every later command runs in the **worktree root** instead —
+where an ad-hoc `bootstrap`/install can clobber tracked files (Phase 6 Wave 10
+incident #1). Chaining with `&&` aborts the whole sequence on the first failure, so a
+silently-redirected cwd can never happen.
+
 ## Worktree Cleanup
 
 **After every wave completes** (all PRs merged into the integration branch), clean
