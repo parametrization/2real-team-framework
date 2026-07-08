@@ -342,7 +342,15 @@ def _rulesets_enforce_required_checks(repo: str | None, base: str | None) -> boo
             continue
         if rule.get("type") != "required_status_checks":
             continue
-        params = rule.get("parameters") or {}
+        params = rule.get("parameters")
+        # The rulesets API can return `parameters` as a non-dict (e.g. a list),
+        # on which `.get(...)` would raise AttributeError and crash into
+        # fail-open — safe but noisy, and it discards the real enforcement info
+        # carried by the OTHER well-formed rules. A rule whose parameters we
+        # cannot read as a mapping simply carries NO enforcement info: skip it,
+        # don't raise, and don't let it manufacture a false "not enforced".
+        if not isinstance(params, dict):
+            continue
         required = params.get("required_status_checks") or []
         if required:
             return True

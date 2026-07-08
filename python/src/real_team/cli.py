@@ -606,6 +606,46 @@ def uninstall(
     console.print("\n[bold green]Framework runtime uninstalled.[/bold green]")
 
 
+@app.command()
+def restore(
+    target: str = typer.Option(".", help="Target directory"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview exactly what would be restored/reverted; write nothing"
+    ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt; proceed without the confirmation gate (automation)",
+    ),
+) -> None:
+    """Restore this repo's pre-install originals — undo the install's tracked changes.
+
+    Recovers the files an install displaced or overwrote: originals it MOVED into a consented
+    .claude-backups/ archive are moved back, and files it rewrote in place (root CLAUDE.md, the
+    git pre-push hook) are reverted from the .bak the installer left. This is NOT a git-level
+    pristine reset, and it does NOT remove the framework's own files — for a full teardown use
+    `2real-team uninstall`. Always prints the plan before mutating; --dry-run previews only.
+    """
+    from .framework_install import restore_framework
+
+    target_path = Path(target).resolve()
+    proc = restore_framework(
+        target_path, dry_run=dry_run, non_interactive=non_interactive
+    )
+    if proc is None:
+        console.print(
+            "[yellow]Cannot restore:[/yellow] bundled framework assets not found "
+            "(re-run from a source checkout, or use the standalone framework restore command)."
+        )
+        raise typer.Exit(1)
+    if proc.stdout:
+        console.print(proc.stdout.rstrip())
+    if proc.returncode != 0:
+        if proc.stderr:
+            console.print(f"[red]{proc.stderr.strip()}[/red]")
+        raise typer.Exit(proc.returncode)
+
+
 def _extract_field(content: str, field: str) -> str | None:
     """Extract a field value from a roster card."""
     for line in content.splitlines():

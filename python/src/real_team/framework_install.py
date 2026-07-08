@@ -131,3 +131,33 @@ def uninstall_framework(
     if dry_run:
         cmd += ["--dry-run"]
     return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def restore_framework(
+    target: Path,
+    *,
+    dry_run: bool = False,
+    non_interactive: bool = True,
+) -> subprocess.CompletedProcess | None:
+    """Restore a repo's pre-install originals via ``framework/install/restore.py``.
+
+    Undoes the install's tracked changes to files it displaced/overwrote — the consented archive
+    (moved originals) and the ``.bak`` backups of files it rewrote — WITHOUT removing the
+    framework's own install set (that is :func:`uninstall_framework`'s job). Locates the same
+    framework root (wheel-bundled copy first, source checkout as fallback) and runs the
+    deterministic restore command. Defaults to ``non_interactive=True`` so the packaged command
+    never hangs on a prompt; pass ``non_interactive=False`` to let it ask for confirmation on a TTY.
+
+    Returns the CompletedProcess (inspect ``.returncode`` / ``.stdout``), or None when the framework
+    assets could not be located (caller should report a soft notice, not fail).
+    """
+    root = resolve_framework_root()
+    if root is None:
+        return None
+
+    cmd: list[str] = [sys.executable, str(root / "install" / "restore.py"), str(target)]
+    if non_interactive:
+        cmd += ["--non-interactive"]
+    if dry_run:
+        cmd += ["--dry-run"]
+    return subprocess.run(cmd, capture_output=True, text=True)
