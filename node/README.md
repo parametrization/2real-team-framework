@@ -72,6 +72,20 @@ install [Python 3](https://www.python.org/downloads/) and re-run
 2real-team randomize-member "Ada Park"
 ```
 
+### Teardown
+
+Both commands bridge to the bundled Python (like `init`), so they share the
+Python runtime requirement above. Left interactive they keep the Python side's
+consent gate — they prompt on a TTY and refuse on a non-TTY rather than
+mutating unattended; `--non-interactive` is the automation contract and
+`--dry-run` previews without writing.
+
+```bash
+2real-team uninstall           # Remove the framework runtime; restore pre-install state
+2real-team uninstall --dry-run # Preview what would be removed; write nothing
+2real-team restore             # Put back originals the install displaced (not a full teardown)
+```
+
 ## What's in this package
 
 - `dist/` — the compiled CLI

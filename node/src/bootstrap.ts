@@ -11,7 +11,10 @@ import Mustache from "mustache";
 import {
   installFramework,
   describeInstallResult,
+  runTeardown,
+  describeTeardownDegradation,
   type FrameworkInstallResult,
+  type TeardownCommand,
 } from "./framework-install.js";
 
 const _require = createRequire(import.meta.url);
@@ -949,5 +952,63 @@ export function showStatus(opts: { target: string }): void {
   if (existsSync(skillsDir)) {
     const skillCount = readdirSync(skillsDir).filter((f) => f.endsWith(".md")).length;
     console.log(`\nSkills installed: ${skillCount}`);
+  }
+}
+
+interface TeardownOptions {
+  target: string;
+  dryRun?: boolean;
+  nonInteractive?: boolean;
+}
+
+/**
+ * Uninstall the framework runtime — restore the repo to its pre-install state.
+ *
+ * Thin bridge to the bundled `framework/install/uninstall.py` (same spawn/argv
+ * pattern as `installFramework`). Removes the framework-owned install set and
+ * restores any pre-install assets a consented install archived; idempotent.
+ */
+export function uninstall(opts: TeardownOptions): void {
+  runTeardownCommand("uninstall", opts);
+}
+
+/**
+ * Restore this repo's pre-install originals — undo the install's tracked
+ * changes without removing the framework's own files (that is `uninstall`).
+ *
+ * Thin bridge to the bundled `framework/install/restore.py`.
+ */
+export function restore(opts: TeardownOptions): void {
+  runTeardownCommand("restore", opts);
+}
+
+/**
+ * Shared body for the teardown/restore commands: bridge to the bundled Python,
+ * echo its plan/output, and mirror the Python CLI's exit contract (nonzero
+ * subprocess exit propagates; a bridge that could not run is a hard failure).
+ */
+function runTeardownCommand(command: TeardownCommand, opts: TeardownOptions): void {
+  const target = resolve(opts.target);
+  const result = runTeardown(command, target, {
+    dryRun: opts.dryRun,
+    nonInteractive: opts.nonInteractive,
+  });
+
+  if (result.kind !== "ran") {
+    console.error(describeTeardownDegradation(command, result));
+    process.exit(1);
+  }
+
+  if (result.stdout.trim()) {
+    console.log(result.stdout.trimEnd());
+  }
+  if (result.status !== 0) {
+    if (result.stderr.trim()) {
+      console.error(result.stderr.trim());
+    }
+    process.exit(result.status);
+  }
+  if (command === "uninstall") {
+    console.log("\nFramework runtime uninstalled.");
   }
 }
