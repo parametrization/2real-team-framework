@@ -34,13 +34,12 @@ next wave/phase theme. **No wave reserved.** Next global wave = **19** (Phase 6 
 `deployments/phase6/wave-14`; tag `deployments-phase6-wave-14`. Theme-TBD stub filed as **#271**.
 Do NOT start a wave without theme + kickoff approval.
 
-### Two open owner decisions from W13
-1. **W18 reserved-5 call (#270-contingent):** mechanically Tariq EARNED the 5 (`verified_reviews=2`) and Nia
-   held 4 — but ONLY because Nia's (and Paloma's) substantive #268 review blocks used `revert->red` (ASCII)
-   and scored zero. With #270 fixed, Nia (diff-3 author + 2 real reviews) would likely have taken the 5 on
-   composite. Owner: accept the mechanical result (let the fixed parser govern from W19), or treat W18's
-   rotation as a tie pending #270.
-2. **Next theme.**
+### Owner decisions from W13
+1. **W18 reserved-5 call (#270-contingent): RESOLVED — owner ACCEPTED the mechanical result (2026-07-08).**
+   Tariq's reserved-5 is EARNED and final (`verified_reviews=2`); Nia/Paloma/Ibrahim hold at 4. No
+   retroactive adjustment — the fixed parser (#270) governs from W19 forward. The glyph-decided-rotation
+   finding stands as a dogfood lesson, not a score correction.
+2. **Next theme.** — OPEN (owner discussing candidates).
 
 ### Candidate next material (owner picks the theme)
 - **Signal/scoring hardening (freshest, owed to W13):** **#270** (HIGH — `_VERIFIED_CHECK_RE` accept `->`
