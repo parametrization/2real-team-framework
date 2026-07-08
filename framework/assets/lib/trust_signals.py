@@ -177,6 +177,13 @@ NEUTRAL = 3
 MIN_SCORE = 1
 MAX_SCORE = 5
 
+# Reserved-5 composite (#275): review-value signals (``must_fix_caught``,
+# ``verified_reviews``) are weighted up and ``difficulty_points`` is capped so
+# authoring can no longer single-handedly out-rank real review work. See
+# :func:`apply_distribution_discipline`.
+REVIEW_VALUE_WEIGHT = 2
+DIFFICULTY_COMPOSITE_CAP = 2
+
 # Decay: no trust-relevant signal for this many iterations → drift one step
 # toward NEUTRAL (a 4 with nothing to say for 3 iterations is no longer a 4).
 DECAY_AFTER_WAVES = 3
@@ -1422,11 +1429,22 @@ def apply_distribution_discipline(
         # equal PR count, so the top slot is not a narrative argument. Waves with
         # no diffstat plumbed (``difficulty_points == 0`` for everyone — e.g. a
         # hand-built Signals dict) rank exactly as before.
+        #
+        # #275: ``difficulty_points`` is author-only — a pure reviewer accrues 0
+        # of it no matter how valuable the review, so it used to dominate the
+        # composite outright (a flagship author always outranked a defect-catching
+        # reviewer). Two live waves reproduced the reserved-5 rotating away from
+        # the reviewer who caught the wave's only real defect toward a merely-
+        # clean author. Fix: weight the review-value signals (``must_fix_caught``,
+        # ``verified_reviews``) at ``REVIEW_VALUE_WEIGHT`` and cap
+        # ``difficulty_points``' contribution at ``DIFFICULTY_COMPOSITE_CAP`` so
+        # difficulty can tip a close race but can no longer single-handedly bury
+        # real review work.
         return (
             s.prs_merged
-            + s.must_fix_caught
-            + s.verified_reviews
-            + s.difficulty_points
+            + REVIEW_VALUE_WEIGHT * s.must_fix_caught
+            + REVIEW_VALUE_WEIGHT * s.verified_reviews
+            + min(s.difficulty_points, DIFFICULTY_COMPOSITE_CAP)
             - s.must_fix_received
             - 2 * s.ci_red_merges
             - 2 * s.review_false_positives
