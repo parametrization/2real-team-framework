@@ -1468,3 +1468,58 @@ class TestUninstall:
             app, ["uninstall", "--target", str(tmp_path), "--non-interactive"]
         )
         assert result.exit_code == 0, result.output
+
+
+class TestRestore:
+    """The packaged ``2real-team restore`` command (bridges to framework/install/restore.py)."""
+
+    def _seed_backups(self, tmp_path: Path) -> tuple[bytes, bytes]:
+        """Seed BOTH restore directions: an archived original + an in-place .bak original."""
+        import sys as _sys
+
+        from real_team.framework_install import resolve_framework_root
+
+        root = resolve_framework_root()
+        assert root is not None
+        _sys.path.insert(0, str(root / "install"))
+        import repo_space  # framework sibling
+
+        # (a) moved/backed-up: original .claude/ archived, fresh laid where it stood.
+        claude = tmp_path / ".claude"
+        (claude / "team").mkdir(parents=True)
+        moved_original = b"# ORIGINAL charter\n"
+        (claude / "team" / "charter.md").write_bytes(moved_original)
+        repo_space.archive_assets(tmp_path)
+        (claude / "team").mkdir(parents=True)
+        (claude / "team" / "charter.md").write_bytes(b"# FRESH charter\n")
+
+        # (b) modified: CLAUDE.md rewritten, original kept as CLAUDE.md.bak.
+        modified_original = b"# ORIGINAL CLAUDE.md\n"
+        (tmp_path / "CLAUDE.md.bak").write_bytes(modified_original)
+        (tmp_path / "CLAUDE.md").write_bytes(b"# FRESH CLAUDE.md\n")
+        return moved_original, modified_original
+
+    def test_restore_recovers_both_directions(self, tmp_path: Path):
+        moved_original, modified_original = self._seed_backups(tmp_path)
+        result = runner.invoke(
+            app, ["restore", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".claude" / "team" / "charter.md").read_bytes() == moved_original
+        assert (tmp_path / "CLAUDE.md").read_bytes() == modified_original
+
+    def test_restore_dry_run_writes_nothing(self, tmp_path: Path):
+        self._seed_backups(tmp_path)
+        fresh = (tmp_path / "CLAUDE.md").read_bytes()
+        result = runner.invoke(
+            app, ["restore", "--target", str(tmp_path), "--dry-run", "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / "CLAUDE.md").read_bytes() == fresh
+        assert (tmp_path / "CLAUDE.md.bak").exists()
+
+    def test_restore_nothing_to_do_is_clean(self, tmp_path: Path):
+        result = runner.invoke(
+            app, ["restore", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output

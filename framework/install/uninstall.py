@@ -409,18 +409,6 @@ def _surgical_claude_removal(
     return removed, preserved
 
 
-def find_latest_archive(target: Path) -> Path | None:
-    """The most recent consented archive dir (``.claude-backups/<UTC>/`` with a manifest), or None."""
-    base = target / repo_space.BACKUPS_DIRNAME
-    if not base.is_dir():
-        return None
-    archives = sorted(
-        (d for d in base.iterdir() if d.is_dir() and (d / repo_space.MANIFEST_NAME).is_file()),
-        key=lambda d: d.name,
-    )
-    return archives[-1] if archives else None
-
-
 def _prune_empty_dirs(*roots: Path) -> None:
     """Best-effort removal of now-empty framework-owned dirs (deepest-first, then the root)."""
     for root in roots:
@@ -475,7 +463,7 @@ def uninstall(target: Path | str, *, dry_run: bool = False) -> dict:
 
     # 2. The .claude tree: restore a consented pre-install archive if one exists (#108), else
     #    surgically remove the enumerated install set + un-merge settings.json.
-    archive_dir = find_latest_archive(target)
+    archive_dir = repo_space.find_latest_archive(target)
     if archive_dir is not None:
         if dry_run:
             report["notes"].append(f"would restore archived pre-install assets from {archive_dir.name}")
