@@ -182,7 +182,10 @@ export function generateName(
  * `**Name:**` field out of each roster card so a generated duplicate is
  * genuinely rejected. Departed cards are included so a departed member's name is
  * not immediately recycled; a card whose name cannot be parsed falls back to the
- * legacy filename-derived string (still better than dropping it entirely).
+ * legacy filename-derived string (still better than dropping it entirely). That
+ * fallback now emits a visible stderr warning (#252) so an unparseable
+ * `**Name:**` field is observable instead of silently degrading — the behavior
+ * (the fallback) is unchanged, it is just no longer silent.
  */
 export function usedNamesFromRoster(rosterDir: string): Set<string> {
   const used = new Set<string>();
@@ -195,7 +198,19 @@ export function usedNamesFromRoster(rosterDir: string): Set<string> {
     } catch {
       name = null;
     }
-    used.add(name && name.trim() ? name.trim() : stem.replace(/_/g, " "));
+    if (name && name.trim()) {
+      used.add(name.trim());
+    } else {
+      // #252: the `**Name:**` field could not be parsed (missing/empty). Surface
+      // it on stderr before taking the legacy filename-derived fallback, so the
+      // degrade is observable rather than silent. Fallback behavior is unchanged.
+      const fallback = stem.replace(/_/g, " ");
+      console.error(
+        `Warning: roster card '${f}' has no parseable **Name:** field; ` +
+          `falling back to filename-derived name '${fallback}' for dedupe.`,
+      );
+      used.add(fallback);
+    }
   }
   return used;
 }

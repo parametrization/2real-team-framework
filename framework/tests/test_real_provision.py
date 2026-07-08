@@ -10,6 +10,7 @@ teardown leaves zero residue on both the scratch clone and the source. Stdlib + 
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import warnings
@@ -344,6 +345,83 @@ def test_meta_zero_children_strict_guard_default_off(tmp_path: Path) -> None:
     with pytest.warns(UserWarning, match=r"zero children"):
         ctx = provision_real(spec, tmp_path / "wd", opts={"real_require_children": False})
     assert ctx["child"]["children"] == []  # still a (trivial) degenerate install, not a raise
+
+
+def test_require_children_surfaced_via_real_config_schema(tmp_path: Path) -> None:
+    """#251: the zero-children hard guard is no longer programmatic-only — an operator can toggle
+    it per bucket through the ``--real-config`` sidecar JSON via a ``require_children`` key on the
+    spec, WITHOUT the global ``opts['real_require_children']`` flag or editing code. A spec whose
+    ``require_children`` is True raises ``MissingFixtureError`` on a degenerate zero-children meta
+    provision, exactly as the global opt would. Load-bearing end-to-end: the config carries the
+    flag, ``real_registry`` parses it onto the spec, and ``_guard_zero_children`` honors it.
+
+    Revert->red: with the ``or spec.require_children`` disjunct removed from ``_guard_zero_children``
+    (patched out below), this exact provision only WARNS instead of raising, so ``pytest.raises``
+    finds nothing and this test FAILS — proving the flag/schema wiring is what drives the guard."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+
+    # (a) the sidecar JSON carries require_children onto a meta-and-children bucket
+    sidecar = tmp_path / "real.json"
+    sidecar.write_text(
+        json.dumps({"B10": {"source": str(parent), "model": "meta-and-children",
+                            "require_children": True}}),
+        encoding="utf-8",
+    )
+    reg = real_provision.real_registry({"real_config": str(sidecar)})
+    spec = reg["B10"]
+    assert spec.require_children is True                 # parsed off the sidecar onto the spec
+
+    # NO global opts flag — the spec-level flag alone must drive the hard guard.
+    with pytest.raises(MissingFixtureError, match=r"zero children"):
+        provision_real(spec, tmp_path / "wd", opts={})
+
+    # (b) revert->red: neutralize ONLY the production disjunct in-memory (not a git checkout) and
+    # confirm the same provision degrades to a warn — the guard is genuinely wired, not incidental.
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+
+        def _guard_opts_only(s, o):
+            # the pre-#251 behavior: honor ONLY the global opts flag, ignore spec.require_children
+            if o.get("real_require_children"):
+                raise MissingFixtureError("zero children (opts-only)")
+            _warnings.warn("meta-and-children with zero children", UserWarning)
+
+        orig = real_provision._guard_zero_children
+        real_provision._guard_zero_children = _guard_opts_only
+        try:
+            provision_real(spec, tmp_path / "wd2", opts={})  # must NOT raise once flag is ignored
+        finally:
+            real_provision._guard_zero_children = orig
+    assert any("zero children" in str(w.message) for w in caught)
+
+
+def test_require_children_defaults_off_and_round_trips(tmp_path: Path) -> None:
+    """#251: the new surface preserves the W11 default-off opt-in. A spec with no ``require_children``
+    key defaults to False (warn-and-proceed), a ``merge`` partial-patch preserves an existing flag
+    unless the patch overrides it, and ``to_dict``/``from_dict`` round-trip the flag."""
+    # default off: absent key -> False, degenerate meta only WARNS (no raise)
+    default_spec = RealFixtureSpec.from_dict("B10", {"source": "/x", "model": "meta-and-children"})
+    assert default_spec.require_children is False
+
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    warn_spec = RealFixtureSpec(bucket="B10", source=str(parent),
+                                model="meta-and-children", children=())
+    assert warn_spec.require_children is False
+    with pytest.warns(UserWarning, match=r"zero children"):
+        provision_real(warn_spec, tmp_path / "wd", opts={})
+
+    # to_dict/from_dict round-trip
+    on = RealFixtureSpec.from_dict("B10", {"source": "/x", "require_children": True})
+    assert on.require_children is True
+    assert RealFixtureSpec.from_dict("B10", on.to_dict()).require_children is True
+
+    # merge: a patch WITHOUT the key preserves the existing flag; WITH the key overrides it
+    assert on.merge({"pin": "abc"}).require_children is True         # preserved
+    assert on.merge({"require_children": False}).require_children is False  # overridden
 
 
 def test_include_real_executes_b10_meta_path_all_green(tmp_path: Path) -> None:
