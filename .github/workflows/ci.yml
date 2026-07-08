@@ -80,18 +80,8 @@ jobs:
 
       - name: Test
         working-directory: node
-        # QUARANTINE (#230): the node suite is nondeterministic. `generateName`
-        # in src/bootstrap.ts dedupes candidate names against a `used` set built
-        # from ROLE-PREFIXED roster filenames ("senior_engineer_jane_doe" ->
-        # "senior engineer jane doe"), never against bare "First Last" names, so
-        # it never actually rejects a real duplicate. Unseeded Math.random() name
-        # generation therefore collides at random, surfacing as a spurious red on
-        # whichever matrix shard happens to draw the collision (W13: "node (20)";
-        # the shard is incidental, not node-20-specific). `--retry=2` re-runs a
-        # failed test up to twice: a genuine, reproducible break still fails all
-        # attempts and goes red (node coverage is preserved and still required),
-        # while a one-off collision self-heals instead of manufacturing a false
-        # ci-red that slips a merge. The real fix — seed the RNG / dedupe on bare
-        # names, then REMOVE this --retry — is tracked as #234 (product change in
-        # node/src, out of this QA story's lane).
-        run: npm test -- --run --retry=2
+        # The #230 --retry=2 quarantine was removed in #234 once the root cause
+        # was fixed: generateName now dedupes candidates against bare "First Last"
+        # names parsed from each roster card (not role-prefixed filenames), and
+        # the RNG is seedable, so the suite is deterministic and needs no retry.
+        run: npm test -- --run
