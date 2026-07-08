@@ -1,68 +1,67 @@
 <!-- handoff: manual — written by the /handoff skill; the session_handoff auto-hook must not overwrite this file. Delete it (or this line) to re-enable auto-refresh. -->
-# Session Handoff — 2026-07-08 (Phase 6 Wave 10 COMPLETE; v0.10.2 SHIPPED; installer hardened)
-
-> This session was **orientation-only** (session-start + handoff refresh). No code/wave work ran;
-> tree is clean and unchanged from the v0.10.2 release. The pickup below carries forward from the
-> W10 close-out and is still current.
+# Session Handoff — 2026-07-08 (Phase 6 Wave 11 COMPLETE; v0.10.3 SHIPPED; harden + process)
 
 ## ⚠️ READ THIS FIRST — the review gate is LIVE and permanently armed
 `.claude/framework.config.json` has `policy.reviewers_required=2` + `policy.pr_review_gate_enabled=true`.
 **Every PR needs 2 distinct clean reviewer verdicts (charter `Requestor:` grammar, author-exclusive) and
 no unresolved Must-fix, or `gh pr merge`/`gh pr ready` is BLOCKED** by `validate_pr_review`. Operational
-rules for running waves (all validated again in W10):
-- **Assign 2 distinct reviewers per PR** (author-exclusive); verdicts are charter-grammar PR comments. A
-  clean verdict is `RequestOrReplied: Replied` + `Must-fix: None`. A `Request` needs ≥1 `Must-fix:` item.
-- **⚠️ CLEARING A `Request` NEEDS AMEND-IN-PLACE** (named step in `pull-requests.md`): the reviewer EDITS
-  their original `Request` comment to `Replied`/`Must-fix: None` (`gh api -X PATCH .../issues/comments/<id>`),
-  NOT a new comment. As of W9 `trust_signals` credits the resolved catch from comment EDIT-HISTORY, so the
-  in-place edit no longer erases `must_fix_caught`.
-- **⚠️ CI-GREEN IS ENFORCED AT MERGE** (`validate_pr_ci_status`, live on main since W9). The orchestrator
-  must confirm `gh pr view <pr> --json statusCheckRollup` is all-SUCCESS before merging and RE-RUN a
-  suspected flake rather than merge through it. (W10: both PRs 12/12 green, no red-merge.)
-- **⚠️ ROLLUP→MAIN NEEDS THE ESCAPE HATCH** (named step in `pull-requests.md`): a verdict-less rollup PR
-  can't clear the armed gate → land via `git checkout main && git pull`, `git merge --no-ff
-  deployments/phase6/wave-N`, commit with `-c` identity, `git push origin main` (direct push is ungated).
-  Wrapup/bump/memory/ontology commits are also direct pushes.
-- **⚠️ SPAWN WAVE AGENTS WITH DISTINCT NAMES + explicit `isolation: worktree`.** W10 used
-  PalomaW10/IbrahimW10/NiaW10/PalomaRevW10/TariqW10 → no collision (the W9 failure did not recur).
-- **⚠️ per-agent temp-file namespacing.** The job tmp dir is SHARED across concurrent agents — two W10
-  authors clobbered each other's `commitmsg.txt`/`prbody.md`. Instruct every spawned agent to prefix scratch
-  files with its own name (`paloma_prbody.md`). Also chain `mkdir -p X && cd X && …` in ad-hoc e2e scripts
-  so a hook-blocked line can't silently redirect a later `cd` to the worktree root.
+rules (all re-validated in W11):
+- **Assign 2 distinct reviewers per PR** (author-exclusive). Clean verdict = `RequestOrReplied: Replied` +
+  `Must-fix: None`. A `Request` needs ≥1 `Must-fix:` item; clear it by AMEND-IN-PLACE (edit the original
+  comment via `gh api -X PATCH .../issues/comments/<id>`), never a new comment.
+- **CI-GREEN IS ENFORCED AT MERGE** — confirm `gh pr view <pr> --json statusCheckRollup` all-SUCCESS and
+  re-run a suspected flake rather than merge through it. (W11: all PRs 11–12/12 green.)
+- **ROLLUP→MAIN NEEDS THE ESCAPE HATCH** — a verdict-less rollup PR can't clear the armed gate → land via
+  `git checkout main && git pull`, `git merge --no-ff <wave-branch>`, `-c` owner identity, `git push`
+  (direct push is ungated). Wrapup/bump/retro/memory/ontology commits are also direct pushes.
+- **SPAWN WAVE AGENTS WITH DISTINCT NAMES + explicit `isolation: worktree`** (W11 used
+  PalomaW11/IbrahimW11/NiaW11 + TariqRevW11/IbrahimRevW11/PalomaRevW11 → no collision). Instruct each agent
+  to prefix scratch files with its own name (now CHARTER doctrine via #245 `agents.md`) and chain
+  `mkdir -p X && cd X && …` in ad-hoc e2e scripts (also #245, `branching.md`).
+
+## ⚠️ NEW W11 ROLLUP LESSON — don't merge a stale LOCAL wave branch
+W11's first rollup merged the LOCAL `deployments/phase6/wave-11` ref, which was NEVER fast-forwarded after
+the feature PRs merged into `origin/…` server-side → main got a code-less merge (state.json only). Caught by
+a post-merge content probe, fixed with a follow-up merge of `origin/<wave>` before the bump/release.
+**At rollup: `git fetch origin` first, then merge `origin/<wave-branch>` explicitly (or `git branch -f
+<wave> origin/<wave>`), and VERIFY feature-code is present on the merge parent** (e.g. grep a known new
+symbol on `main`) before bumping/releasing. Retro proposal filed to codify this in the rollup runbook.
 
 ## Pickup (next concrete step)
-**Phase 6 Wave 10 is DONE and released. main is at `8f32067` (v0.10.2; ontology + memory committed). Nothing
-in flight; tree clean.** Next action is an **owner decision**: pick the next wave/phase theme. **No wave
-reserved.** Do NOT start a wave without theme + kickoff approval (gate). Next global wave = **16** (Phase 6
-Wave 11); wave branch would be `deployments/phase6/wave-11`; tag `deployments-phase6-wave-11`.
+**Phase 6 Wave 11 is DONE and released. main is at `52c4a89` (v0.10.3; retro + ontology committed; both
+registries published). Nothing in flight; tree clean.** Next action is an **owner decision**: pick the next
+wave/phase theme. **No wave reserved.** Next global wave = **17** (Phase 6 Wave 12); wave branch would be
+`deployments/phase6/wave-12`; tag `deployments-phase6-wave-12`. A theme-TBD stub is already filed as **#253**
+(only the title + Theme line need the owner's edit). Do NOT start a wave without theme + kickoff approval.
 
 ### Candidate next material (owner picks the theme)
-- **Small hardening (highest-readiness):** #242 (doc note — amend reconciles framework-owned hook lists to
-  canonical), #243 (friendlier error on source-less new-bucket `--real-config` partial patch — pre-existing
-  bare `KeyError`), #234 (node RNG seed + name-dedupe root fix, then drop the `vitest --retry` quarantine),
-  the **rulesets-vs-classic branch-protection probe** (CI-gate uses the classic protection endpoint;
-  rulesets-enforced repos read as unenforced → safe-side over-block).
-- **Process (sharpest standing item):** **resolve the reserved-5 rotation** — Nia is flagship-caliber in 3
-  of the last 4 waves without ever taking the reserved-5. Plus the two other W15-retro proposals (per-agent
-  temp namespacing; guard e2e `cd`).
-- **Larger:** **#244** (provisioner item 4 — B10 zero-children guard). **#110** distribute 2real as a Claude
-  Code skill (exploratory; likely its own Phase 7). **More #102 P2** (governance charter modules,
-  GH-Projects auto).
+- **Process (sharpest standing item):** **reserved-5 rotation** — now purely mechanical: giving Nia an
+  author wave (W11 S3) removed the "review-only dead end" framing, but a clean difficulty-2 PR still doesn't
+  bump, so she holds at 4 while Tariq's 5 rode a catch-less clean wave. Options: rotational-on-streak, split
+  author/reviewer-excellence signals, or a "verified-clean-review" positive signal so QA rigor on a clean
+  wave isn't zero-credit. Plus the **rollup-hygiene runbook step** (above).
+- **Small hardening:** #251 (`real_require_children` CLI/`--real-config` surface — today programmatic-only),
+  #252 (`usedNamesFromRoster` warn on unparseable `**Name:**` card), the **rulesets-vs-classic
+  branch-protection probe** (CI-gate uses the classic protection endpoint; rulesets-enforced repos read as
+  unenforced → safe-side over-block).
+- **Larger:** **#110** distribute 2real as a Claude Code skill (exploratory; likely its own Phase 7).
+  **More #102 P2** (governance charter modules, GH-Projects auto).
 
 ## Decisions made this session
-- None substantive — session was orientation + handoff refresh only. State carried forward from W10.
+- Owner chose to run **hardening + process as a single wave**; reserved-5 rotation **carried over** (no
+  scoring change this wave). Rollup + release **approved** (v0.10.3, tag `deployments-phase6-wave-11`).
 
 ## Open threads / blockers
-- Awaiting owner theme pick for the next wave (Phase 6 Wave 11 / global wave 16). Nothing blocked.
+- Awaiting owner theme pick for the next wave (Phase 6 Wave 12 / global 17; stub #253). Nothing blocked.
 
 ## Mechanical state
-- Branch: main (clean), HEAD `8f32067`, in sync with origin/main
-- Open PRs: (none)
+- Branch: main (clean), HEAD `52c4a89`, in sync with origin/main. v0.10.3 live on PyPI + npm.
+- Open PRs: (none). Rollup PR #250 served its CI-pass purpose (landed via escape hatch, not its merge button).
 - Open issues:
-  - #244 harness: guard/warn when B10 --include-real runs with zero children (provisioner #155 item 4)
-  - #243 harness: friendlier error on source-less new-bucket --real-config partial patch
-  - #242 docs(install): note amend reconciles framework-owned hook lists to canonical
-  - #234 Node suite flake: generateName dedupe compares role-prefixed filenames, not bare names + unseeded RNG
-  - #110 [Explore] Publish/install 2real as a Claude Code skill (no API key, setup inside Claude Code)
+  - #253 Wave 17 — (theme TBD — owner to set) [auto-drafted stub]
+  - #252 node: usedNamesFromRoster silently falls back to filename string on unparseable Name field
+  - #251 harness: real_require_children guard has no CLI/--real-config surface
+  - #110 [Explore] Publish/install 2real as a Claude Code skill
   - #102 Implement + test reverse-mapped process improvements from the noorinalabs-main audit
-- Lifecycle: no active wave state (pre-first-wave / between waves)
+- Lifecycle: wave 16 wrapped (`wave_16_completed_at` set); `current_wave=wave-16`; wave 17 meta reserved (#253).
+- Trust: Tariq 5, Nia/Paloma/Ibrahim 4 (all held; W11 all delta 0).

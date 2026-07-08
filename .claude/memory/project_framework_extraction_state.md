@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.2 (Phase 6 Wave 10: HARDENED the installer — amend path reconciles [not unions] config hook module-lists onto canonical [#162], real-repo provisioner hardening [#155 items 1/2/3/5: partial-clone fingerprint-on-failure, de-hardcoded fixtures, merge-not-replace overrides, nested-child mkdir; item 4→#244]; the deferred W8 follow-on), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.3 (Phase 6 Wave 11: HARDEN + PROCESS — friendly MissingFixtureError on source-less new-bucket --real-config [#243], opt-in zero-children guard [#244], amend-reconcile doc note [#242], node-flake root-fix [#234: bare-name dedupe + seedable RNG, --retry=2 dropped], charter process hardening [#245: per-agent temp namespacing + e2e cd/mkdir hygiene]), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,7 +11,7 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-08): released v0.10.2 — Phase 6 Wave 10 (HARDEN the installer)
+**Current baseline (2026-07-08): released v0.10.3 — Phase 6 Wave 11 (HARDEN + PROCESS)
 COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
@@ -36,8 +36,53 @@ installer* — the deferred W8 follow-on: the amend path now reconciles (not uni
 module-lists onto the canonical shipped set so an upgrade-over-diverged install drops stale entries (#162),
 and the real-repo provisioner got 4/5 hardening items (partial-clone fingerprint-on-failure, de-hardcoded
 fixtures, merge-not-replace `--real-config` overrides, nested-child `mkdir(parents=True)`; item 4→#244, re-homed at W10 wrapup off the closed #101)
-(#155). See [[handoff]] for the exact pickup (next = owner picks the theme; **no wave reserved**). The
+(#155); **Phase 6 Wave 11** (v0.10.3) *combined HARDEN + PROCESS* — friendly `MissingFixtureError` on a
+source-less new-bucket `--real-config` (#243), an opt-in default-off zero-children guard (#244), an
+amend-reconcile install-doc note (#242), the node-flake root-fix (#234: dedupe on bare names + seedable
+RNG, `--retry=2` quarantine dropped), and charter process hardening (#245: per-agent temp namespacing +
+e2e cd/mkdir hygiene promoted from the W14/W15 retros). See [[handoff]] for the exact pickup (next = owner
+picks the theme; **no wave reserved**, stub #253 filed). The
 foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 11 → v0.10.3 (2026-07-08, rollup direct-push merge `be5ec26`, bump `68814f8`, retro
+`9b7f1ac`, ontology `52c4a89`) — "Harden + Process."** A combined hardening + process wave (owner
+elected to bundle both readiness themes; reserved-5 rotation carried over as a standalone decision, NOT
+changed this wave). **3 PRs, 0 changes-requested cycles, 33% concentration (3 distinct authors), 812
+tests. All 6 reviewer verdicts clean first-pass** (2 per PR, author-exclusive). File-disjoint (provisioner
+harness / node / charter). Meta #246; stories #248/#249/#247. Tariq QA'd all three.
+- **S1 #248 (Paloma → Ibrahim + Tariq):** closes #243/#244/#242. `real_provision.py` — a source-less NEW
+  bucket in a `--real-config`/`real_fixtures` partial patch now raises a friendly `MissingFixtureError`
+  (naming the bucket, runner degrades to skip) instead of a bare `KeyError('source')`; the B10 zero-children
+  path keeps warn-and-proceed by default but adds an opt-in `real_require_children` strict guard (extracted
+  to `_guard_zero_children`) so a real run that must have children fails visibly. Plus a `config/README.md`
+  note that amend `reconcile_module_lists()` resets the SIX framework-owned hook lists to canonical on
+  re-install (Tariq caught the issue prose said "five"; code/doc say six). `config/README.md` single-homed.
+- **S2 #249 (Ibrahim → Paloma + Tariq):** closes #234. `node/src/bootstrap.ts` — new `usedNamesFromRoster`
+  parses the bare `**Name:**` field so `generateName`'s dedupe compares `First Last` (not the role-prefixed
+  roster FILENAME the callers previously fed it — the actual W13 flake bug); RNG made injectable
+  (`setRng`/`resetRng`/`makeSeededRng` mulberry32, production still defaults to `Math.random`). `--retry=2`
+  vitest quarantine removed from `ci.yml` after verifying determinism (5–15× clean). Genuinely revert→red.
+- **S3 #247 (Nia → Tariq + Paloma):** closes #245. Promoted the two W14/W15 retro fixes into the CHARTER —
+  per-agent scratch-file namespacing (`agents.md`) + ad-hoc/e2e `cd`-on-`mkdir` hygiene (`branching.md`),
+  applied byte-identically to both `.claude/team/charter/` and `framework/assets/team/charter/`;
+  `.charter-manifest.json` refreshed via `install_charter(refresh=True)`; `charter_drift.plan()`=[]. No
+  scoring/`trust_signals` touched (reserved-5 out of scope).
+- **Trust (`score 16`):** every author delta 0 (one clean PR each — a single clean PR is not a bump); no
+  must-fixes anywhere → no reviewer catch-credit (`must_fix_caught=0` across the board), a genuinely clean
+  wave. **Tariq 5→5** (reserved HELD, no decay), **Nia 4→4** (finally an AUTHOR wave — resolves the W15
+  review-only-dead-end framing, but clean difficulty-2 docs work still doesn't bump; rotation now purely
+  mechanical), **Ibrahim 4→4** (meatiest story, difficulty 3), **Paloma 4→4** (multi-issue S1 + 5×
+  determinism cross-review). Counter drift: none (pr=3/cr=0/conc=33 all matched recompute).
+- **⚠️ ORCHESTRATOR ROLLUP SLIP (mine, non-charged):** the first rollup merged a STALE LOCAL wave branch —
+  the feature PRs had merged into `origin/deployments/phase6/wave-11` server-side but the LOCAL ref was
+  never fast-forwarded, so `git merge --no-ff deployments/phase6/wave-11` landed a code-less merge (state.json
+  only) on main. Caught immediately by a post-merge content probe (`usedNamesFromRoster`=0 refs on main),
+  fixed with a follow-up `git merge --no-ff origin/deployments/phase6/wave-11` BEFORE the bump/release — no
+  release shipped without the code. **Fix for next time: at rollup, `git fetch` then merge `origin/<wave>`
+  explicitly (or `git branch -f <wave> origin/<wave>` first) and verify feature-code presence on the merge
+  parent.** Retro proposal filed. New tech-debt: #251 (`real_require_children` has no CLI/`--real-config`
+  surface yet — programmatic-only), #252 (`usedNamesFromRoster` silently falls back to the filename string
+  on an unparseable `**Name:**` card — add a warn).
 
 **Phase 6 Wave 10 → v0.10.2 (2026-07-08, rollup direct-push merge `69e7ca6`, bump `2585ae8`, wrapup
 `8fa9f2c`, ontology `d979da2`) — "Harden the installer."** The deferred W8 installer-hardening follow-on
