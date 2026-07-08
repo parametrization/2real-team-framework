@@ -216,12 +216,19 @@ _SECTION_LABEL_RE = re.compile(
 _VERIFIED_CHECK_RE = re.compile(
     r"revert\s*(?:→|-+|to)?\s*red"  # revert→red / revert to red / revert-red
     r"|byte[\s-]?parity"  # byte-parity
-    r"|\d+\s*[x×]\s*determinism|determinism"  # Nx / N× determinism
+    r"|\d+\s*[x×]\s*determinism"  # Nx / N× determinism (substantive, quantified)
     r"|ci[\s-]?rollup"  # CI-rollup ...
-    r"|(?:ci|rollup)\b[^\n]*\bsuccess"  # CI/rollup ... SUCCESS
-    r"|green\s+ci|ci\s+green",  # green CI
+    r"|(?:ci|rollup)\b[^\n]*\bsuccess",  # CI/rollup ... SUCCESS
     re.IGNORECASE,
 )
+# #259: the bare ``determinism`` and bare ``green ci`` / ``ci green`` alternations
+# were dropped — they let a NEGATING / non-substantive mention satisfy the gate
+# (e.g. "no determinism check run", "ci green not verified" both matched). Only
+# the substantive forms above are creditable now: the quantified ``Nx
+# determinism`` (a bare "determinism" no longer counts) and a ``CI ... SUCCESS``
+# rollup receipt (a bare "ci green" / "green ci" no longer counts). Genuine
+# blocks — ``revert→red``, ``byte-parity``, ``5× determinism``, ``CI rollup
+# SUCCESS`` — are unaffected.
 
 
 def _strip_code_markup(text: str) -> str:
@@ -1128,13 +1135,24 @@ def _account_pr(
                 if v.requestor:
                     bucket(v.requestor).must_fix_caught += 1
 
+    # #258: dedup ``verified_reviews`` per (reviewer, PR). ``_account_pr`` handles
+    # a single (repo, number), so a reviewer counted once here == counted once for
+    # this PR; distinct reviewers on this PR, and the same reviewer on other PRs
+    # (separate ``_account_pr`` calls), still count independently. Keyed on the
+    # CANONICAL reviewer identity so two spellings of one name
+    # (``Tariq.Morales`` / ``Tariq Morales (QA)``) fold to a single credit.
+    credited_verified: set[str] = set()
     for v in verdicts:
         if v.false_positive and v.requestor:
             bucket(v.requestor).review_false_positives += 1
         # Credit a verified review only on a CLEAN verdict (not a blocking
-        # Must-fix Request) whose body carried a concrete ``Verified:`` block.
+        # Must-fix Request) whose body carried a concrete ``Verified:`` block —
+        # and at most ONCE per reviewer for this PR (#258).
         if v.verified and not v.changes_requested and v.requestor:
-            bucket(v.requestor).verified_reviews += 1
+            reviewer = canon(v.requestor)
+            if reviewer not in credited_verified:
+                credited_verified.add(reviewer)
+                bucket(v.requestor).verified_reviews += 1
 
     if pr_had_changes_requested:
         author_sig.rework_cycles += 1

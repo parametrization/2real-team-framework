@@ -1695,3 +1695,74 @@ def test_verified_block_on_blocking_request_not_credited(tmp_path) -> None:
     )
     assert sigs["Tariq Morales"].must_fix_caught == 1
     assert sigs["Tariq Morales"].verified_reviews == 0
+
+
+# ===========================================================================
+# Trust-signal hardening (#258 / #259, W18 S1): the verified_reviews signal
+# had the same latent double-counting shape the N=2 review work exposed for
+# must_fix_caught, and _VERIFIED_CHECK_RE credited non-substantive / negating
+# mentions. These pin the per-(reviewer, PR) dedup and the tightened regex.
+# ===========================================================================
+
+
+def test_verified_reviews_deduped_per_reviewer_per_pr(tmp_path) -> None:
+    """#258 (LOAD-BEARING): two clean ``Verified:`` verdicts by the SAME reviewer
+    on the SAME PR credit ``verified_reviews`` exactly ONCE — even across name
+    spellings (``Tariq.Morales`` / ``Tariq Morales (QA)`` fold to one). A DISTINCT
+    reviewer on the same PR still counts, and the same reviewer on a DIFFERENT PR
+    (a separate ``_account_pr`` call) counts again.
+
+    Mutation bar (``_account_pr``): removing the per-(reviewer, PR) dedup set
+    double-counts Tariq's two comments → ``verified_reviews == 2`` on the first PR
+    and ``== 3`` after the second → both dedup assertions fail.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=810,
+        comment_bodies=[
+            _verified_body("Tariq.Morales"),  # first clean Verified
+            _verified_body("Tariq Morales (QA)"),  # SAME reviewer, variant spelling
+            _verified_body("Nia.Rossi"),  # a DISTINCT reviewer
+        ],
+        ci_red=False,
+    )
+    assert sigs["Tariq Morales"].verified_reviews == 1  # deduped per (reviewer, PR)
+    assert sigs["Nia Rossi"].verified_reviews == 1  # distinct reviewer still counts
+
+    # A DIFFERENT PR (a separate _account_pr call) credits Tariq independently.
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=811,
+        comment_bodies=[_verified_body("Tariq.Morales")],
+        ci_red=False,
+    )
+    assert sigs["Tariq Morales"].verified_reviews == 2  # +1 on a different PR
+
+
+def test_verified_check_re_rejects_negating_or_bare_mention() -> None:
+    """#259 (LOAD-BEARING): a NEGATING / non-substantive determinism or CI-green
+    mention no longer satisfies the gate — only the substantive, quantified forms
+    do. The bare ``determinism`` and bare ``green ci`` / ``ci green`` alternations
+    were dropped.
+
+    Mutation bar (``_VERIFIED_CHECK_RE``): restoring the bare ``determinism``
+    alternation makes "no determinism check run" credit → the first assertion
+    flips to True → fails. Likewise restoring ``green ci`` / ``ci green`` re-credits
+    "ci green not verified" → the second assertion fails.
+    """
+    # Negating / non-substantive mentions must NOT count.
+    assert ts._has_verified_checks("Verified:\n- no determinism check run\n") is False
+    assert ts._has_verified_checks("Verified:\n- ci green not verified\n") is False
+    # The substantive, quantified forms are still credited unchanged.
+    assert ts._has_verified_checks("Verified:\n- 5× determinism run\n") is True
+    assert ts._has_verified_checks("Verified:\n- revert→red\n") is True
+    assert ts._has_verified_checks("Verified:\n- byte-parity OK\n") is True
+    assert ts._has_verified_checks("Verified:\n- CI rollup SUCCESS\n") is True
