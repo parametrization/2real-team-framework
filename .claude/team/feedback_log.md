@@ -1016,3 +1016,62 @@ at its structural floor for two stories and reads as healthy distribution, not f
    assignment should concentrate substantive reviews. Owner-scoped; no change applied. — Rationale: pain #1.
 3. **Land #258/#259** (per-PR dedup + tighter `_VERIFIED_CHECK_RE`) in a near-term hardening slice. — Rationale:
    pain point #3.
+
+---
+
+## Retrospective: Wave 18 (Phase 6 Wave 13) — 2026-07-08 — "Harden the machinery" → v0.10.5
+
+### Wave Metrics
+- **3 PRs merged** (#266 S1, #267 S2, #268 S3), **0 changes-requested cycles**, **33% top concentration**
+  (3 distinct authors — Paloma, Nia, Ibrahim). All **6 reviewer verdicts clean first-pass**. Shipped **v0.10.5**
+  (patch) to main + PyPI + npm via OIDC. Tag/Release `deployments-phase6-wave-13`.
+- **Counter drift (Step 2):** claimed `3 / 0 / 33` — recompute: 3 PRs, 0 ChangesRequested (all `Replied`),
+  max 1/3 by one author = 33%. **All match; no corrections.**
+- **Issues:** #258/#259/#251/#252 closed (auto-closed when the rollup landed the `Closes #` commits on main).
+  New tech-debt: **#269** (guard non-dict `parameters` in rulesets probe), **#270** (`_VERIFIED_CHECK_RE`
+  misses `revert->red` ASCII arrow — distorted this wave's scoring). Meta #260 open.
+- **Tests:** +9 trust (S1) + rulesets/combiner suite (S2) + provisioner/node (S3); full suites green on all PRs.
+
+### Top-Implementer Concentration
+1 PR each by Paloma/Nia/Ibrahim = **33%** — three distinct authors, healthy distribution.
+
+### Per-Engineer Assessments (mechanical — `trust_signals score 18`)
+- **Tariq Morales** — reviewer: `verified_reviews=2` (substantive `→` blocks on #266 + #267). **delta +1**
+  (clean-wave bonus at ≥2, clamped at 5). First reserved-5 EARNED by signal, not incumbency.
+- **Nia Rossi** — author S2 (#267, diff 3) + 2 reviews: `verified_reviews=1`, `prs_merged=1`. **delta 0** —
+  but glyph-contingent (see headline finding): her #268 block used `->` and went uncredited (#270).
+- **Paloma Gupta** — author S1 (#266, diff 2) + 1 review: `verified_reviews=0` (her #268 block used `->`,
+  #270), `prs_merged=1`. **delta 0.**
+- **Ibrahim El-Amin** — author S3 (#268, diff 2) + 1 review (#267, correctly credited `→`):
+  `verified_reviews=1`, `prs_merged=1`. **delta 0.**
+- **Forced negative-signal pass (Step 4):** all four `metrics clean: {numbers}` (validated, no bare "None").
+  **No decay** (all have a signal). **No retirement triggers.**
+
+### Top 3 Going Well
+1. **The reserved-5 was earned by the symmetric signal for the first time** — Tariq's `verified_reviews=2`
+   across two substantive reviews cleared the ≥2 bonus. The W12 mechanism works as designed at scale.
+2. **The wave dogfooded every one of its own shipped changes:** #258 dedup + #259 regex ran live in
+   `score 18`; the S2 rollup-hygiene step content-probed main before bump (PASS).
+3. **Clean execution:** 3/3 file-disjoint stories, 6/6 first-pass clean verdicts with independent revert→red
+   reproductions, 0 CR cycles, both registries published.
+
+### Top 3 Pain Points
+1. **A parser false-negative decided the reserved-5 rotation (#270).** `_VERIFIED_CHECK_RE` matches
+   `revert→red` but not `revert->red` (ASCII arrow). Both #268 reviewers used `->`, so their genuinely
+   substantive reviews scored zero — Nia (a difficulty-3 author with 2 real reviews) held at 4 where the fix
+   would likely have given her the 5. Scoring fairness now hinges on a glyph.
+2. **`verified_reviews` credit is fragile to phrasing.** S3-type stories offer no `determinism`/`byte-parity`
+   fallback token, so the whole block rides one arrow glyph. The credited-token set may be too narrow (no
+   `N passed` / `ruff clean`).
+3. **Two of three reviewers lost earned credit to #270**, muddying the wave's headline signal-result — the
+   "Tariq earned it" story is real but the "others didn't" story is mostly a parser artifact.
+
+### Proposed Process Changes (approval-gated — NOT applied)
+1. **Land #270 early next wave** — broaden the revert-red alternation to accept `->`, add a load-bearing
+   `revert->red` test. Highest-value fairness fix. — Rationale: pain #1/#2.
+2. **Owner call on W18's reserved-5** — the mechanical result stands (Tariq 5 earned, Nia 4), but the rotation
+   was glyph-contingent; the owner may choose to treat it as a tie pending #270, or accept it and let the
+   fixed parser govern from W19. — Rationale: pain #1.
+3. **Broaden the `Verified:` credited-token set** (consider `N passed`, `ruff clean`) so substantive suite
+   evidence counts, not only the named-probe vocabulary. — Rationale: pain #2. (Separate judgment from the
+   narrow #270 arrow fix.)

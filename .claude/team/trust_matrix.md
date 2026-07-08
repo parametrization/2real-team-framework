@@ -548,3 +548,47 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | First wave the symmetric signal could register for a review-only engineer, and it did (`verified_reviews=1`) with an independent block-scoping reasoning trail | still review-only (`prs_merged=0`); `verified_reviews=1 < 2` bonus threshold → no bump. Author, or concentrate enough substantive reviews to clear `≥2`, to move the reserved-5 rotation. |
 | Ibrahim El-Amin | Clean dual-tree charter authorship with template-render parity; dogfoodable rollup-hygiene step that this wave's own rollup then exercised | `prs_merged=1` (not a bump) and his own #256 review Verified blocks were empty (`verified_reviews=0`) — writing a substantive Verified block on reviews would have earned the new positive signal. |
 | Paloma Gupta | Shipped the symmetric-scoring feature end-to-end with anti-gaming gate + 9 revert→red tests; self-caught and recovered a `git checkout` clobber with zero PR impact | the clobber traces to using `git checkout -- <file>` during a revert→red probe on a file with *other* uncommitted edits — use an in-memory/patch probe (as she then did) rather than `git checkout` when the working tree carries unstaged work. |
+
+## Wave 18 Trust Updates (2026-07-08) — Phase 6 Wave 13 "Harden the machinery" → v0.10.5
+
+> **3 PRs, 0 changes-requested cycles, 33% top concentration (3 distinct authors). All 6 reviewer
+> verdicts clean first-pass.** Three file-disjoint hardening stories: S1 `verified_reviews` per-(reviewer,PR)
+> dedup + tightened `_VERIFIED_CHECK_RE` (#258/#259, PR #266), S2 rulesets-aware CI gate (#262, PR #267),
+> S3 `require_children` `--real-config` surface + node unparseable-card warn (#251/#252, PR #268). Shipped
+> **v0.10.5** (patch). `trust_signals score 18`: **Tariq +1 (earned), everyone else delta 0.**
+>
+> **🔑 First time the reserved-5 was EARNED by signal, not held by incumbency.** With 3 PRs, reviewers
+> spread across the wave: Tariq reviewed #266 + #267 with substantive `Verified:` blocks → `verified_reviews=2`
+> → the clean-wave +1 bonus fires (clamped at 5). This is exactly the mechanism the W12 symmetric signal was
+> built for, finally exercised at the ≥2 threshold.
+>
+> **⚠️ BUT the rotation outcome was decided by an arrow glyph — a parser false-negative this wave's own
+> scoring exposed (tech-debt #270).** `_VERIFIED_CHECK_RE`'s revert-red alternation `revert\s*(?:→|-+|to)?\s*red`
+> matches `revert→red` / `revert-red` / `revert to red` but NOT `revert->red` (the `>` in the ASCII arrow
+> breaks it). Both #268 reviewers (Nia, Paloma) wrote genuinely substantive blocks but phrased them
+> `Revert->red`, and S3 offered no `determinism`/`byte-parity` fallback token → their real verification earned
+> **zero** credit. So **Nia landed at `verified_reviews=1`** (only her #266 block, which used `→`, credited)
+> and **Paloma at 0** — NOT a reflection of review rigor. Had Nia's #268 block matched, she'd have hit
+> `verified_reviews=2` as a difficulty-3 author and, on composite, likely **taken** the reserved 5. The
+> mechanical scores below STAND (evidence-anchored to what the parser credits), but the rotation call this
+> wave is glyph-contingent — flagged for the owner pending the #270 fix.
+>
+> **✅ Every shipped signal-change was dogfooded on its own retro:** the #258 dedup (Tariq's 2 credits are
+> across 2 distinct PRs, not double-counted) and the #259 regex both ran live in `score 18`; the S2 rollup
+> step content-probed main before bump (PASS).
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | delta **+1** (clamped at 5): `verified_reviews=2` (substantive `Verified:` blocks on #266 AND #267, both using `→`) clears the clean-wave bonus. First time the reserved-5 is EARNED by the symmetric signal rather than held by incumbency. `must_fix_caught=0` (clean wave, nothing to catch). |
+| Nia Rossi | 4 | **4** | delta 0 mechanically — BUT glyph-contingent. Authored S2 (#267, difficulty 3) AND did 2 substantive reviews (#266, #268); `verified_reviews=1` only because her #268 block used `->` (uncredited, #270). With the fix she'd be `verified_reviews=2` → +1 → likely the reserved-5 on composite (difficulty-3 author + 2 reviews). Held at 4 on the mechanical count; rotation call deferred to owner pending #270. |
+| Paloma Gupta | 4 | **4** | delta 0. Authored S1 (#266, difficulty 2 — the `verified_reviews` dedup + regex tightening itself); `verified_reviews=0` only because her substantive #268 review block used `->` (uncredited, #270), not for lack of rigor. `prs_merged=1` is not a bump regardless. |
+| Ibrahim El-Amin | 4 | **4** | delta 0. Authored S3 (#268, difficulty 2) AND reviewed #267 with a substantive `→` block (`verified_reviews=1`, correctly credited — surfaced the non-blocking #269 payload-guard observation). `prs_merged=1` not a bump; `verified_reviews=1 < 2`. |
+
+### Done Well / Needs Improvement (Wave 18 / Phase 6 Wave 13)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | Two substantive `Verified:` blocks (#266 revert→red battery + #267 full fail-open tri-state audit) → first EARNED reserved-5 via `verified_reviews=2` | `must_fix_caught=0` — a clean wave offered no catch; the 5 rode verified-review rigor, not a demonstrated blocking catch. |
+| Nia Rossi | Difficulty-3 S2 authorship + 2 rigorous reviews incl. a merge/round-trip config-plumbing trace on #268 | `verified_reviews=1` ONLY because her #268 block used `->` (parser #270) — as a convention nudge, use `→` (or the fixed parser) so real rigor scores; substantively she reviewed 2 PRs. |
+| Paloma Gupta | Authored the `verified_reviews` hardening itself (S1) + a substantive end-to-end sidecar-toggle review on #268 | `verified_reviews=0` is a parser artifact (#270, `->` in her #268 block), not a rigor gap — the #270 fix is hers to consider next. |
+| Ibrahim El-Amin | Difficulty-2 S3 author + a correctly-credited substantive #267 review that surfaced real tech-debt (#269) as an issue not a false must-fix | `prs_merged=1` and `verified_reviews=1 < 2` — one authored PR + one review; a second substantive review or a blocking catch is the path up. |
