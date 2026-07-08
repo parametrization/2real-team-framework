@@ -1,7 +1,7 @@
 {
-  "_comment": "Example --real-config sidecar for the B11 upgrade-over-live-install study (#109). Absolute paths are machine-local, so they live HERE (a doc/example), never in a checked-in default (#155 item 2). pin=null resolves refs/heads/main live via `git ls-remote` at run time (the local tree is under concurrent work, so the pin is NOT trusted from whatever branch is checked out). Usage: python3 -m framework.harness --include-real --buckets B11 --installers bootstrap --real-config framework/tests/install_quality/real-config.botfarm.example.json   OR   python3 -m framework.harness.botfarm_upgrade_study --real-config <this file>",
+  "_comment": "Example --real-config sidecar for the B11 upgrade-over-live-install study (#109). The `source` here is a PLACEHOLDER — replace it with the absolute path to your local botfarm checkout. Machine-specific absolute paths never live in a checked-in default (#155 item 2); they belong in an operator-supplied sidecar like this one. pin=null resolves refs/heads/main live via `git ls-remote` at run time (the local tree is under concurrent work, so the pin is NOT trusted from whatever branch is checked out). Usage: python3 -m framework.harness --include-real --buckets B11 --installers bootstrap --real-config framework/tests/install_quality/real-config.botfarm.example.json   OR   python3 -m framework.harness.botfarm_upgrade_study --real-config <this file>",
   "B11": {
-    "source": "/home/parameterization/code/botfarm_inc",
+    "source": "/absolute/path/to/botfarm_inc",
     "pin": null,
     "ref": "refs/heads/main",
     "model": "single-repo"
