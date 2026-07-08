@@ -319,6 +319,33 @@ def test_meta_with_children_does_not_warn(tmp_path: Path) -> None:
     assert [c["path"] for c in ctx["child"]["children"]] == ["api"]
 
 
+def test_meta_zero_children_strict_guard_raises(tmp_path: Path) -> None:
+    """#244: the zero-children case has a STRONGER, opt-in guard. With
+    ``opts['real_require_children']`` set, a degenerate zero-children ``meta-and-children`` provision
+    must RAISE ``MissingFixtureError`` (runner degrades to a skip) instead of shipping the empty meta
+    install — a real run that must have children fails visibly rather than silently provisioning
+    nothing. Load-bearing: remove the ``real_require_children`` branch in ``_guard_zero_children`` and
+    this provision no longer raises (it only warns), so ``pytest.raises`` finds nothing and FAILS."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    spec = RealFixtureSpec(bucket="B10", source=str(parent), model="meta-and-children", children=())
+
+    with pytest.raises(MissingFixtureError, match=r"zero children"):
+        provision_real(spec, tmp_path / "wd", opts={"real_require_children": True})
+
+
+def test_meta_zero_children_strict_guard_default_off(tmp_path: Path) -> None:
+    """Control for #244: WITHOUT ``real_require_children`` the guard stays a warn-and-proceed (the
+    legitimate bare ``--include-real`` smoke-test flow), so the hard guard is genuinely opt-in and
+    does not change the default behavior."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    spec = RealFixtureSpec(bucket="B10", source=str(parent), model="meta-and-children", children=())
+    with pytest.warns(UserWarning, match=r"zero children"):
+        ctx = provision_real(spec, tmp_path / "wd", opts={"real_require_children": False})
+    assert ctx["child"]["children"] == []  # still a (trivial) degenerate install, not a raise
+
+
 def test_include_real_executes_b10_meta_path_all_green(tmp_path: Path) -> None:
     parent = tmp_path / "parent"
     _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
@@ -363,6 +390,27 @@ def test_registry_default_and_sidecar_override(tmp_path: Path) -> None:
     assert reg["B11"].source == "/x" and reg["B11"].pin == "abc123"
     assert reg["B11"].ref == "refs/heads/release"
     assert reg["B10"].model == "meta-and-children"  # untouched default survives
+
+
+def test_new_bucket_partial_patch_without_source_friendly_error(tmp_path: Path) -> None:
+    """#243: a ``--real-config`` / ``real_fixtures`` partial patch that CREATES a new bucket (one not
+    in the defaults) with no ``source`` key must raise a friendly ``MissingFixtureError`` NAMING the
+    bucket and asking for a ``source`` — not the bare ``KeyError('source')`` the unconditional
+    ``from_dict`` used to raise. Load-bearing: drop the ``'source' not in override`` guard in
+    ``_apply`` and the call raises a bare ``KeyError`` (not ``MissingFixtureError``), so this fails."""
+    # (a) via the sidecar JSON
+    sidecar = tmp_path / "real.json"
+    sidecar.write_text('{"BZ9": {"pin": "cafef00d", "ref": "refs/heads/main"}}', encoding="utf-8")
+    with pytest.raises(MissingFixtureError, match=r"BZ9.*source"):
+        real_provision.real_registry({"real_config": str(sidecar)})
+
+    # (b) via real_fixtures as a dict
+    with pytest.raises(MissingFixtureError, match=r"BZ9.*source"):
+        real_provision.real_registry({"real_fixtures": {"BZ9": {"pin": "beadfeed"}}})
+
+    # a new bucket that DOES carry a source still works (guard is scoped to the missing-source case)
+    ok = real_provision.real_registry({"real_fixtures": {"BZ9": {"source": "/some/repo"}}})
+    assert ok["BZ9"].source == "/some/repo"
 
 
 # --------------------------------------------------------------- #155 item 1: partial-clone invariant

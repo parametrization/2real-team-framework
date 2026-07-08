@@ -259,12 +259,38 @@ def _write_meta_yaml(wd: Path, spec: RealFixtureSpec) -> Path:
     return yaml
 
 
+def _guard_zero_children(spec: RealFixtureSpec, opts: dict) -> None:
+    """#155 item 4 / #244: handle a ``meta-and-children`` spec provisioned with no children.
+
+    A bare ``--include-real`` B10 with no ``--real-config`` resolves to a degenerate
+    zero-children meta install. By DEFAULT this is surfaced with a ``warnings.warn`` and the
+    trivial install proceeds — a childless meta is a valid (if trivial) install, and a smoke-test
+    ``--include-real`` run should degrade rather than crash. A real provisioning run that MUST have
+    children (``#101``/``#109``) can opt into a HARD guard with ``opts['real_require_children']``:
+    the harness then raises ``MissingFixtureError`` (degraded to a *skip* by the runner) instead of
+    shipping the degenerate zero-children install, so a misconfigured real run fails visibly rather
+    than silently provisioning an empty meta.
+    """
+    if opts.get("real_require_children"):
+        raise MissingFixtureError(
+            f"real fixture {spec.bucket!r} is meta-and-children with zero children and "
+            "real_require_children is set — refusing the degenerate zero-children meta install; "
+            "supply children via --real-config (#155 item 4 / #244)."
+        )
+    warnings.warn(
+        f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
+        "degenerate meta install; supply children via --real-config (#155 item 4 / #244).",
+        stacklevel=3,
+    )
+
+
 def provision_real(spec: RealFixtureSpec | None, wd: Path, opts: dict | None = None) -> dict:
     """Clone ``spec``'s source (+ children for meta) at its pin into ``wd``; return fixture ctx.
 
     Read-only w.r.t. the source and asserted so: every local source's ``{head, porcelain}`` is
     fingerprinted before and after and must be byte-identical (``SourceMutatedError`` otherwise).
     """
+    opts = opts or {}
     if spec is None:
         raise MissingFixtureError("no real-fixture spec registered for this bucket")
 
@@ -288,15 +314,10 @@ def provision_real(spec: RealFixtureSpec | None, wd: Path, opts: dict | None = N
 
         if spec.model == "meta-and-children":
             if not spec.children:
-                # #155 item 4: a bare --include-real B10 with no --real-config resolves to a
-                # degenerate zero-children meta install. Not fatal (a childless meta is a valid,
-                # if trivial, install), but surface it instead of silently degrading — #101
-                # supplies children explicitly via --real-config.
-                warnings.warn(
-                    f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
-                    "degenerate meta install; supply children via --real-config (#155 item 4).",
-                    stacklevel=2,
-                )
+                # #155 item 4 / #244: a bare --include-real B10 with no --real-config resolves to
+                # a degenerate zero-children meta install. Default = warn-and-proceed; opt into a
+                # hard MissingFixtureError guard via opts['real_require_children'] (see helper).
+                _guard_zero_children(spec, opts)
             children_ctx = []
             for child in spec.children:
                 child_sha = resolve_pin(child.source, child.ref, child.pin)
@@ -329,8 +350,9 @@ def real_registry(opts: dict | None = None) -> dict[str, RealFixtureSpec]:
     keys and preserves the rest of the existing bucket spec, so overriding just ``pin`` no longer
     silently drops ``children`` back to ``()``. A full ``RealFixtureSpec`` value in
     ``real_fixtures`` is still an explicit whole-spec replacement (back-compat for callers that
-    build a complete spec). A partial patch for a bucket with no existing/default spec must carry
-    a ``source`` (falls back to ``from_dict``).
+    build a complete spec). A partial patch for a bucket with no existing/default spec creates a
+    brand-new bucket and therefore MUST carry a ``source`` — a source-less new-bucket patch raises
+    a friendly ``MissingFixtureError`` naming the bucket (#243) rather than a bare ``KeyError``.
     """
     opts = opts or {}
     reg = dict(DEFAULT_REAL_FIXTURES)
@@ -340,6 +362,15 @@ def real_registry(opts: dict | None = None) -> dict[str, RealFixtureSpec]:
             reg[bucket] = override                       # explicit whole-spec replacement
         elif bucket in reg:
             reg[bucket] = reg[bucket].merge(override)     # partial patch merges onto existing
+        elif "source" not in override:
+            # #243: a partial patch that CREATES a new bucket must carry a 'source'. Without it,
+            # from_dict() would raise a bare KeyError('source'); surface a friendly, actionable
+            # message naming the bucket instead (MissingFixtureError -> runner degrades to a skip).
+            raise MissingFixtureError(
+                f"real fixture override for new bucket {bucket!r} is a partial patch with no "
+                "'source' key; creating a new bucket requires a 'source' (a local path or git "
+                "remote URL). Add a 'source', or patch an already-registered bucket."
+            )
         else:
             reg[bucket] = RealFixtureSpec.from_dict(bucket, override)  # brand-new bucket
 
