@@ -1115,8 +1115,14 @@ def is_author_self_review(requestor: str | None, author: str | None, canon) -> b
     reply that slipped into ``Requestor:`` form — the Wave-21 slip), never a
     genuine third-party review. Author-exclusion drops it before it can accrue
     any reviewer signal (``must_fix_caught`` / ``verified_reviews`` /
-    ``missed_catches`` / review-load), mirroring the merge gate's exclusion of a
-    self-addressed verdict (the botfarm ``#657`` prior art).
+    ``missed_catches`` / review-load), mirroring the merge gate's self-review
+    exclusion. Modeled on the shared author-resolution helper botfarm's review
+    gate consolidated (same purpose) — but that gate keys the drop off the
+    ``Requestee:`` (addressed-author) field, whereas our charter grammar puts the
+    reviewer in ``Requestor:``, so the exclusion trigger flips to the Requestor.
+    Here author and reviewer identities are already folded through the roster
+    *canon*, so resolution is a single canonical-equality check (no separate
+    branch-name / login anchors to reconcile as the hook has).
 
     Both identities are folded through *canon* so name variants
     (``Ibrahim.El-Amin`` / ``Ibrahim El-Amin (Senior)``) compare equal. Fail-open
