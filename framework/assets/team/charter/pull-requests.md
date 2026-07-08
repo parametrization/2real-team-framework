@@ -258,11 +258,39 @@ The sanctioned way to land it is a **direct-push merge** — a direct push to
 is ungated by construction:
 
 ```bash
+git fetch origin                                     # refresh the remote wave tip FIRST
 git checkout {{default_branch}} && git pull
-git merge --no-ff <integration-branch>          # e.g. deployments/phaseN/wave-M
+git merge --no-ff origin/<integration-branch>        # the REMOTE ref (e.g. origin/deployments/phaseN/wave-M) — never a stale local ref
 git -c user.name="<Manager>" -c user.email="<...>" commit   # only if the merge needs one
 git push origin {{default_branch}}
 ```
+
+### Rollup pre-flight: merge `origin/<wave>`, never a stale LOCAL ref, then verify code landed
+
+The story PRs merge into the wave branch **server-side** (`origin/…`); a local
+`deployments/phaseN/wave-M` ref that was never fast-forwarded is **stale**, and merging that
+bare local name gives `{{default_branch}}` a **code-less** rollup (only `state.json` moves).
+Before the merge above:
+
+1. **`git fetch origin`** so the remote wave tip is local.
+2. Merge the **remote-tracking** ref explicitly — `git merge --no-ff origin/<integration-branch>`
+   — or fast-forward the local ref first
+   (`git branch -f <integration-branch> origin/<integration-branch>`); never merge the
+   possibly-stale bare local branch name.
+3. **Verify feature-code is on the merge parent BEFORE bump/release.** Grep a known new
+   symbol from this wave on `{{default_branch}}`:
+
+   ```bash
+   git show {{default_branch}}:<path/to/changed/file> | grep -c '<new-symbol>'
+   ```
+
+   A non-zero count confirms the feature code landed. A rollup that moved only `state.json`
+   (grep count `0`) is a **STOP-and-investigate**: you almost certainly merged a stale local
+   ref — re-run from step 1 against `origin/<wave>` before tagging or releasing.
+
+(Codified from the Phase 6 Wave 11 slip: the first rollup merged a stale local wave ref, so
+`{{default_branch}}` got a code-less merge — caught only by a post-merge content probe and
+fixed by merging `origin/<wave>` before bump/release. #255.)
 
 GitHub auto-marks the rollup PR **MERGED** once its head commits reach
 `{{default_branch}}`. This is the escape hatch for the rollup specifically — it does **not**
