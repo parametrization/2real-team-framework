@@ -12,6 +12,17 @@ No anonymous functional agents.
 - **Violations:** functional-only names (e.g., `ci-fixer`, `issue-closer`) are not
   allowed.
 
+## Per-Agent Scratch-File Namespacing
+
+**Every spawned agent MUST prefix its scratch files with its own name** — commit
+messages, PR bodies, and any temporary working file (`paloma_prbody.md`,
+`ibrahim_commitmsg.txt`), never a bare shared name (`prbody.md`, `commitmsg.txt`).
+The job's temp directory is **shared across concurrently-running agents**, so two
+agents writing the same bare filename clobber each other mid-run (Phase 6 Wave 10:
+two parallel authors overwrote each other's `commitmsg.txt`/`prbody.md`; no work was
+lost only because it was caught in progress). The orchestrator carries this instruction
+in the author/reviewer spawn-prompt boilerplate, and each agent enforces it on itself.
+
 ## How to Instantiate the Team
 
 When starting any work session, the orchestrating agent should:
