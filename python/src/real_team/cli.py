@@ -667,6 +667,17 @@ def install_branch(
         help="After staging, check the original branch back out (tree left clean; install "
         "parked on the branch) instead of staying on the install branch",
     ),
+    expect: str = typer.Option(
+        "any",
+        "--expect",
+        help="repo.expect for the staged bootstrap: fresh|existing|any (default: any — "
+        "install-branch targets an existing repo)",
+    ),
+    config: str = typer.Option(
+        None,
+        "--config",
+        help="Path to a unified YAML install config threaded to the staged bootstrap",
+    ),
 ) -> None:
     """Stage a framework install onto a throwaway git branch — trial it, then merge or delete.
 
@@ -683,6 +694,8 @@ def install_branch(
         target_path,
         branch=branch,
         owner=owner,
+        install_config=config,
+        expect=expect,
         dry_run=dry_run,
         non_interactive=non_interactive,
         return_to_original=return_to_original,

@@ -67,6 +67,26 @@ class TestStageInstallFrameworkBridge:
         assert "--owner" in cmd and "acme" in cmd
         assert "--merge-model" in cmd and "wave-branch" in cmd
 
+    def test_expect_threaded(self, monkeypatch, tmp_path: Path):
+        """``expect`` forwards --expect to the bootstrapper that runs on the staged branch —
+        the fix for #283's must-fix (the staged bootstrap used to inherit the shipped default
+        repo.expect=fresh, which refuses every realistic install-branch target)."""
+        from real_team.framework_install import stage_install_framework
+
+        captured = _capture(monkeypatch)
+        stage_install_framework(tmp_path, expect="existing")
+        cmd = captured["cmd"]
+        assert "--expect" in cmd and "existing" in cmd
+
+    def test_expect_omitted_when_unset(self, monkeypatch, tmp_path: Path):
+        """The bridge itself has no expect default (None): the CLI is the one that defaults to
+        "any"; leaving expect unset here threads no --expect flag at all."""
+        from real_team.framework_install import stage_install_framework
+
+        captured = _capture(monkeypatch)
+        stage_install_framework(tmp_path)
+        assert "--expect" not in captured["cmd"]
+
     def test_no_assets_returns_none(self, monkeypatch, tmp_path: Path):
         import real_team.framework_install as fi
 

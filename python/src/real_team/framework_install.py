@@ -172,6 +172,7 @@ def stage_install_framework(
     merge_model: str | None = None,
     install_config: Path | str | None = None,
     with_ontology: bool | None = None,
+    expect: str | None = None,
     dry_run: bool = False,
     non_interactive: bool = True,
     return_to_original: bool = False,
@@ -186,9 +187,14 @@ def stage_install_framework(
 
     The staging flags (``branch``/``dry_run``/``non_interactive``/``return_to_original``) are
     consumed by ``install_branch.py``; the install-shape flags (``owner``/``shell``/``merge_model``
-    /… — the same set :func:`install_framework` builds) pass THROUGH it to the bootstrapper that
-    runs on the branch. ``--no-team`` is always forwarded (the CLI owns roster scaffolding), as in
-    :func:`install_framework`.
+    /``expect``/… — the same set :func:`install_framework` builds, plus ``expect``) pass THROUGH
+    it to the bootstrapper that runs on the branch. ``--no-team`` is always forwarded (the CLI owns
+    roster scaffolding), as in :func:`install_framework`.
+
+    ``expect`` forwards ``--expect`` (``fresh``/``existing``/``any``) to the staged bootstrap's
+    fresh-vs-existing gate. Staging by definition targets a repo that already has a HEAD commit
+    (there is nothing to branch from otherwise), so callers should default this to ``"any"`` —
+    the shipped bootstrapper default (``fresh``) refuses every realistic install-branch target.
 
     Returns the CompletedProcess, or None when the framework assets could not be located.
     """
@@ -219,5 +225,7 @@ def stage_install_framework(
         cmd += ["--with-ontology"]
     elif with_ontology is False:
         cmd += ["--no-ontology"]
+    if expect:
+        cmd += ["--expect", expect]
 
     return subprocess.run(cmd, capture_output=True, text=True)
