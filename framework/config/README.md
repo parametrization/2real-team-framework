@@ -36,6 +36,13 @@ capability but do not error.
 | `hooks.stop` | Stop-event checks (advisory, never block). Ships with `session_handoff` (auto handoff note; defers to a manual `/handoff`). |
 | `hooks.pre_push_commands` | Checks the enforce-mode pre-push git hook runs (read at push time; empty = pass). |
 
+> **Re-install RESETS the framework-owned hook lists to canonical.** Re-installing over an
+> existing config (the amend/upgrade path) reconciles the framework-owned hook module-lists
+> (`hooks.pre_bash`/`post_bash`/`post_file`/`session_start`/`agent`/`stop`) back to the shipped
+> canonical set — stale/extra entries you added there are **dropped**, not merged. Put your own
+> push-time checks in `hooks.pre_push_commands`, which is deliberately excluded from this reconcile
+> and preserved verbatim — it is the user escape hatch for custom checks.
+
 ## How reads work
 
 Hooks call `_framework_config.config(input_data).get("dotted.key", default)`.

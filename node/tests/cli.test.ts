@@ -57,6 +57,10 @@ import {
   FIRST_NAMES,
   LAST_NAMES,
   COMMUNICATION_STYLES,
+  usedNamesFromRoster,
+  setRng,
+  resetRng,
+  makeSeededRng,
 } from "../src/bootstrap.js";
 import { getPreset, listPresets as listPresetsFromModule } from "../src/presets.js";
 import {
@@ -269,6 +273,122 @@ describe("name generation", () => {
     expect(FIRST_NAMES.length).toBeGreaterThan(0);
     expect(LAST_NAMES.length).toBeGreaterThan(0);
     expect(COMMUNICATION_STYLES.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dedupe root-cause + seedable RNG (#234)
+//
+// These are the load-bearing regression tests: each FAILS if the fix is
+// reverted. `Aisha` is FIRST_NAMES[0] and `Rossi` is LAST_NAMES[18], so a
+// scripted RNG that emits [0, 0.37, ...] draws the pair "Aisha Rossi".
+// ---------------------------------------------------------------------------
+
+/** A deterministic RNG that replays `values` (cycling), for exact draws. */
+function scriptedRng(values: number[]): () => number {
+  let i = 0;
+  return () => values[i++ % values.length];
+}
+
+describe("generateName dedupe compares bare names (#234)", () => {
+  afterEach(() => resetRng());
+
+  it("usedNamesFromRoster parses bare `First Last`, not role-prefixed filenames", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-usednames-"));
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    mkdirSync(rosterDir, { recursive: true });
+    // Filename is ROLE-PREFIXED; the card body carries the bare name.
+    writeFileSync(
+      join(rosterDir, "senior_engineer_jane_doe.md"),
+      "## Identity\n- **Name:** Jane Doe\n- **Role:** Software Engineer\n",
+    );
+    const used = usedNamesFromRoster(rosterDir);
+    // The fix: the set holds the bare name a candidate is actually compared to.
+    expect(used.has("Jane Doe")).toBe(true);
+    // The bug: the pre-fix set held the role-prefixed filename string, which
+    // never matches a bare "First Last" candidate.
+    expect(used.has("senior engineer jane doe")).toBe(false);
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("generateName rejects a candidate already on the roster", () => {
+    // used holds the BARE name, exactly as usedNamesFromRoster now produces it.
+    const used = new Set<string>(["Aisha Rossi"]);
+    // First draw = "Aisha Rossi" (collision -> must be rejected), second draw =
+    // "Amara Asante" (FIRST_NAMES[1]/LAST_NAMES[0]).
+    const rng = scriptedRng([0, 0.37, 0.02, 0]);
+    const [first, last] = generateName(used, rng);
+    expect(`${first} ${last}`).toBe("Amara Asante");
+    expect(`${first} ${last}`).not.toBe("Aisha Rossi");
+  });
+
+  it("addMember(random) does not recreate a name already on the roster", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-add-dedupe-"));
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    mkdirSync(rosterDir, { recursive: true });
+    // Existing member whose filename would collide iff the draw repeats it.
+    writeFileSync(
+      join(rosterDir, "qa_engineer_aisha_rossi.md"),
+      "## Identity\n- **Name:** Aisha Rossi\n- **Role:** QA Engineer\n",
+    );
+    // Force the first random draw to be the existing "Aisha Rossi".
+    setRng(scriptedRng([0, 0.37, 0.02, 0]));
+    addMember({ role: "QA Engineer", level: "Senior", target: tmp });
+
+    const active = readdirSync(rosterDir).filter(
+      (f) => f.endsWith(".md") && !f.startsWith("_departed_"),
+    );
+    // Pre-fix, the drawn duplicate "Aisha Rossi" would overwrite the existing
+    // card -> still 1 card. Post-fix, the collision is rejected and a distinct
+    // member is added -> 2 cards.
+    expect(active.length).toBe(2);
+    expect(active).toContain("qa_engineer_amara_asante.md");
+    rmSync(tmp, { recursive: true });
+  });
+});
+
+describe("seedable RNG is reproducible (#234)", () => {
+  afterEach(() => resetRng());
+
+  it("makeSeededRng: same seed yields the same generateName sequence", () => {
+    const draw = (seed: number): string[] => {
+      const rng = makeSeededRng(seed);
+      const used = new Set<string>();
+      const out: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const [f, l] = generateName(used, rng);
+        const full = `${f} ${l}`;
+        used.add(full);
+        out.push(full);
+      }
+      return out;
+    };
+    const a = draw(1234);
+    const b = draw(1234);
+    const c = draw(9999);
+    expect(a).toEqual(b); // reproducible under a fixed seed
+    expect(a).not.toEqual(c); // a different seed diverges
+  });
+
+  it("setRng makes a full team generation deterministic across runs", () => {
+    // The whole point of #234: no flake. With a fixed seed the generated roster
+    // is byte-for-byte identical run to run, and every name is unique.
+    const generate = (): string[] => {
+      setRng(makeSeededRng(42));
+      const used = new Set<string>();
+      const names: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const [f, l] = generateName(used);
+        const full = `${f} ${l}`;
+        used.add(full);
+        names.push(full);
+      }
+      return names;
+    };
+    const run1 = generate();
+    const run2 = generate();
+    expect(run1).toEqual(run2);
+    expect(new Set(run1).size).toBe(run1.length); // all unique — no collision
   });
 });
 
