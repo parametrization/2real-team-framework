@@ -1,7 +1,7 @@
 {
   "wave_15_phase": 6,
   "wave_15_phase_ordinal": 10,
-  "wave_15_active": true,
+  "wave_15_active": false,
   "wave_15_started_at": "2026-07-08T00:29:59Z",
   "wave_15_repos_in_scope": [
     "2real-team-framework"
@@ -206,7 +206,7 @@
   "wave_2_final_pr_count": 4,
   "wave_2_changes_requested_cycles": 1,
   "wave_2_top_concentration_pct": 25,
-  "last_completed_wave": "wave-14",
+  "last_completed_wave": "wave-15",
   "current_wave": "wave-15",
   "global_wave_seq": 15,
   "wave_1_phase": 3,
@@ -238,5 +238,9 @@
   "wave_14_final_pr_count": 3,
   "wave_14_changes_requested_cycles": 0,
   "wave_14_top_concentration_pct": 33,
-  "wave_15_meta_issue": "#237"
+  "wave_15_meta_issue": "#237",
+  "wave_15_completed_at": "2026-07-08T00:56:05Z",
+  "wave_15_final_pr_count": 2,
+  "wave_15_changes_requested_cycles": 0,
+  "wave_15_top_concentration_pct": 50
 }

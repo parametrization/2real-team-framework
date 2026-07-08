@@ -427,3 +427,40 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | Flagship architectural PR that fixed the exact W13 scorer-erasure, verified against live history; clean self-recovery of a local-main slip | 5-ready but blocked by the single reserved-5; the local-main `cd`-to-root slip (now a recorded hazard memory) is the one blemish — avoid it next time and the flagship pattern takes the 5. |
 | Ibrahim El-Amin | Correct, dual-deployed S3 + a textbook non-destructive recovery of a wrong-branch commit under a live collision | metrics clean, caught=0; S3 was the lightest story (docs + a counting helper) — to move toward 5, author something architecturally load-bearing or land a real blocking catch. |
 | Paloma Gupta | Two genuine mutation-checked reviews from clean isolation; the only engineer who neither authored nor hit an incident — pure steady reviewing | caught=0 across 2 reviews (clean wave, nothing to catch); consider authoring next wave — a reviewer-only wave can't move you off 4. |
+
+## Wave 15 Trust Updates (2026-07-08) — Phase 6 Wave 10: "Harden the installer"
+
+> **2 PRs, 0 changes-requested cycles, 50% top concentration (2 distinct authors), 809 tests. All 4
+> reviewer verdicts clean first-pass.** Two file-disjoint installer/harness tech-debt fixes (the deferred
+> W8 follow-on). Shipped as **v0.10.2** (patch — internal hardening). `trust_signals score 15`: Paloma
+> `difficulty_points=2` (S1, ~195 lines), Ibrahim `difficulty_points=3` (S2, ~258 lines), both delta 0.
+> Edit-history catch-crediting did NOT fire again — a clean wave, no amend-in-place catches to credit.
+>
+> **✅ The two W14 orchestration incidents did NOT recur.** Agents were spawned with DISTINCT names
+> (PalomaW10/IbrahimW10/NiaW10/PalomaRevW10/TariqW10) + explicit `isolation: worktree` → no worktree
+> collision. Both feature PRs were confirmed 12/12 CI-green (`gh pr view --json statusCheckRollup`) BEFORE
+> the gated merge → no red-merge. The W14 process proposals worked as intended.
+>
+> **One contained incident (Paloma, non-charged):** during an ad-hoc e2e check, a compound Bash command
+> interacting with the identity hook (hook blocked the line before its `mkdir` ran; a follow-up `cd` into
+> the never-created dir silently failed → subsequent commands ran in the worktree root) caused an errant
+> `bootstrap` to clobber `.claude/framework.config.json` and drop install artifacts **inside her isolated
+> worktree**. She detected it immediately via `git status`, restored with `git checkout`, removed the stray
+> artifacts, and verified the final PR diff was exactly the 2 intended files. Contained to the throwaway
+> worktree, never reached the PR — a POSITIVE detection/recovery signal, not a defect.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | reserved-5 **HELD**. Sole reviewer of BOTH PRs (author-exclusive on neither), and the only reviewer to QA-probe across the whole wave. Mutation-proved every load-bearing guarantee: on S1, rewrote the reconcile as a union and confirmed it FAILS 3 tests (a union would pass the subset oracle while leaving stale garbage — the exact trap); on S2, reverted to pre-#155 skip-on-failure and confirmed BOTH item-1 fingerprint tests fail. Surfaced 2 precise non-blocking tech-debt notes (framework-list reset semantics; a pre-existing bare `KeyError`) without inflating them to blockers. QA rigor that keeps the reserved-5 earned. delta 0, must_fix_received=0, ci_red=0. |
+| Ibrahim El-Amin | 4 | **4** | Authored S2 (#241, difficulty 3): all 4 in-scope provisioner items, cleanly — the safety-critical item 1 (after-fingerprint in `finally`, `SourceMutatedError` prioritized, original error not swallowed) verified load-bearing by both reviewers' mutation probes. Correctly deferred item 4 to #101 (documented, not dropped), and flagged the concurrent-agent temp-file collision (switched to uniquely-named files) — good operational awareness. Also renamed a mis-paired test file to satisfy the pairing gate rather than bypass it. delta 0, clean. Held at 4 — solid senior authorship, no blocking catch or flagship-architectural seam to move to 5. |
+| Nia Rossi | 4 | **4** | Reviewed S1 (#240), clean `Replied` with real depth — drove an ACTUAL amend over a hand-diverged config (stale entries dropped, canonical order verified, oracle flipped False→True), confirmed user-field preservation field-by-field, and ran the same union-mutation probe independently. TL-grade verification. But a review-only wave (as her own W14 note to Paloma warned) can't move her off 4 — **still 5-ready, now 3 of the last 4 waves at flagship-or-flagship-review caliber without taking the reserved-5.** The rotation tension is now the sharpest standing item. delta 0. |
+| Paloma Gupta | 4 | **4** | Authored the flagship S1 (#240, difficulty 2): the amend-reconcile fix — correct converge-on-canonical semantics, idempotent, fail-open, user fields preserved (verified by all three review lenses). ALSO reviewed S2 (#241) with genuine mutation probes (reverted the `finally` block → tests fail; reverted merge→replace → `KeyError`; grepped out all `/home/` literals). Author + substantive cross-review in one wave. The contained worktree incident was caught and cleanly recovered by her own `git status` discipline — no PR impact. delta 0. Held at 4; a blocking catch or a larger architectural seam is the path to 5. |
+
+### Done Well / Needs Improvement (Wave 15 / Phase 6 Wave 10)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | QA-probed both PRs with real union/finally-removal mutations; kept 2 tech-debt notes appropriately non-blocking; the reserved-5 rode on QA rigor this wave, not authorship | metrics clean, caught=0 (genuinely clean wave); the #243 KeyError follow-up you surfaced is a natural pickup to own end-to-end. |
+| Ibrahim El-Amin | Clean 4-item provisioner fix with the safety-critical fingerprint path proven load-bearing; documented the #101 deferral; flagged the temp-collision | to move toward 5, author an architecturally load-bearing seam or land a real blocking catch — S2 was solid-but-scoped hardening. |
+| Nia Rossi | TL-grade S1 review with an independent end-to-end amend reproduction + union mutation probe | 5-ready but review-only this wave — as your own W14 guidance said, that can't move you off 4; author or catch next wave and the reserved-5 rotation finally resolves in your favor. |
+| Paloma Gupta | Flagship authorship + a genuinely mutation-probed cross-review in the same wave; self-caught and recovered a worktree clobber with zero PR impact | the errant-bootstrap incident traces to a compound `cd`-after-hook-block Bash pattern — tighten e2e scripting (guard `cd` on `mkdir` success, or run e2e in an explicit scratch dir) so a hook-blocked line can't silently redirect later commands. |

@@ -840,3 +840,64 @@ messiest-run wave of the phase. Both are the orchestrator's, not the engineers'.
   completeness follow-up.
 - **#234** — node RNG seed + name-dedupe root fix (then remove the S2 `vitest --retry` quarantine).
 - Minor nit: unused `pr_key` loop var in `review_load.py` (Tariq's S3 review).
+
+## Wave 15 Retro (2026-07-08) — Phase 6 Wave 10: "Harden the installer"
+
+**Shipped v0.10.2 (patch).** 2 file-disjoint stories, 2 PRs, **0 changes-requested cycles**, 50%
+concentration (2 authors), 809 tests. All 4 reviewer verdicts clean first-pass. Meta #237; stories
+#238 (fix #162) + #239 (fix #155, 4/5 items). The deferred W8 installer-hardening follow-on, and the
+"installer-hardening second" half of the approved W9→W10 two-wave plan.
+
+### What went well
+1. **Both W14 incidents were designed out.** Agents spawned with distinct names + explicit
+   `isolation: worktree` → **no worktree collision**. Both PRs confirmed 12/12 CI-green via
+   `statusCheckRollup` **before** the gated merge → **no red-merge**. The W14 proposals worked; the
+   CI-green hook is live on main as a backstop but the orchestrator's manual green-check held on its own.
+2. **Reviews were genuinely adversarial, not rubber-stamps.** All three reviewers ran mutation probes:
+   Nia + Tariq independently confirmed a union-instead-of-reconcile fails the S1 oracle; Paloma + Tariq
+   confirmed removing S2's `finally` block or reverting merge→replace fails the tests. This is the review
+   rigor the phase has been building toward — and it held on a clean wave (nothing to catch, but the
+   probes proved the tests are load-bearing rather than passing trivially).
+3. **File-disjoint scoping held clean** (`framework/install/bootstrap.py` vs
+   `framework/harness/real_provision.py`) — zero cross-story churn, both PRs mergeable independently.
+4. **Engineers self-corrected without escalation:** Ibrahim renamed a mis-paired test to satisfy the
+   pairing gate (didn't bypass it) and switched to uniquely-named temp files on collision; Paloma caught
+   and recovered her own worktree clobber via `git status` before it touched the PR.
+
+### Incidents (both contained, non-charged, minor)
+1. **Errant bootstrap in Paloma's isolated worktree.** A compound Bash command interacted with the
+   identity hook: the hook blocked the line *before* its `mkdir` ran, so a later `cd` into the
+   never-created dir silently failed and subsequent commands executed in the worktree root — an ad-hoc
+   `bootstrap` then clobbered `.claude/framework.config.json` and dropped install artifacts. Detected
+   immediately (`git status`), restored (`git checkout`), stray artifacts removed; the final PR diff was
+   verified to be exactly the 2 intended files. **Contained to the throwaway worktree; never reached the
+   PR.** Root pattern: a hook-blocked line in a `&&`/`;` chain can leave a later `cd` pointing at the
+   wrong dir.
+2. **Concurrent-agent temp-file collision.** Two parallel author agents both wrote `commitmsg.txt`/
+   `prbody.md` into the shared job tmp dir and clobbered each other mid-run. Ibrahim switched to
+   `ibrahim_*`-prefixed names. No lost work. (Reviewers were subsequently instructed to prefix temp files
+   per-agent; it worked.)
+
+### New proposals (need owner approval before a future wave adopts them)
+1. **Per-agent temp-file namespacing as a spawn-prompt standard (fixes incident #2).** Every spawned
+   agent must write scratch/commit-message/PR-body files under a name prefixed with its own identity
+   (e.g. `paloma_prbody.md`), never a bare shared name, since the job tmp dir is shared across concurrent
+   agents. Add it to the author/reviewer prompt boilerplate.
+2. **Guard e2e `cd` on `mkdir` success (fixes incident #1).** When an agent runs ad-hoc end-to-end
+   checks, either run them in an explicit pre-created scratch dir or chain `mkdir -p X && cd X && …` so a
+   hook-blocked or failed `mkdir` cannot silently redirect later commands into the worktree root. Consider
+   a short "e2e hygiene" note in the engineer charter.
+3. **Resolve the reserved-5 rotation (now the sharpest standing item).** Nia has delivered
+   flagship-or-flagship-review caliber work in 3 of the last 4 waves (W12 flagship, W14 flagship author,
+   W15 TL-grade review) without ever taking the reserved-5, purely because Tariq (the incumbent 5) hasn't
+   decayed. The W14 "finer difficulty signal / rotational-on-tie" proposal is still unadopted; W15 makes
+   it pressing — either make the reserved-5 explicitly rotational when a 4 posts N consecutive
+   flagship-caliber waves, or split author-vs-reviewer excellence into distinct signals so a review-only
+   wave isn't a dead end for a 5-ready engineer.
+
+### Carry-over (open, owner picks into a future wave)
+- **New this wave:** #242 (doc note: amend reconciles framework-owned hook lists to canonical) · #243
+  (friendlier error on source-less new-bucket `--real-config` partial patch — pre-existing).
+- **Still open:** #101 item 4 (bare B10 zero-children guard) · #234 (node RNG seed + name-dedupe, then
+  drop the `vitest --retry` quarantine) · the rulesets-vs-classic branch-protection probe · #110
+  (distribute as a Claude Code skill) · more #102 P2.
