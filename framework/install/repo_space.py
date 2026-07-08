@@ -236,6 +236,25 @@ def restore_assets(
     return result
 
 
+def find_latest_archive(repo_root: Path | str) -> Path | None:
+    """The most recent consented archive dir (``.claude-backups/<UTC>/`` with a manifest), or None.
+
+    Archives are named by their UTC stamp, so a lexical sort is chronological — the last entry is
+    the newest. Only a directory carrying a :data:`MANIFEST_NAME` counts (a half-made or foreign
+    dir is skipped), so the result is always something :func:`restore_assets` can read. This lives
+    here because ``repo_space`` owns the archive format; both the uninstaller and the standalone
+    ``restore`` command reverse the same archive.
+    """
+    base = Path(repo_root) / BACKUPS_DIRNAME
+    if not base.is_dir():
+        return None
+    archives = sorted(
+        (d for d in base.iterdir() if d.is_dir() and (d / MANIFEST_NAME).is_file()),
+        key=lambda d: d.name,
+    )
+    return archives[-1] if archives else None
+
+
 # ------------------------------------------------------------------- disposition choice
 
 
