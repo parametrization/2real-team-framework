@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.3 (Phase 6 Wave 11: HARDEN + PROCESS — friendly MissingFixtureError on source-less new-bucket --real-config [#243], opt-in zero-children guard [#244], amend-reconcile doc note [#242], node-flake root-fix [#234: bare-name dedupe + seedable RNG, --retry=2 dropped], charter process hardening [#245: per-agent temp namespacing + e2e cd/mkdir hygiene]), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.4 (Phase 6 Wave 12: SYMMETRIC TRUST SCORING + ROLLUP HYGIENE — new verified_reviews positive signal + newly-active rework_cycles≥2 ding + must_fix_received ding tightened ≥3→≥2 [#254], rollup-hygiene charter runbook step codifying the W11 stale-local-branch slip [#255]), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,8 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-08): released v0.10.3 — Phase 6 Wave 11 (HARDEN + PROCESS)
-COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-08): released v0.10.4 — Phase 6 Wave 12 (SYMMETRIC TRUST
+SCORING + ROLLUP HYGIENE) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
@@ -40,8 +40,23 @@ fixtures, merge-not-replace `--real-config` overrides, nested-child `mkdir(paren
 source-less new-bucket `--real-config` (#243), an opt-in default-off zero-children guard (#244), an
 amend-reconcile install-doc note (#242), the node-flake root-fix (#234: dedupe on bare names + seedable
 RNG, `--retry=2` quarantine dropped), and charter process hardening (#245: per-agent temp namespacing +
-e2e cd/mkdir hygiene promoted from the W14/W15 retros). See [[handoff]] for the exact pickup (next = owner
-picks the theme; **no wave reserved**, stub #253 filed). The
+e2e cd/mkdir hygiene promoted from the W14/W15 retros); **Phase 6 Wave 12** (v0.10.4) *made trust scoring
+SYMMETRIC* — the owner chose option (3) "verified-clean-review positive signal" but required it be
+counter-balanced by downward signals: new `verified_reviews` credit (a clean review with a substantive
+`Verified:` block of concrete checks; anti-gaming `_has_verified_checks` gate rejects empty/boilerplate
+blocks) earns +1 on a clean wave at ≥2, while `rework_cycles≥2` newly dings −1 and `must_fix_received`
+ding tightened ≥3→≥2 (#254/PR #257, Paloma→Nia+Tariq); plus a rollup-hygiene charter runbook step
+(fetch + merge `origin/<wave>` explicitly, never a stale LOCAL ref, then verify feature-code on the merge
+parent) codifying the W11 slip (#255/PR #256, Ibrahim→Tariq+Paloma). **2 PRs / 0 CR / 50% conc; all 4
+verdicts clean first-pass.** `trust_signals score 17`: **all four delta 0** — `verified_reviews` debut
+validated BOTH directions (credited the 2 substantive #257 blocks [Nia, Tariq], anti-gaming REJECTED the
+2 empty #256 blocks [Tariq, Paloma]), but each reviewer landed at 1 < 2 bonus threshold → no bump; no
+decay (all have a signal), no retirement. **Reserved-5 still HELD (Tariq 5, others 4) — now
+threshold-bound: rotation waits on a wave large/concentrated enough to clear ≥2 verified reviews.** New
+tech-debt #258 (per-(reviewer,PR) `verified_reviews` dedup) / #259 (tighten bare-`determinism`
+`_VERIFIED_CHECK_RE`). Both S1 + S2 dogfooded THIS wave (symmetric signal scored this very retro; rollup
+step used in this wave's own escape-hatch rollup → content-probe PASS). See [[handoff]] for the exact
+pickup (next = owner picks the theme; **no wave reserved**, stub #260 filed for wave 18). The
 foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
 
 **Phase 6 Wave 11 → v0.10.3 (2026-07-08, rollup direct-push merge `be5ec26`, bump `68814f8`, retro
