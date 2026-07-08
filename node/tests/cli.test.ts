@@ -311,6 +311,75 @@ describe("generateName dedupe compares bare names (#234)", () => {
     rmSync(tmp, { recursive: true });
   });
 
+  it("warns on stderr when a card's **Name:** cannot be parsed (#252)", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-usednames-warn-"));
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    mkdirSync(rosterDir, { recursive: true });
+    // A card with NO **Name:** field -> extractField returns null -> the fallback
+    // (filename-derived) name is used AND a stderr warning must be emitted.
+    writeFileSync(
+      join(rosterDir, "senior_engineer_no_name.md"),
+      "## Identity\n- **Role:** Software Engineer\n- **Level:** Senior\n",
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const used = usedNamesFromRoster(rosterDir);
+      // Behavior UNCHANGED: the filename-derived fallback still lands in the set.
+      expect(used.has("senior engineer no name")).toBe(true);
+      // The new observable signal: a visible warning naming the card + the fallback.
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      const msg = String(errSpy.mock.calls[0][0]);
+      expect(msg).toMatch(/senior_engineer_no_name\.md/);
+      expect(msg).toMatch(/no parseable \*\*Name:\*\* field/);
+      expect(msg).toMatch(/senior engineer no name/);
+
+      // Revert->red proof (in-memory, no git checkout): re-run the SAME parse with
+      // the production warn stripped out. The fallback still happens (set unchanged)
+      // but NO warning is emitted -> the toHaveBeenCalled assertion above would fail.
+      errSpy.mockClear();
+      const stripped = (dir: string): Set<string> => {
+        const s = new Set<string>();
+        for (const f of readdirSync(dir).filter((x) => x.endsWith(".md"))) {
+          const stem = f.replace(/^_departed_/, "").replace(/\.md$/, "");
+          let name: string | null = null;
+          try {
+            name = extractField(readFileSync(join(dir, f), "utf-8"), "Name");
+          } catch {
+            name = null;
+          }
+          // fallback WITHOUT the console.error warn (pre-#252 behavior)
+          s.add(name && name.trim() ? name.trim() : stem.replace(/_/g, " "));
+        }
+        return s;
+      };
+      const usedStripped = stripped(rosterDir);
+      expect(usedStripped.has("senior engineer no name")).toBe(true); // fallback intact
+      expect(errSpy).not.toHaveBeenCalled(); // but silent -> real assertion would go red
+    } finally {
+      errSpy.mockRestore();
+    }
+    rmSync(tmp, { recursive: true });
+  });
+
+  it("does not warn when **Name:** parses cleanly (#252 control)", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "test-usednames-nowarn-"));
+    const rosterDir = join(tmp, ".claude", "team", "roster");
+    mkdirSync(rosterDir, { recursive: true });
+    writeFileSync(
+      join(rosterDir, "senior_engineer_jane_doe.md"),
+      "## Identity\n- **Name:** Jane Doe\n- **Role:** Software Engineer\n",
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const used = usedNamesFromRoster(rosterDir);
+      expect(used.has("Jane Doe")).toBe(true);
+      expect(errSpy).not.toHaveBeenCalled(); // clean parse -> no warning
+    } finally {
+      errSpy.mockRestore();
+    }
+    rmSync(tmp, { recursive: true });
+  });
+
   it("generateName rejects a candidate already on the roster", () => {
     // used holds the BARE name, exactly as usedNamesFromRoster now produces it.
     const used = new Set<string>(["Aisha Rossi"]);
