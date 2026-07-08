@@ -197,3 +197,126 @@ export function describeInstallResult(result: FrameworkInstallResult): string {
       return "Installed the framework runtime (hooks/lib/skills/config).";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Teardown/restore family — the reverse of installFramework.
+//
+// `uninstall` and `restore` are thin bridges to the same bundled Python
+// commands (`framework/install/uninstall.py`, `framework/install/restore.py`),
+// spawned exactly like the bootstrapper so the teardown logic keeps a single
+// source of truth in Python. They mirror the Python package's
+// `real_team.framework_install.{uninstall,restore}_framework` bridges.
+// ---------------------------------------------------------------------------
+
+export type TeardownCommand = "uninstall" | "restore";
+
+export interface TeardownOptions {
+  /** Preview only; the subprocess writes nothing (`--dry-run`). */
+  dryRun?: boolean;
+  /**
+   * Automation contract: never prompt (`--non-interactive`). Left falsy, the
+   * subprocess keeps its consent gate — it prompts on a TTY and REFUSES on a
+   * non-TTY rather than mutating unattended. Passing this through unchanged is
+   * what preserves the Python side's safety contract end-to-end.
+   */
+  nonInteractive?: boolean;
+}
+
+export type TeardownResult =
+  | { kind: "ran"; status: number; stdout: string; stderr: string; argv: string[] }
+  | { kind: "no-framework" }
+  | { kind: "no-python" };
+
+/**
+ * Build the exact argv used to subprocess a teardown command. Mirrors the
+ * uninstall.py / restore.py argparse contract: a positional target followed by
+ * the optional `--non-interactive` then `--dry-run` flags (same order the
+ * Python bridge emits).
+ */
+export function buildTeardownArgv(
+  python: string,
+  frameworkRoot: string,
+  command: TeardownCommand,
+  target: string,
+  opts: TeardownOptions = {},
+): string[] {
+  const argv = [python, join(frameworkRoot, "install", `${command}.py`), target];
+  if (opts.nonInteractive) argv.push("--non-interactive");
+  if (opts.dryRun) argv.push("--dry-run");
+  return argv;
+}
+
+/**
+ * Reverse a framework install in `target` via its own bundled Python command.
+ *
+ * Degrades the same way as {@link installFramework}: `{ kind: "no-framework" }`
+ * when the bundled assets are missing, `{ kind: "no-python" }` when no Python 3
+ * interpreter is on PATH. Unlike `init` (where degradation is a soft notice on
+ * top of completed scaffolding) a teardown that cannot run has done nothing, so
+ * callers should surface it as a hard failure.
+ */
+export function runTeardown(
+  command: TeardownCommand,
+  target: string,
+  opts: TeardownOptions = {},
+  runner: SpawnRunner = defaultRunner,
+): TeardownResult {
+  const root = resolveFrameworkRoot();
+  if (root === null) return { kind: "no-framework" };
+
+  const python = findPython(runner);
+  if (python === null) return { kind: "no-python" };
+
+  const argv = buildTeardownArgv(python, root, command, target, opts);
+  const res = runner(argv[0], argv.slice(1), { encoding: "utf-8" });
+  return {
+    kind: "ran",
+    status: res.status ?? 1,
+    stdout: String(res.stdout ?? ""),
+    stderr: String(res.stderr ?? ""),
+    argv,
+  };
+}
+
+/** Uninstall the framework runtime — thin alias over {@link runTeardown}. */
+export function uninstallFramework(
+  target: string,
+  opts: TeardownOptions = {},
+  runner: SpawnRunner = defaultRunner,
+): TeardownResult {
+  return runTeardown("uninstall", target, opts, runner);
+}
+
+/** Restore a repo's pre-install originals — thin alias over {@link runTeardown}. */
+export function restoreFramework(
+  target: string,
+  opts: TeardownOptions = {},
+  runner: SpawnRunner = defaultRunner,
+): TeardownResult {
+  return runTeardown("restore", target, opts, runner);
+}
+
+/**
+ * Human-readable degradation message for a teardown that could not run. Mirrors
+ * describeInstallResult's phrasing for the shared no-framework / no-python
+ * cases, worded for a teardown (nothing was scaffolded to fall back on).
+ */
+export function describeTeardownDegradation(
+  command: TeardownCommand,
+  result: { kind: "no-framework" } | { kind: "no-python" },
+): string {
+  switch (result.kind) {
+    case "no-framework":
+      return (
+        `Cannot ${command}: bundled framework assets not found ` +
+        `(re-run from a source checkout, or use the standalone framework ${command} command).`
+      );
+    case "no-python":
+      return (
+        `Cannot ${command}: no Python 3 interpreter found on PATH.\n` +
+        "The teardown/restore logic is a Python command bundled with this package.\n" +
+        "Install python3 (https://www.python.org/downloads/) and re-run, or use the\n" +
+        "Python package instead: `pip install 2real-team-framework`."
+      );
+  }
+}

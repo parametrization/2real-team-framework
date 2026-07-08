@@ -1523,3 +1523,110 @@ class TestRestore:
             app, ["restore", "--target", str(tmp_path), "--non-interactive"]
         )
         assert result.exit_code == 0, result.output
+
+
+class TestInstallBranch:
+    """The packaged ``2real-team install-branch`` command (bridges to install_branch.py, #279)."""
+
+    def test_non_git_repo_refuses(self, tmp_path: Path):
+        """A non-git target refuses (exit 1) and creates nothing (message wraps under rich, so
+        assert behaviorally; the engine test covers the exact message text)."""
+        result = runner.invoke(
+            app, ["install-branch", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "git repo" in result.output.lower()  # the plan line printed before refusing
+        assert not (tmp_path / ".claude").exists()
+
+    def test_dry_run_creates_no_branch(self, tmp_path: Path):
+        """--dry-run on a clean git repo previews the plan; creates no branch and no files."""
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@t",
+             "commit", "-q", "--allow-empty", "-m", "seed"], check=True,
+        )
+        result = runner.invoke(
+            app,
+            ["install-branch", "--target", str(tmp_path), "--dry-run", "--non-interactive"],
+        )
+        assert result.exit_code == 0, result.output
+        branches = subprocess.run(
+            ["git", "-C", str(tmp_path), "branch", "--list", "real-team/install"],
+            capture_output=True, text=True,
+        )
+        assert branches.stdout.strip() == ""
+        assert not (tmp_path / ".claude").exists()
+
+    def test_succeeds_on_realistic_repo(self, tmp_path: Path):
+        """Regression for #283's must-fix: a real repo (HEAD commit + a tracked file) is exactly
+        what install-branch exists to target, but the staged bootstrap used to run with no
+        ``--expect`` and inherit the shipped default ``repo.expect=fresh`` — which the
+        fresh-vs-existing gate REFUSES for a repo with a commit, rolling the staged branch back.
+        The command must default ``--expect`` to ``any`` so this succeeds out of the box."""
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (tmp_path / "README.md").write_text("# realistic repo\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@t",
+             "commit", "-q", "-m", "seed"], check=True,
+        )
+        result = runner.invoke(
+            app, ["install-branch", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        branches = subprocess.run(
+            ["git", "-C", str(tmp_path), "branch", "--list", "real-team/install"],
+            capture_output=True, text=True,
+        )
+        assert "real-team/install" in branches.stdout
+        installed = subprocess.run(
+            ["git", "-C", str(tmp_path), "show", "real-team/install:.claude/framework.config.json"],
+            capture_output=True, text=True,
+        )
+        assert installed.returncode == 0, installed.stderr
+
+    def _capture_cmd(self, monkeypatch) -> dict:
+        import subprocess
+
+        import real_team.framework_install as fi
+
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(fi.subprocess, "run", fake_run)
+        return captured
+
+    def test_default_threads_expect_any(self, monkeypatch, tmp_path: Path):
+        """Without an explicit --expect, the CLI must default to "any" — install-branch targets
+        an existing repo by definition, and the bootstrapper's shipped default (repo.expect=fresh)
+        would refuse it. subprocess.run is faked here to isolate flag-threading from the (heavy,
+        already-covered-elsewhere) real bootstrap run."""
+        captured = self._capture_cmd(monkeypatch)
+        result = runner.invoke(
+            app, ["install-branch", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 0, result.output
+        cmd = captured["cmd"]
+        assert "--expect" in cmd
+        assert cmd[cmd.index("--expect") + 1] == "any"
+
+    def test_expect_and_config_override_threaded(self, monkeypatch, tmp_path: Path):
+        captured = self._capture_cmd(monkeypatch)
+        cfg = tmp_path / "install.yaml"
+        cfg.write_text("version: 1\n", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["install-branch", "--target", str(tmp_path), "--expect", "existing",
+             "--config", str(cfg), "--non-interactive"],
+        )
+        assert result.exit_code == 0, result.output
+        cmd = captured["cmd"]
+        assert "--expect" in cmd and "existing" in cmd
+        assert "--install-config" in cmd and str(cfg) in cmd
