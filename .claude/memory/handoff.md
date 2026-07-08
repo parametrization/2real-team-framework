@@ -29,7 +29,7 @@ rules for running waves (all validated again this wave):
   impact).
 
 ## Pickup (next concrete step)
-**Phase 6 Wave 10 is DONE and released. main is at `d979da2` (v0.10.2, ontology refreshed). Nothing in
+**Phase 6 Wave 10 is DONE and released. main is at `2253463` (v0.10.2; ontology + memory committed). Nothing in
 flight; tree clean.** Next action is an **owner decision**: pick the next wave/phase theme. **No wave
 reserved.** Do NOT start a wave without theme + kickoff approval (gate). Next global wave = **16** (Phase 6
 Wave 11); wave branch would be `deployments/phase6/wave-11`; tag `deployments-phase6-wave-11`.
@@ -43,9 +43,9 @@ Wave 11); wave branch would be `deployments/phase6/wave-11`; tag `deployments-ph
 - **Process:** the three W15-retro proposals (per-agent temp namespacing; guard e2e `cd`; **resolve the
   reserved-5 rotation** — Nia is flagship-caliber 3 of the last 4 waves without taking the 5). The rotation
   call is the sharpest standing item.
-- **Larger:** #101 (noorinalabs meta+children run — owns provisioner item 4, the B10 zero-children guard).
-  **#110** distribute 2real as a Claude Code skill (exploratory; likely its own Phase 7). **More #102 P2**
-  (governance charter modules, GH-Projects automation).
+- **Larger:** **#244** (provisioner item 4 — B10 zero-children guard; split out of #155 at W10 wrapup
+  because its old owner #101 turned out to be CLOSED). **#110** distribute 2real as a Claude Code skill
+  (exploratory; likely its own Phase 7). **More #102 P2** (governance charter modules, GH-Projects auto).
 
 ## What shipped this session — Phase 6 Wave 10 → v0.10.2
 Rollup direct-push merge **`69e7ca6`**; bump **`2585ae8`** (0.10.1→0.10.2, PATCH — internal installer/harness
@@ -60,7 +60,7 @@ closed). **2 PRs, 0 CR cycles, 50% concentration, 809 tests, all 4 verdicts clea
 - **S2 #239/PR#241 (Ibrahim → Paloma + Tariq):** real-repo provisioner hardening 4/5 in
   `framework/harness/real_provision.py` — partial-clone fingerprint-on-failure (try/finally,
   `SourceMutatedError` prioritized), de-hardcoded fixtures, merge-not-replace `--real-config`, nested-child
-  `mkdir(parents=True)`. Item 4 (B10 zero-children) → #101. Test file renamed to `test_real_provision.py`.
+  `mkdir(parents=True)`. Item 4 (B10 zero-children) → #244 (old owner #101 was closed). Test file renamed to `test_real_provision.py`.
 
 ## Team / trust — reserved-5 HELD (Tariq); Nia 5-ready (rotation tension)
 - `score 15`: Paloma difficulty=2 / Ibrahim difficulty=3, both delta 0; clean wave, edit-history crediting
@@ -73,12 +73,12 @@ closed). **2 PRs, 0 CR cycles, 50% concentration, 809 tests, all 4 verdicts clea
   bootstrap-clobber, recovered no-PR-impact; concurrent-agent temp collision) → proposals logged.
 
 ## Mechanical state
-- Branch: **main** @ `d979da2` (clean; ontology refresh committed).
+- Branch: **main** @ `2253463` (clean; ontology + memory committed).
 - Release **v0.10.2** live (verify: `gh release view v0.10.2`; npm `latest`=0.10.2; PyPI `/0.10.2/json`=200
   — all confirmed this session). Open PRs: none. Wave branch `deployments/phase6/wave-10` + both feature
   branches merged & deleted (remote); `deployments-phase6-wave-10` tag preserves the ref. Orchestrator
   worktree `.claude/worktrees/nia-review-s2` (detached) may still be listed — harmless.
-- Open issues: **#242**/**#243** (new W10 tech-debt) · **#234** (node RNG) · **#101** (meta+children;
-  owns provisioner item 4) · **#102** (more P2) · exploratory **#110**.
+- Open issues: **#242**/**#243**/**#244** (new W10 tech-debt; #244 = provisioner item 4, re-homed off the
+  closed #101) · **#234** (node RNG) · **#102** (more P2) · exploratory **#110**.
 - Lifecycle: `last_completed_wave=wave-15` (phase 6, wave-branch, pr=2, cr_cycles=0, concentration=50);
   `current_wave=wave-15`; **no wave reserved**; next allocate = **wave 16** (theme TBD).

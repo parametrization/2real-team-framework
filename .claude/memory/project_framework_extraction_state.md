@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.2 (Phase 6 Wave 10: HARDENED the installer — amend path reconciles [not unions] config hook module-lists onto canonical [#162], real-repo provisioner hardening [#155 items 1/2/3/5: partial-clone fingerprint-on-failure, de-hardcoded fixtures, merge-not-replace overrides, nested-child mkdir; item 4→#101]; the deferred W8 follow-on), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.2 (Phase 6 Wave 10: HARDENED the installer — amend path reconciles [not unions] config hook module-lists onto canonical [#162], real-repo provisioner hardening [#155 items 1/2/3/5: partial-clone fingerprint-on-failure, de-hardcoded fixtures, merge-not-replace overrides, nested-child mkdir; item 4→#244]; the deferred W8 follow-on), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -35,7 +35,7 @@ rollup escape-hatch, mechanized wave-end review-load; **Phase 6 Wave 10** (v0.10
 installer* — the deferred W8 follow-on: the amend path now reconciles (not unions) the config hook
 module-lists onto the canonical shipped set so an upgrade-over-diverged install drops stale entries (#162),
 and the real-repo provisioner got 4/5 hardening items (partial-clone fingerprint-on-failure, de-hardcoded
-fixtures, merge-not-replace `--real-config` overrides, nested-child `mkdir(parents=True)`; item 4→#101)
+fixtures, merge-not-replace `--real-config` overrides, nested-child `mkdir(parents=True)`; item 4→#244, re-homed at W10 wrapup off the closed #101)
 (#155). See [[handoff]] for the exact pickup (next = owner picks the theme; **no wave reserved**). The
 foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
 
@@ -51,7 +51,8 @@ concentration (2 distinct authors), 809 tests. All 4 reviewer verdicts clean fir
   `agent`→[], `stop`→["session_handoff"]) while preserving user fields (`scm.owner`, `policy`, user
   `pre_push_commands`). Idempotent, fail-open on malformed config. All three reviewers mutation-proved a
   union would still fail the oracle.
-- **S2 #239/PR#241 (Ibrahim → Paloma + Tariq):** fixes #155 items 1/2/3/5 (item 4 owned by #101). In
+- **S2 #239/PR#241 (Ibrahim → Paloma + Tariq):** fixes #155 items 1/2/3/5 (item 4→#244, re-homed at W10
+  wrapup off the closed #101). In
   `framework/harness/real_provision.py`: (1) the read-only source after-fingerprint assertion now runs on
   partial clone failure via try/finally, `SourceMutatedError` prioritized, original error not swallowed;
   (2) removed hardcoded `/home/...` `DEFAULT_REAL_FIXTURES` (env-overridable `_default_source()`); (3)
