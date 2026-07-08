@@ -36,6 +36,7 @@ Split the module into two cleanly separated layers:
 | `ci_red_merges` | PRs they authored that merged with a failing required check | negative (hard) |
 | `rework_cycles` | PRs they authored that needed ≥1 rework round | negative |
 | `review_false_positives` | review findings they raised that were later self-retracted | negative (review quality) |
+| `verified_reviews` | clean reviewer verdicts carrying a concrete `Verified:` block (≥1 real check, anti-gaming) | positive (review rigor) |
 
 ### Scoring rules (symmetric, clamped)
 
@@ -43,9 +44,12 @@ A single iteration must not swing trust across the whole scale, so clamp the
 delta to `[-2, +2]`:
 
 - **negative:** −1 per CI-red merge; −1 per review false-positive; −1 if
-  `must_fix_received >= 3`.
+  `must_fix_received >= 2`; −1 if `rework_cycles >= 2`. `rework_cycles` and
+  `must_fix_received` also count as negatives for the clean-wave gate below.
 - **positive (only when the iteration is clean of all negatives):** +1 for
-  `prs_merged >= 2`; +1 for `must_fix_caught >= 2`.
+  `prs_merged >= 2`; +1 for `must_fix_caught >= 2`; +1 for `verified_reviews >= 2`
+  (so demonstrated verification isn't zero-credit when there were no must-fixes
+  to catch).
 
 ### Supporting pure functions
 
@@ -115,20 +119,28 @@ class Signals:
     ci_red_merges: int = 0
     rework_cycles: int = 0
     review_false_positives: int = 0
+    verified_reviews: int = 0
     authored: list[int] = field(default_factory=list)
 
     def has_negative(self) -> bool:
-        return bool(self.must_fix_received or self.ci_red_merges or self.review_false_positives)
+        return bool(
+            self.must_fix_received or self.ci_red_merges
+            or self.review_false_positives or self.rework_cycles
+        )
 
 
 def score_delta(s: Signals) -> int:
     delta = -s.ci_red_merges - s.review_false_positives
-    if s.must_fix_received >= 3:
+    if s.must_fix_received >= 2:
+        delta -= 1
+    if s.rework_cycles >= 2:
         delta -= 1
     if not s.has_negative():
         if s.prs_merged >= 2:
             delta += 1
         if s.must_fix_caught >= 2:
+            delta += 1
+        if s.verified_reviews >= 2:
             delta += 1
     return max(-2, min(2, delta))
 

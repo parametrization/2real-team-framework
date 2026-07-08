@@ -108,6 +108,11 @@ Signals per engineer (all integers, all countable from the merged-PR set):
   review_false_positives       must-fix items they raised that were later
                                marked withdrawn/false-positive (negative —
                                review-quality signal).
+  verified_reviews             clean verdicts they issued as Requestor whose
+                               body carried a concrete ``Verified:`` block
+                               (>=1 real check, e.g. revert→red / Nx
+                               determinism / byte-parity) (positive —
+                               QA-rigor review signal).
   difficulty_points            summed coarse difficulty weight (1-3 per PR,
                                :func:`difficulty_weight`) over authored PRs;
                                feeds the reserved-5 tiebreak, not score_delta.
@@ -196,6 +201,28 @@ _MUST_FIX_LABEL_RE = re.compile(r"^\s*\**must[\s-]?fix\**:\s*(.*?)\s*$", re.IGNO
 _LIST_ITEM_RE = re.compile(r"^\s*(?:\d+[.)]|[-*+])\s+\S")
 _EMPTY_MUST_FIX_RE = re.compile(r"^(none|n/?a|-+|0)(?:\W|$)", re.IGNORECASE)
 
+# A reviewer's clean verdict may carry a ``Verified:`` block enumerating the
+# concrete checks they actually ran (the QA-rigor receipt). ``_VERIFIED_LABEL_RE``
+# matches that label line and captures any same-line remainder; the block runs
+# until a blank line or the next charter section label (``_SECTION_LABEL_RE``).
+# ``_VERIFIED_CHECK_RE`` recognizes >=1 CONCRETE verification token inside that
+# block — a boilerplate / empty ``Verified:`` with no such token does not count
+# (anti-gaming).
+_VERIFIED_LABEL_RE = re.compile(r"^\s*\**verified\**:\s*(.*?)\s*$", re.IGNORECASE)
+_SECTION_LABEL_RE = re.compile(
+    r"^\s*\**(?:requestor|requestee|requestorreplied|must[\s-]?fix|tech[\s-]?debt|review)\b",
+    re.IGNORECASE,
+)
+_VERIFIED_CHECK_RE = re.compile(
+    r"revert\s*(?:→|-+|to)?\s*red"  # revert→red / revert to red / revert-red
+    r"|byte[\s-]?parity"  # byte-parity
+    r"|\d+\s*[x×]\s*determinism|determinism"  # Nx / N× determinism
+    r"|ci[\s-]?rollup"  # CI-rollup ...
+    r"|(?:ci|rollup)\b[^\n]*\bsuccess"  # CI/rollup ... SUCCESS
+    r"|green\s+ci|ci\s+green",  # green CI
+    re.IGNORECASE,
+)
+
 
 def _strip_code_markup(text: str) -> str:
     """Remove fenced code blocks and inline code spans from *text*.
@@ -228,6 +255,15 @@ class Signals:
     ci_red_merges: int = 0
     rework_cycles: int = 0
     review_false_positives: int = 0
+    # Clean reviewer verdicts (as Requestor) whose comment body carried a
+    # parseable ``Verified:`` block enumerating >=1 concrete check
+    # (:func:`_has_verified_checks`, e.g. ``revert→red`` / ``Nx determinism`` /
+    # ``byte-parity`` / ``CI-rollup SUCCESS``). Positive — the QA-rigor review
+    # signal that credits demonstrated verification when there were no must-fixes
+    # to catch. An empty / boilerplate ``Verified:`` line does NOT count
+    # (anti-gaming). Feeds :func:`score_delta` (clean +1 at >=2) and the
+    # reserved-5 composite; never counted as a negative.
+    verified_reviews: int = 0
     # Summed coarse per-PR difficulty weight over the engineer's authored PRs
     # (:func:`difficulty_weight`, #229). A flagship correctness fix accrues 3, a
     # one-line config change 1, so a wave of hard work outranks a wave of trivial
@@ -249,12 +285,16 @@ class Signals:
                 self.ci_red_merges,
                 self.rework_cycles,
                 self.review_false_positives,
+                self.verified_reviews,
             )
         )
 
     def has_negative(self) -> bool:
         return bool(
-            self.must_fix_received or self.ci_red_merges or self.review_false_positives
+            self.must_fix_received
+            or self.ci_red_merges
+            or self.review_false_positives
+            or self.rework_cycles
         )
 
 
@@ -273,6 +313,11 @@ class Verdict:
     verdict: str | None
     false_positive: bool
     changes_requested: bool = False
+    # True when the comment body carried a parseable ``Verified:`` block
+    # enumerating >=1 concrete check (:func:`_has_verified_checks`). Credited as
+    # a ``verified_reviews`` signal to the Requestor only on a CLEAN verdict
+    # (``changes_requested`` is False).
+    verified: bool = False
 
 
 def _has_must_fix_items(body: str) -> bool:
@@ -303,6 +348,37 @@ def _has_must_fix_items(body: str) -> bool:
         while j < len(lines) and not lines[j].strip():
             j += 1
         if j < len(lines) and _LIST_ITEM_RE.match(lines[j]):
+            return True
+    return False
+
+
+def _has_verified_checks(body: str) -> bool:
+    """True when *body* carries a ``Verified:`` block enumerating >=1 concrete check.
+
+    The charter's QA-rigor convention writes the checks a reviewer actually ran
+    in a ``Verified:`` block (bare or bold label, value inline or on following
+    list lines). The block is credited as a ``verified_reviews`` signal only when
+    it names >=1 CONCRETE verification token (:data:`_VERIFIED_CHECK_RE` — e.g.
+    ``revert→red``, ``Nx determinism``, ``byte-parity``, ``CI-rollup SUCCESS``).
+    An empty ``Verified:`` line, or one whose items name no concrete token, does
+    NOT count (anti-gaming). The block ends at a blank line or the next charter
+    section label so a token in a later section (e.g. Tech-debt) is not borrowed.
+    Code spans / fenced blocks are stripped first so a token inside code or a
+    test name is never counted.
+    """
+    lines = _strip_code_markup(body).splitlines()
+    for i, line in enumerate(lines):
+        label_m = _VERIFIED_LABEL_RE.match(line)
+        if not label_m:
+            continue
+        block = [label_m.group(1)]
+        j = i + 1
+        while j < len(lines) and lines[j].strip() and not _SECTION_LABEL_RE.match(
+            lines[j]
+        ):
+            block.append(lines[j])
+            j += 1
+        if _VERIFIED_CHECK_RE.search("\n".join(block)):
             return True
     return False
 
@@ -373,6 +449,7 @@ def parse_verdicts(comment_bodies: list[str]) -> list[Verdict]:
                 verdict=verdict_str,
                 false_positive=is_false_positive,
                 changes_requested=changes_requested,
+                verified=_has_verified_checks(body),
             )
         )
     return out
@@ -1054,6 +1131,10 @@ def _account_pr(
     for v in verdicts:
         if v.false_positive and v.requestor:
             bucket(v.requestor).review_false_positives += 1
+        # Credit a verified review only on a CLEAN verdict (not a blocking
+        # Must-fix Request) whose body carried a concrete ``Verified:`` block.
+        if v.verified and not v.changes_requested and v.requestor:
+            bucket(v.requestor).verified_reviews += 1
 
     if pr_had_changes_requested:
         author_sig.rework_cycles += 1
@@ -1132,15 +1213,26 @@ def score_delta(sig: Signals) -> int:
       negative
         - each CI-red merge:                      -1  (hard ding)
         - each review false-positive:             -1
-        - 3+ must-fix items received as author:   -1
+        - 2+ must-fix items received as author:   -1
+        - 2+ rework cycles as author:             -1
       positive (only when the iteration is clean of the negatives above)
         - 2+ PRs merged clean:                    +1
         - 2+ must-fix items caught as reviewer:   +1
+        - 2+ verified reviews as reviewer:        +1  (QA-rigor path — a
+          reviewer's clean verdicts carrying concrete ``Verified:`` receipts;
+          credits demonstrated verification when there were no must-fixes to
+          catch)
+
+    ``rework_cycles`` and ``must_fix_received`` are both in
+    :meth:`Signals.has_negative`, so a rework-/must-fix-heavy wave can never also
+    collect the clean-wave positives above.
     """
     delta = 0
     delta -= sig.ci_red_merges
     delta -= sig.review_false_positives
-    if sig.must_fix_received >= 3:
+    if sig.must_fix_received >= 2:
+        delta -= 1
+    if sig.rework_cycles >= 2:
         delta -= 1
 
     clean = not sig.has_negative()
@@ -1148,6 +1240,8 @@ def score_delta(sig: Signals) -> int:
         if sig.prs_merged >= 2:
             delta += 1
         if sig.must_fix_caught >= 2:
+            delta += 1
+        if sig.verified_reviews >= 2:
             delta += 1
 
     return max(-2, min(2, delta))
@@ -1184,8 +1278,9 @@ def apply_distribution_discipline(
     """
 
     def composite(s: Signals) -> int:
-        # Reward output + good reviewing + difficulty of the work shipped;
-        # penalise the negatives. Pure ranking key, not a trust score. Adding
+        # Reward output + good reviewing (must-fix caught + verified reviews) +
+        # difficulty of the work shipped; penalise the negatives. Pure ranking
+        # key, not a trust score. Adding
         # ``difficulty_points`` (#229) is what makes the reserved-5 mechanical: a
         # flagship correctness fix (weight 3) outranks a one-liner (weight 1) at
         # equal PR count, so the top slot is not a narrative argument. Waves with
@@ -1194,6 +1289,7 @@ def apply_distribution_discipline(
         return (
             s.prs_merged
             + s.must_fix_caught
+            + s.verified_reviews
             + s.difficulty_points
             - s.must_fix_received
             - 2 * s.ci_red_merges
@@ -1225,13 +1321,16 @@ def negative_signal_line(name: str, sig: Signals) -> str:
             gaps.append(f"{sig.ci_red_merges} CI-red merge(s)")
         if sig.must_fix_received:
             gaps.append(f"{sig.must_fix_received} must-fix received")
+        if sig.rework_cycles:
+            gaps.append(f"{sig.rework_cycles} rework cycle(s)")
         if sig.review_false_positives:
             gaps.append(f"{sig.review_false_positives} review false-positive(s)")
         return f"{name}: " + ", ".join(gaps)
     return (
         f"{name}: metrics clean: prs_merged={sig.prs_merged}, "
         f"must_fix_received=0, ci_red_merges=0, false_positives=0, "
-        f"must_fix_caught={sig.must_fix_caught}"
+        f"must_fix_caught={sig.must_fix_caught}, "
+        f"verified_reviews={sig.verified_reviews}"
     )
 
 
