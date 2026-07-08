@@ -502,3 +502,49 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | Author wave at last (S3) — clean charter hardening with proven dual-deploy parity and a sanctioned manifest-refresh recovery | `prs_merged=1`, difficulty-2 docs work → not a +1 bump; the reserved-5 rotation stays unresolved on the mechanical clean-but-small rule, not on opportunity now. |
 | Ibrahim El-Amin | Root-caused the node flake and proved determinism before dropping the CI quarantine; load-bearing tests genuinely revert→red; cross-reviewed S1 with real probes | node flake root-fix was well-scoped hardening, not an architecturally load-bearing seam — author or catch bigger to reach 5. |
 | Paloma Gupta | Multi-issue S1 with a well-judged default-off guard + accurate docs; cross-reviewed S2 with 5× determinism runs | `must_fix_received=0` and clean, but no blocking catch or larger architectural seam — the standing path to 5. |
+
+## Wave 17 Trust Updates (2026-07-08) — Phase 6 Wave 12 "Symmetric trust scoring + rollup hygiene" → v0.10.4
+
+> **2 PRs, 0 changes-requested cycles, 50% top concentration (2 distinct authors). All 4 reviewer
+> verdicts clean first-pass.** Two file-disjoint stories: S1 made trust scoring **symmetric** (new
+> `verified_reviews` positive signal + newly-active `rework_cycles≥2` ding + `must_fix_received` ding
+> tightened ≥3→≥2, #254/PR #257), S2 codified the W11 stale-local-branch rollup slip into the charter
+> runbook (#255/PR #256). Shipped as **v0.10.4** (patch). `trust_signals score 17`: every engineer
+> **delta 0**.
+>
+> **✅ Debut validation of the signal this very wave shipped.** `verified_reviews` fired correctly and
+> *discriminated*: on #257 both reviewers (Nia, Tariq) wrote substantive `Verified:` blocks → each
+> credited +1; on #256 both reviewers (Tariq, Paloma) left **empty** `Verified:` blocks → the anti-gaming
+> `_has_verified_checks` gate **rejected both** (0 credit). The feature was exercised in both the credit
+> and the reject direction on its own introduction wave — the strongest possible dogfood. But each reviewer
+> reached only `verified_reviews=1`, below the `≥2` clean-wave bonus threshold, so no bump — correct for a
+> small 2-PR wave (a single clean review is not a bump, mirroring the single-clean-PR rule).
+>
+> **✅ S2 rollup-hygiene step dogfooded during this wave's own rollup.** The escape-hatch merge used
+> `git fetch origin` + explicit `git merge --no-ff origin/deployments/phase6/wave-12`, then content-probed
+> `main` (`verified_reviews` ×9 + `Rollup pre-flight` present) BEFORE the version bump — no repeat of the
+> W11 code-less-merge slip.
+>
+> **Reserved-5 tension persists mechanically.** The symmetric signal shipped partly to give QA rigor on a
+> clean wave a non-zero path, but on a 2-PR wave where reviewers split across the two PRs, each lands at
+> `verified_reviews=1` and no delta moves. Tariq holds 5 by incumbency (no decay — needs 3 signal-less
+> waves; he has a signal). This is by-design steady-state for a small clean wave, not a scoring gap — but
+> the rotation is still unresolved and now waits on a wave large enough (or a reviewer concentrated enough)
+> to clear the `≥2` verified-review threshold. New tech-debt #258 (per-(reviewer,PR) dedup) / #259 (tighten
+> bare-`determinism` regex) filed against the signal.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | reserved-5 **HELD** (incumbent; no decay — has a signal: `verified_reviews=1` from a substantive #257 Verified block that also surfaced tech-debt #258/#259). Reviewed both PRs; his #256 review left an empty `Verified:` block (correctly earned 0 credit there). `verified_reviews=1 < 2` bonus threshold, `must_fix_caught=0`. delta 0. |
+| Nia Rossi | 4 | **4** | Review-only again this wave: `verified_reviews=1` (substantive #257 Verified block with an independent anti-gaming reasoning trail). The new symmetric signal registered for her — the first wave it *could* — but at 1, below the `≥2` bonus. No authored PR this wave. delta 0; the reserved-5 rotation stays unresolved on the threshold, not on opportunity. |
+| Ibrahim El-Amin | 4 | **4** | Authored S2 (#256, difficulty 2): codified the rollup-hygiene runbook step with dual-tree byte-parity and template-rendered charter (`{{default_branch}}` canonical). `prs_merged=1` — a single clean PR is not a +1. His own review verdicts on #256 were clean but with empty Verified blocks (`verified_reviews=0`). delta 0. |
+| Paloma Gupta | 4 | **4** | Authored the flagship S1 (#257, difficulty 3, the meatiest story): made scoring symmetric end-to-end (new `verified_reviews` parse + `_has_verified_checks` anti-gaming gate + `rework_cycles≥2` / `must_fix_received≥2` dings + 9 load-bearing tests), and self-recovered a `git checkout` clobber of uncommitted edits during her own revert→red probe with zero PR impact. `prs_merged=1`, not a bump. delta 0; a blocking catch or larger seam remains the path to 5. |
+
+### Done Well / Needs Improvement (Wave 17 / Phase 6 Wave 12)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | Substantive #257 Verified block (14-case anti-gaming battery reasoning) that also surfaced two real non-blocking tech-debt items (#258/#259) as issues rather than blocking must-fixes | `verified_reviews=1 < 2` and `must_fix_caught=0` — his #256 Verified block was left empty (correctly zero-credit), so only one of his two reviews counted; reserved-5 held on incumbency, not a demonstrated bump. |
+| Nia Rossi | First wave the symmetric signal could register for a review-only engineer, and it did (`verified_reviews=1`) with an independent block-scoping reasoning trail | still review-only (`prs_merged=0`); `verified_reviews=1 < 2` bonus threshold → no bump. Author, or concentrate enough substantive reviews to clear `≥2`, to move the reserved-5 rotation. |
+| Ibrahim El-Amin | Clean dual-tree charter authorship with template-render parity; dogfoodable rollup-hygiene step that this wave's own rollup then exercised | `prs_merged=1` (not a bump) and his own #256 review Verified blocks were empty (`verified_reviews=0`) — writing a substantive Verified block on reviews would have earned the new positive signal. |
+| Paloma Gupta | Shipped the symmetric-scoring feature end-to-end with anti-gaming gate + 9 revert→red tests; self-caught and recovered a `git checkout` clobber with zero PR impact | the clobber traces to using `git checkout -- <file>` during a revert→red probe on a file with *other* uncommitted edits — use an in-memory/patch probe (as she then did) rather than `git checkout` when the working tree carries unstaged work. |

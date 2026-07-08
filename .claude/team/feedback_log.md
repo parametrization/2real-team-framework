@@ -951,3 +951,68 @@ the 60% force-call threshold.
    W16 confirms the tension is mechanical (clean-small work can't bump). Options remain: rotational-on-streak,
    or split author/reviewer-excellence signals, or a "verified-clean-review" positive signal so QA rigor on a
    clean wave isn't zero-credit. — Rationale: pain points #2 and #3.
+
+---
+
+## Retrospective: Wave 17 (Phase 6 Wave 12) — 2026-07-08 — "Symmetric trust scoring + rollup hygiene" → v0.10.4
+
+### Wave Metrics
+- **2 PRs merged** (#257 S1, #256 S2), **0 changes-requested cycles**, **50% top concentration** (2 distinct
+  authors — Paloma, Ibrahim). All **4 reviewer verdicts clean first-pass**. Shipped **v0.10.4** (patch) to
+  main + PyPI + npm via OIDC. Tag/Release `deployments-phase6-wave-12`.
+- **Counter drift (Step 2):** claimed `pr_count=2 / cr=0 / concentration=50` — recomputed from the merged-PR
+  set: 2 PRs, 0 ChangesRequested verdicts (all `Replied`), max 1/2 by one author = 50%. **All three match;
+  no corrections.**
+- **Issues:** #254/#255 closed; tech-debt #258 (per-(reviewer,PR) `verified_reviews` dedup) + #259 (tighten
+  bare-`determinism`/`ci green` in `_VERIFIED_CHECK_RE`) filed against the new signal; meta #253 open.
+- **Tests:** trust suite +9 load-bearing (revert→red) tests for the symmetric signals.
+
+### Top-Implementer Concentration
+1 PR each by Paloma (#257) and Ibrahim (#256) = **50%** — two distinct authors on a 2-PR wave; the metric is
+at its structural floor for two stories and reads as healthy distribution, not fragility.
+
+### Per-Engineer Assessments (mechanical — `trust_signals score 17`)
+- **Paloma Gupta** — author S1 #257 (difficulty 3): `prs_merged=1, must_fix_received=0, verified_reviews=0,
+  rework=0`. **delta 0** (single clean PR is not a bump). Shipped the symmetric-scoring feature end-to-end;
+  self-recovered a `git checkout` clobber of uncommitted edits with zero PR impact.
+- **Ibrahim El-Amin** — author S2 #256 (difficulty 2): `prs_merged=1, must_fix_received=0, verified_reviews=0,
+  rework=0`. **delta 0**. Clean dual-tree charter authorship; his own #256 review Verified blocks were empty
+  (0 credit).
+- **Tariq Morales** — reviewer: `verified_reviews=1, must_fix_caught=0`. **delta 0**. Substantive #257
+  Verified block (surfaced tech-debt #258/#259); #256 Verified block empty (correctly 0 credit). Reserved-5
+  held on incumbency (no decay — has a signal).
+- **Nia Rossi** — reviewer: `verified_reviews=1, prs_merged=0`. **delta 0**. First wave the new signal could
+  register for a review-only engineer, and it did — but `1 < 2` bonus threshold.
+- **Forced negative-signal pass (Step 4):** all four lines are `metrics clean: {numbers}` — validated clean,
+  no bare "None". **No decay** (all four have a signal this wave). **No retirement triggers.**
+
+### Top 3 Going Well
+1. **The shipped signal validated itself on its own wave, both directions.** `verified_reviews` credited the
+   two substantive `Verified:` blocks (#257: Nia, Tariq) and the anti-gaming gate *rejected* the two empty
+   ones (#256: Tariq, Paloma). Credit-and-reject dogfood on the introduction wave.
+2. **The S2 rollup-hygiene step was dogfooded during this wave's own rollup** — explicit
+   `git merge --no-ff origin/deployments/phase6/wave-12` + content-probe before bump. No repeat of the W11
+   code-less-merge slip.
+3. **Clean execution end-to-end:** 4/4 first-pass clean verdicts, 0 CR cycles, both registries published, all
+   worktrees pruned.
+
+### Top 3 Pain Points
+1. **Reserved-5 rotation still unresolved — now threshold-bound.** The symmetric signal shipped partly to give
+   QA rigor a non-zero path, but on a 2-PR wave reviewers split across PRs and each lands at
+   `verified_reviews=1 < 2`. Correct-by-design for a small wave, but the rotation waits on a larger/more-
+   concentrated wave to clear the threshold.
+2. **Empty `Verified:` blocks left credit on the table.** Ibrahim (author) and both reviewers on #256 wrote
+   `Verified:` with no substantive checks — zero-credit under the new gate. Reviewers should populate the
+   block to earn the signal now that it exists.
+3. **Signal edge-cases already known at ship (#258/#259).** Per-(reviewer,PR) dedup absent and a bare-
+   `determinism` regex alternation are filed but unaddressed — small hardening owed to the new signal.
+
+### Proposed Process Changes (approval-gated — NOT applied)
+1. **Populate `Verified:` blocks by default.** Add a charter/PR-doc nudge that a clean review verdict SHOULD
+   carry a substantive `Verified:` block (concrete checks: revert→red / determinism Nx / byte-parity), since
+   an empty block now earns 0 `verified_reviews`. — Rationale: pain point #2.
+2. **Reserved-5 rotation (carry-over):** the symmetric signal is now live; the remaining lever is whether a
+   review-only engineer can clear `≥2` verified reviews on a normal wave, or whether the threshold/roster
+   assignment should concentrate substantive reviews. Owner-scoped; no change applied. — Rationale: pain #1.
+3. **Land #258/#259** (per-PR dedup + tighter `_VERIFIED_CHECK_RE`) in a near-term hardening slice. — Rationale:
+   pain point #3.
