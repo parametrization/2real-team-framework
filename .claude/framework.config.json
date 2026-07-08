@@ -20,7 +20,11 @@
   "policy": {
     "reviewers_required": 2,
     "pr_review_gate_enabled": true,
-    "merge_model": "wave-branch"
+    "merge_model": "wave-branch",
+    "load_bearing_test_exceptions": {
+      "refactor": "Pure refactor / no external behavior change (renames, extraction, dead-code removal, formatting) - nothing new to test. State exactly what was restructured and confirm no observable behavior changed.",
+      "docs": "Pure documentation / comment diff (docstring or comment-only additions, no new/changed executable statement) - nothing new to test. Applied automatically per behavior file (#284) when every added line in that file's diff is docstring/comment content; state exactly what was documented if invoking the manual override instead."
+    }
   },
   "ci": {
     "merge_requires_green": true,
