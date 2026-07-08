@@ -117,18 +117,87 @@ export const COMMUNICATION_STYLES = [
   "Measured and diplomatic. Navigates disagreements with tact.",
 ];
 
-function randomChoice<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+// ---------------------------------------------------------------------------
+// Seedable RNG
+//
+// The name/persona pickers used to call `Math.random()` directly, which made
+// the vitest suite nondeterministic (#234). The RNG is now a single injectable
+// generator: production keeps `Math.random`, while tests seed it via
+// `setRng(makeSeededRng(n))` for reproducible, flake-free runs.
+// ---------------------------------------------------------------------------
+
+/** A random generator: returns a float in [0, 1), like `Math.random`. */
+export type Rng = () => number;
+
+let _rng: Rng = Math.random;
+
+/** Override the module-level RNG (e.g. a seeded generator in tests). */
+export function setRng(rng: Rng): void {
+  _rng = rng;
 }
 
-export function generateName(used: Set<string>): [string, string] {
+/** Restore the default `Math.random` RNG. */
+export function resetRng(): void {
+  _rng = Math.random;
+}
+
+/**
+ * Deterministic PRNG (mulberry32) — same seed always yields the same stream,
+ * so a seeded run of the name generator is fully reproducible.
+ */
+export function makeSeededRng(seed: number): Rng {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randomChoice<T>(arr: T[], rng: Rng = _rng): T {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+export function generateName(
+  used: Set<string>,
+  rng: Rng = _rng,
+): [string, string] {
   for (let i = 0; i < 100; i++) {
-    const first = randomChoice(FIRST_NAMES);
-    const last = randomChoice(LAST_NAMES);
+    const first = randomChoice(FIRST_NAMES, rng);
+    const last = randomChoice(LAST_NAMES, rng);
     const full = `${first} ${last}`;
     if (!used.has(full)) return [first, last];
   }
   throw new Error("Could not generate unique name");
+}
+
+/**
+ * Build the set of bare `First Last` names already on the roster, for
+ * `generateName` dedupe. Historically callers built this set from ROLE-PREFIXED
+ * roster FILENAMES (e.g. `senior_engineer_jane_doe.md` -> "senior engineer jane
+ * doe"), which never matched a bare "Jane Doe" candidate — so `generateName`
+ * could hand back a name already on the roster (#234). We now parse the actual
+ * `**Name:**` field out of each roster card so a generated duplicate is
+ * genuinely rejected. Departed cards are included so a departed member's name is
+ * not immediately recycled; a card whose name cannot be parsed falls back to the
+ * legacy filename-derived string (still better than dropping it entirely).
+ */
+export function usedNamesFromRoster(rosterDir: string): Set<string> {
+  const used = new Set<string>();
+  if (!existsSync(rosterDir)) return used;
+  for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
+    const stem = f.replace(/^_departed_/, "").replace(/\.md$/, "");
+    let name: string | null = null;
+    try {
+      name = extractField(readFileSync(join(rosterDir, f), "utf-8"), "Name");
+    } catch {
+      name = null;
+    }
+    used.add(name && name.trim() ? name.trim() : stem.replace(/_/g, " "));
+  }
+  return used;
 }
 
 export function makeEmail(first: string, last: string, prefix: string = ""): string {
@@ -611,11 +680,7 @@ export function addMember(opts: AddMemberOptions): void {
 
   let name = opts.name;
   if (!name) {
-    const used = new Set<string>();
-    for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
-      used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
-    }
-    const [first, last] = generateName(used);
+    const [first, last] = generateName(usedNamesFromRoster(rosterDir));
     name = `${first} ${last}`;
   }
 
@@ -755,12 +820,8 @@ export function randomizeMember(opts: { name: string; target: string }): void {
   // Archive old
   renameSync(oldPath, join(rosterDir, `_departed_${files[0]}`));
 
-  // Generate new identity
-  const used = new Set<string>();
-  for (const f of readdirSync(rosterDir).filter((f) => f.endsWith(".md"))) {
-    used.add(f.replace(/\.md$/, "").replace(/_/g, " "));
-  }
-  const [first, last] = generateName(used);
+  // Generate new identity (dedupe against bare roster names, not filenames)
+  const [first, last] = generateName(usedNamesFromRoster(rosterDir));
   const newName = `${first} ${last}`;
   const email = makeEmail(first, last);
 
