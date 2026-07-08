@@ -22,8 +22,8 @@ commits excluded up front):
 |---|---:|---|
 | port-as-is | 2 | small, generic, lift with no adaptation |
 | genericise-then-port | 15 | carry org/board/identity/state-file/deploy tokens |
-| already-covered — refinement to back-port | 13 | fixes to hooks/libs 2real ALREADY ships |
-| already-covered — verify-first (likely no-op) | 4 | 2real independently hardened these; see caveat |
+| already-covered — refinement to back-port | 12 | fixes to hooks/libs 2real ALREADY ships |
+| already-covered — verify-first (4 pending + 1 CONFIRMED no-op) | 5 | 2real independently hardened these; see caveat |
 | skip / guidance-only | 4 | prose, blocked-on-missing-infra, or doc alignment |
 
 **Biggest single caveat — the "refinement" bucket needs a per-candidate diff against 2real's
@@ -34,6 +34,15 @@ handles all four `-R`/`--repo` spellings. So several loudly-flagged "P0 gate-eva
 the source repos (botfarm #451 quoted/heredoc, botfarm #501 `-R`/`--repo`, noorinalabs cd-prefix
 `normalize_command_separators`) are **probably already covered here** and are marked
 verify-first rather than P0. The genuinely net-new items (below) are the more actionable ports.
+
+> **Correction (PR #290 review, Paloma).** This caveat also bit my own original headline P0 —
+> noorinalabs **#881** (`trust_signals` false-positive scoping). Re-diffing source `92aaaba`
+> against `framework/assets/lib/trust_signals.py` `parse_verdicts` (L490–505) confirms our shipped
+> code ALREADY applies both #881 guards — `_strip_code_markup` (byte-identical to the source
+> helper) plus the `verdict == "approved"` gate — and is a strict **superset** (it additionally
+> requires `_has_must_fix_items`). So #881 is a **confirmed no-op**, reclassified below, and #291
+> (filed off the original claim) can be closed as already-covered. The lesson stands reinforced:
+> diff every "refinement" candidate against `framework/assets/` — including one's own top pick.
 
 ## Deliverable cross-check — botfarm #657 ↔ our #288
 
@@ -104,7 +113,7 @@ not the call-sites.**
 
 | Candidate (issue# — summary) | Classification | Net-new / Refinement | P | Rationale |
 |---|---|---|---|---|
-| #881 `trust_signals` `review_false_positive` scoping (only actual withdrawals) | already-covered — refinement | Refinement | **P0** | Precise, fully generic parse-bug: `Approved` verdicts + code-span/fenced text wrongly counted as self-retractions, mis-scoring reviewers. Zero adaptation; directly improves 2real `trust_signals` |
+| #881 `trust_signals` `review_false_positive` scoping (only actual withdrawals) | already-covered — **verify-first CONFIRMED no-op** | Refinement | n/a | Re-diffed `92aaaba` vs our `parse_verdicts` (L490–505): 2real ALREADY has `_strip_code_markup` (byte-identical) + the `Approved`-verdict gate, and is a strict superset (also requires `_has_must_fix_items`). Landed in-window. Nothing to port; close #291 as no-op |
 | #886/#896/#897 `validate_pr_review` batch-loop merge-guard hardening | already-covered — refinement | Refinement | P1 | Three successive fail-open closes (in-loop co-location narrowing, subshell/compound-arg, no-arg current-branch merge). Port as the 3-commit sequence; pure parser, no org tokens — but diff vs 2real's current guard first |
 | #864 `verify_deployable_merge` lib (deterministic post-merge CI verification) | genericise-then-port | Net-new | P1 | Fills a real gap: 2real has no post-merge verify for wave→main, so a push-to-main-only red workflow goes unnoticed. Generic polling/"nothing-required = pass"; strip GHCR/Trivy/graph deploy example tokens + `main`-branch assumption |
 | #890 `wave_seq` reservation-aware `allocate` | genericise-then-port | Net-new (2real has no `wave_seq`) | P1 | Fixes retro-reserved id being skipped by a naive `current+1`. Carries `cross-repo-status.json` key grammar → map to 2real state-file. Relevant if 2real's wave-retro/start reserve-then-commit ids |
@@ -121,20 +130,30 @@ not the call-sites.**
 
 ## Ranked port queue (top items)
 
-1. **noorinalabs #881 — `trust_signals` false-positive scoping (P0).** Generic parse-bug docking
-   honest reviewers; drop-in for 2real's shipped `trust_signals`. Highest value / lowest risk.
-2. **botfarm `_resolves_to_author` helper shape (P1, land WITH #288).** The concrete implementation
-   of #288 prong-1's "single shared author-resolution helper" — see cross-check above.
-3. **noorinalabs #864 — `verify_deployable_merge` (P1, net-new).** Closes 2real's post-merge
-   wave→main verification gap.
-4. **noorinalabs #886/#896/#897 — `validate_pr_review` batch-loop hardening (P1).** Diff-first;
-   port the 3-commit sequence if 2real's guard still fails-open on in-loop merges.
-5. **botfarm #424 — reviewer-load cap as a hard KICKOFF gate + full-roster denominator (P1).**
-   Distinct lifecycle point from 2real's wave-end report; the fail-open fix is the load-bearing bit.
-6. **noorinalabs #870/#887 + #900 (P1).** Clean, org-token-free refinements to
-   `ontology_gen/typescript_ext` and `block_squash_wave_merge` that 2real already ships.
+Ranked after dropping the original #881 headline (confirmed no-op). Every headline below is either
+a confirmed-net-new gap (verified absent from `framework/assets/`) or a candidate I diffed directly —
+no unverified "refinement improves our code" claims in the top slots.
+
+1. **botfarm `_resolves_to_author` helper shape (P1, land WITH #288).** The concrete implementation
+   of #288 prong-1's "single shared author-resolution helper" — diffed against our
+   `validate_pr_review`/`pr_review_state`; see cross-check above.
+2. **noorinalabs #864 — `verify_deployable_merge` (P1, net-new).** Confirmed absent from
+   `framework/assets/lib/`; closes 2real's post-merge wave→main verification gap.
+3. **botfarm #424 — reviewer-load cap as a hard KICKOFF gate + full-roster denominator (P1,
+   net-new lifecycle point).** 2real's `review_load.py` is wave-END reporting only (confirmed); this
+   is a wave-START hard cap. The fail-open fix (average over the FULL roster) is the load-bearing bit.
+4. **noorinalabs #907 + #895 (P1, net-new).** Implementor-label tooling + skill GraphQL-pagination
+   lint — both confirmed absent from 2real.
+5. **noorinalabs #886/#896/#897 — `validate_pr_review` batch-loop hardening (P1, refinement —
+   diff-first).** Port the 3-commit sequence only if 2real's guard still fails-open on in-loop merges.
+6. **noorinalabs #870/#887 + #900 (P1, refinement — diff-first).** Candidate refinements to
+   `ontology_gen/typescript_ext` and `block_squash_wave_merge` that 2real already ships; confirm the
+   gap before porting.
 7. **botfarm #608 / #623 (P1, port-as-is).** Small generic review-gate UX fixes.
-8. **noorinalabs #907 + #895 (P1, net-new).** Implementor-label tooling + GraphQL-pagination lint.
+
+> Reclassification of #881 makes this concrete: the `already-covered` bucket must be diffed, not
+> assumed. Only #1–#4 above are safe to scope without a pre-flight `framework/assets/` diff; #5–#6
+> are refinements gated on that diff.
 
 ## Sequencing note
 
