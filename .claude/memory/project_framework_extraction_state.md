@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.11.0 (Phase 6 Wave 15 "restore-story closeout": git-native `2real-team install-branch` staged install [#279] + node CLI teardown/restore parity [#280]; ⚠️ trust scoring STILL PARKED — #275 calibration data-point #2 fired the reserved-5-composite trigger [pure-reviewer structural demotion via author-only difficulty_points], scale-broadening trigger did NOT fire; matrix held at Tariq 5/others 4), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.11.1 (Phase 6 Wave 16 "reward the reviewer + clear the gate debt": reserved-5 composite fix [#275/#286] + docs/refactor load-bearing-test exception [#284/#287]; ✅ trust scoring UN-PARKED — #275 resolved by crediting must_fix_caught+verified_reviews at weight 2 & capping difficulty at 2, W21 deltas APPLIED: Paloma 4→5 [reserved-5 rotated in], Tariq 5→4, Nia 4→4, Ibrahim 4→3), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,9 +11,19 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-08): released v0.11.0 — Phase 6 Wave 15 (RESTORE-STORY CLOSEOUT)
-COMPLETE, merged to main, published to PyPI + npm.** (Wave-history detail for W15/W20 and the parked
-trust decision lives in the MEMORY.md pointer line + handoff.md.) Phase 4
+**Current baseline (2026-07-08): released v0.11.1 — Phase 6 Wave 16 (REWARD THE REVIEWER + CLEAR THE
+GATE DEBT) COMPLETE, merged to main, published to PyPI + npm.** Two file-disjoint stories: S1 #275/PR #286
+the reserved-5 composite fix itself (credit `must_fix_caught`+`verified_reviews` at REVIEW_VALUE_WEIGHT=2,
+cap `difficulty_points` at DIFFICULTY_COMPOSITE_CAP=2); S2 #284/PR #287 docs/refactor
+`load_bearing_test_exceptions` class (default-on `docs`, dual-tree, `_deep_merge`) — the 2-reviewer gate
+caught a real `_patch_is_docs_only` self-close+trailing-code bypass in review (Ibrahim fixed fail-safe both
+branches, revert→red). **✅ Trust scoring UN-PARKED (#275 closed):** first wave scored under the new
+composite + first deltas applied since W18 — Paloma 4→5 (reserved-5 rotated in; out-composited on author+
+reviewer axes), Tariq 5→4 (rotated off single-seat; his pure-reviewer composite rose ~0→4 under the fix,
+NOT the W20 failure mode), Nia 4→4, Ibrahim 4→3 (must_fix_received=2 + rework). npm publish hit CI drift
+(npm@12 needs node≥22, runner on node 20) — hotfixed by pinning `npm@^11.5.1` + `workflow_dispatch`. New
+debt #288 (make scorer author-exclusive like the merge gate — a W21 author-note verdict-grammar slip
+corrupted scoring until amended). (Wave-history detail lives in the MEMORY.md pointer line + handoff.md.) Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**

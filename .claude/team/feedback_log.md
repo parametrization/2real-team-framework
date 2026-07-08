@@ -1139,3 +1139,62 @@ finding #2 (pure-reviewer structural demotion). Full analysis + recommendation r
    the behavior gate, kept tight enough not to become a test-skipping loophole. — Rationale: pain #3.
 3. **Note reviewer coverage overlap in review assignment** — when two reviewers are assigned, nudge them to
    target different surfaces (already done ad hoc this wave), to reduce simultaneous misses. — Rationale: pain #2.
+
+## Retrospective: Wave 21 (Phase 6 Wave 16) — 2026-07-08 — "Reward the reviewer + clear the gate debt" → v0.11.1
+
+### Wave Metrics
+2 PRs merged (#286, #287), 1 changes-requested cycle (#287), CI 11/11 green on both. Counters recorded fresh
+at wrapup (pr-count=2, cr-cycles=1, concentration=50%) — no drift. Tech-debt filed: #288 (author-exclusive
+scorer parity) + an npm-CI durability note. Issues closed: #275 (calibration resolved), #284 (done), #285
+(wave meta). Shipped v0.11.1 to main + PyPI + npm.
+
+### Top-Implementer Concentration & Review-Load
+Authoring: 1/2 = 50% (Paloma #286, Ibrahim #287 — 2 distinct authors). Below the 60% force-call line.
+Review-load (#231): Tariq 2/4 verdicts (both PRs), Nia 1, Paloma 1 — Tariq carried half the slate, expected
+for a 2-story wave he was on both of; not lopsided at this volume.
+
+### Per-Engineer Assessments (mechanical, cleaned signals)
+- **Paloma Gupta** — prs_merged=1, difficulty=2, clean_first_pass=1, must_fix_caught=1 (caught the #287
+  bypass as reviewer). Composite 5. delta +1 → **4→5, reserved-5 earned/rotated in**.
+- **Tariq Morales** — must_fix_caught=1 (the #287 bypass), verified_reviews=1 (#286). Composite 4. delta 0 →
+  **5→4** (rotates off the single-seat reserved-5; NOT for cause — under the old composite he'd have been ~0).
+- **Nia Rossi** — verified_reviews=1 (#286), review-only. Composite 2. delta 0 → **4→4**.
+- **Ibrahim El-Amin** — prs_merged=1, difficulty=3, must_fix_received=2 (#287 bypass, raised by both
+  reviewers), rework_cycles=1. Composite 1. delta −1 → **4→3**.
+
+Negative-signal pass: clean (validated, no bare "None").
+
+### Calibration Close-Out (#275) — UN-PARKED
+First wave scored under the new composite (`REVIEW_VALUE_WEIGHT=2`, `DIFFICULTY_COMPOSITE_CAP=2`) and first
+with deltas APPLIED since W18 (W19/W20 were parked pending the owner decision). Decision executed: fix the
+composite, keep the 1–5 scale, un-park from W21. Result validates the fix — Tariq's pure-reviewer composite
+rose from ~0 (old) to 4 (new); the reserved-5 rotated to Paloma only because she out-contributed on BOTH
+axes (review catch + hardest clean authoring), which is the intended behavior, not the W20 "clean author
+displaces defect-catcher" failure mode.
+
+### Top 3 Going Well
+1. **The adversarial 2-reviewer gate caught a real gate-weakening bug** — both reviewers independently
+   reproduced the `_patch_is_docs_only` self-close+trailing-code bypass with executing PoCs before it reached
+   the wave branch; fix landed symmetric across both classifier branches with revert→red tests.
+2. **#275 calibration closed with a targeted fix, dogfooded on its own retro** — the composite that scored
+   this wave is the composite this wave shipped.
+3. **Release recovered from a CI-drift publish failure without version churn** — npm@12 dropping node-20
+   support was diagnosed, hotfixed (pin `npm@^11.5.1` + `workflow_dispatch`), and re-published; both
+   registries at 0.11.1.
+
+### Top 3 Pain Points
+1. **Author reply used reviewer verdict grammar → corrupted scoring** (author counted as a third reviewer,
+   spurious `missed_catches`/`verified_reviews`). The scorer/review-load are not author-exclusive while the
+   merge gate is — a real inconsistency. Worked around by amend; #288 filed.
+2. **npm publish CI was unpinned** (`npm install -g npm@latest`) — npm@12 requiring node ≥22 broke the
+   release publish on the node-20 runner. Fixed by pinning, but node 20 will EOL.
+3. **`gh api` `-f` vs `-F` @file trap** hit twice (Tariq, Ibrahim) — `-f/--raw-field` sends the literal
+   `@path` string; only `-F/--field` expands `@file`. The orchestrator's own guidance propagated the wrong flag.
+
+### Proposed Process Changes
+1. **#288 (Phase 7):** one shared author-exclusivity helper across `validate_pr_review` + `trust_signals` +
+   `review_load`; charter note that author must-fix replies are plain comments, never `Requestor:` grammar;
+   revert→red tests. — Rationale: pain #1.
+2. **Memory correction:** `gh api -X PATCH` bodies must use `-F body=@file`, never `-f`. — Rationale: pain #3.
+3. **npm-CI durability:** consider bumping the publish runner to node 22 next Phase to keep `npm@latest`
+   viable. — Rationale: pain #2.

@@ -592,3 +592,47 @@ Rows = the team member rating. Columns = the team member being rated.
 | Nia Rossi | Difficulty-3 S2 authorship + 2 rigorous reviews incl. a merge/round-trip config-plumbing trace on #268 | `verified_reviews=1` ONLY because her #268 block used `->` (parser #270) — as a convention nudge, use `→` (or the fixed parser) so real rigor scores; substantively she reviewed 2 PRs. |
 | Paloma Gupta | Authored the `verified_reviews` hardening itself (S1) + a substantive end-to-end sidecar-toggle review on #268 | `verified_reviews=0` is a parser artifact (#270, `->` in her #268 block), not a rigor gap — the #270 fix is hers to consider next. |
 | Ibrahim El-Amin | Difficulty-2 S3 author + a correctly-credited substantive #267 review that surfaced real tech-debt (#269) as an issue not a false must-fix | `prs_merged=1` and `verified_reviews=1 < 2` — one authored PR + one review; a second substantive review or a blocking catch is the path up. |
+
+## Wave 21 Trust Updates (2026-07-08) — Phase 6 Wave 16 "Reward the reviewer + clear the gate debt" → v0.11.1
+
+> **2 PRs, 1 changes-requested cycle, 50% top concentration (2 distinct authors). Review-load: Tariq 2/4
+> verdicts, Nia 1, Paloma 1.** Two file-disjoint stories: S1 the reserved-5 composite fix itself (#275, PR
+> #286) and S2 the docs/refactor load-bearing-test exception (#284, PR #287). Shipped **v0.11.1** (patch).
+>
+> **🔑 CALIBRATION UN-PARKED — this is the first wave scored under the new composite AND the first with
+> deltas APPLIED since W18** (W19/W20 deltas were parked pending the #275 owner decision; that decision —
+> "fix the composite, don't widen the scale, un-park from W21" — is now executed). The new composite credits
+> `must_fix_caught` + `verified_reviews` at `REVIEW_VALUE_WEIGHT=2` and caps `difficulty_points` at
+> `DIFFICULTY_COMPOSITE_CAP=2`. Composites this wave: **Paloma 5, Tariq 4, Nia 2, Ibrahim 1.**
+>
+> **✅ The fix works as intended — and this is NOT the W20 failure mode.** Under the OLD author-only
+> composite Tariq (a pure reviewer this wave) would have scored ~0 and been structurally demoted; the new
+> composite lifts him to **4** (2 for catching the #287 bypass + 2 for a substantive verified review on #286).
+> The reserved-5 still rotates **Tariq → Paloma**, but Paloma legitimately out-contributed everyone on BOTH
+> axes: she caught the #287 bypass as a reviewer AND shipped the hardest clean PR (#286, difficulty 2,
+> clean-first-pass). High-value review now *competes* for the 5 instead of being zeroed — exactly the #275
+> intent. The rotation is a single-seat mechanical result on a genuinely top wave, not a demotion for cause.
+>
+> **⚠️ Scoring-hygiene event (worked around live, durable fix filed #288):** Ibrahim's author reply-to-must-fix
+> on #287 was initially formatted with reviewer verdict grammar (`Requestor: Ibrahim` / `RequestOrReplied:`),
+> so the extractor counted the author as a third reviewer of his own PR and handed him two SPURIOUS reviewer
+> signals (`missed_catches=1`, `verified_reviews=1`). The merge gate (`validate_pr_review`) is author-exclusive
+> and was NOT fooled — but `trust_signals`/`review_load` are not, an inconsistency. Corrected by amending the
+> note to a plain comment (spurious signals → 0, re-verified) BEFORE these deltas were computed; #288 filed to
+> give the scorer author-exclusivity parity with the gate. The scores below are on the CLEANED signals.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Paloma Gupta | 4 | **5** | delta **+1** → **reserved-5 (EARNED, rotated in)**. Authored S1 #286 (difficulty 2, `clean_first_pass=1`, `prs_merged=1`) AND caught the #287 `_patch_is_docs_only` bypass as a reviewer (`must_fix_caught=1`). Composite **5** — top of the wave on both axes (author + reviewer value), strictly above Tariq's 4. This is the reserved-5 the #275 fix was built to make reachable. |
+| Tariq Morales | 5 | **4** | delta 0 (signals clean & positive: `must_fix_caught=1` on the #287 bypass, `verified_reviews=1` substantive block on #286). Rotates OFF the reserved-5 by the single-seat discipline — composite **4**, below Paloma's 5. NOT a demotion for cause; under the old composite this would have been ~0, so the #275 fix materially protected his standing (4, not lower). |
+| Nia Rossi | 4 | **4** | delta 0. Review-only this wave: `verified_reviews=1` (substantive `Verified:` block on #286), `verified_reviews=1 < 2` bonus threshold, no authored PR. Composite 2. |
+| Ibrahim El-Amin | 4 | **3** | delta **−1**: `must_fix_received=2` (the #287 classifier bypass — the same defect raised independently by both reviewers) + `rework_cycles=1`. Authored S2 #287 (difficulty 3); the bypass fix landed clean with revert→red regression tests, but the received must-fix + rework round is the negative signal. `prs_merged=1`. Composite 1. |
+
+### Done Well / Needs Improvement (Wave 21 / Phase 6 Wave 16)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Paloma Gupta | Hybrid top-wave: authored the reserved-5 composite fix itself (S1, difficulty 2) AND caught the #287 bypass as reviewer — the exact review-value the fix now rewards; dogfooded her own feature on this retro | metrics clean: prs_merged=1, must_fix_received=0, ci_red=0, false_positives=0, must_fix_caught=1, verified_reviews=0 (her #287 review carried a must-fix so it earned `must_fix_caught`, not `verified_reviews`). |
+| Tariq Morales | Caught the `_patch_is_docs_only` self-close+trailing-code bypass with an executing PoC (`must_fix_caught=1`) + a substantive #286 verified block; carried 2/4 of the review load | metrics clean, but rotates off the reserved-5 — the single seat went to a hybrid author+reviewer; a wave where he both catches a defect AND authors a hard PR is the path back to 5. |
+| Nia Rossi | Substantive verified review on #286 with concrete checks | review-only again (`prs_merged=0`), `verified_reviews=1 < 2` bonus threshold — author or concentrate ≥2 substantive reviews to move. |
+| Ibrahim El-Amin | Root-caused and fixed the classifier bypass robustly (symmetric across both branches, fail-safe) with revert→red tests; fast, clean scoring-hygiene self-correction on the author-note grammar | `must_fix_received=2` + `rework_cycles=1` (the bypass shipped in the first #287 push and needed a rework round); and the author-note verdict-grammar slip (worked around, #288 filed). |

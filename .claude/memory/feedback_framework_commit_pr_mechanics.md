@@ -35,5 +35,14 @@ otherwise cost a round-trip each.
   `RequestOrReplied: Request` (`Replied` only for a clean/approval turn). Caught Phase-6-W1 on
   #159/#160 where I handed reviewers swapped fields; fixed in place via
   `gh api repos/.../issues/comments/<id> -X PATCH -f body=...` (edit only the two header lines).
+- **An AUTHOR reply to a must-fix is a PLAIN comment — never `Requestor:`/`RequestOrReplied:` grammar.**
+  That grammar is reviewer-only. A W21 (#287) author reply wearing verdict headers made
+  `trust_signals`/`review_load` count the PR author as a third reviewer of their own PR → spurious
+  `missed_catches`/`verified_reviews`. The merge gate is author-exclusive and wasn't fooled, but the
+  scorer is not (yet) — see #288. Strip the headers if it recurs, then re-`extract` to confirm.
+- **`gh api -X PATCH` bodies from a file: use `-F body=@file`, NEVER `-f body=@file`.** `-f`/`--raw-field`
+  sends the LITERAL string (`@path` lands verbatim as the comment body — a silent corruption caught only
+  by re-reading); only `-F`/`--field` expands `@file`. Hit twice in W21 (Tariq + Ibrahim). Inline strings
+  (`-f body="..."`) are fine; the `@file` expansion is the trap. Also valid: `--field body=@file`.
 
 State + queue: [[project_framework_extraction_state]].
