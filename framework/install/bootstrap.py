@@ -347,10 +347,66 @@ def install_assets(target_claude: Path, *, force: bool, dry_run: bool) -> dict[s
     return report
 
 
+#: Framework hook module-lists the amend/upgrade write reconciles onto the shipped
+#: canonical set (drop stale, converge — a RECONCILE, not a union). ``pre_push_commands``
+#: is deliberately EXCLUDED: it carries user-authored push checks, not framework modules,
+#: so an amend preserves it verbatim. Mirrors the lists the harness oracle
+#: (``m_config_module_lists_complete``) pins: pre_bash ⊇ required, agent == [],
+#: stop == ["session_handoff"].
+_RECONCILED_HOOK_LISTS = ("pre_bash", "post_bash", "post_file", "session_start", "agent", "stop")
+
+
+def reconcile_module_lists(existing: dict, canonical: dict) -> tuple[dict, bool]:
+    """Converge an existing runtime config's framework hook module-lists onto the
+    shipped ``canonical`` set — dropping stale/extra entries and restoring the
+    canonical order — WITHOUT disturbing any other user field.
+
+    This is the #162/#238 amend fix: a re-install over a *diverged* live config must
+    RECONCILE (not union) its ``hooks.pre_bash`` / ``hooks.agent`` / ``hooks.stop``
+    (etc.) so stale entries are removed instead of accumulated. Idempotent — a config
+    already at the canonical set reports no change. Never raises on a partial config:
+    a missing/malformed ``hooks`` block is rebuilt from the canonical lists, and any
+    hook key the canonical set does not carry is left untouched.
+
+    Returns ``(reconciled_config, changed)``.
+    """
+    canon_hooks = canonical.get("hooks") if isinstance(canonical, dict) else None
+    if not isinstance(canon_hooks, dict):
+        return existing, False
+    merged = dict(existing)  # shallow: only the 'hooks' block is rebound below
+    cur_hooks = merged.get("hooks")
+    hooks = dict(cur_hooks) if isinstance(cur_hooks, dict) else {}
+    for key in _RECONCILED_HOOK_LISTS:
+        want = canon_hooks.get(key)
+        if isinstance(want, list):
+            hooks[key] = list(want)
+    merged["hooks"] = hooks
+    return merged, merged != existing
+
+
 def write_config(target_claude: Path, cfg: dict, *, force: bool, dry_run: bool) -> str:
     dest = target_claude / "framework.config.json"
     if dest.exists() and not force:
-        return "skipped (exists; use --force to overwrite)"
+        # Amend / upgrade-over-live-install path (#162, #238): do NOT blanket-skip.
+        # An existing (possibly diverged) live config must have its framework hook
+        # module-lists RECONCILED onto the shipped canonical set — stale entries
+        # dropped, canonical order restored — while every other user field is kept
+        # verbatim. Fail-open: an unreadable / non-object config never crashes the
+        # installer; it is left untouched.
+        try:
+            existing = json.loads(dest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return "skipped (existing config unreadable; left untouched)"
+        if not isinstance(existing, dict):
+            return "skipped (existing config not a JSON object; left untouched)"
+        reconciled, changed = reconcile_module_lists(existing, cfg)
+        if not changed:
+            return "skipped (exists; hook module lists already canonical)"
+        if dry_run:
+            return "would reconcile hook module lists"
+        target_claude.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(reconciled, indent=2) + "\n", encoding="utf-8")
+        return "amended (reconciled hook module lists)"
     if dry_run:
         return "would write"
     target_claude.mkdir(parents=True, exist_ok=True)
