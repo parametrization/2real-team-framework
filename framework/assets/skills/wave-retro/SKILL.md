@@ -181,6 +181,10 @@ Every row applies the mechanical policy from `trust_signals.py` and cites its nu
   histories oldest→newest). If it fires (score ≤ 2 in each of the last 3 waves, or ≥ 1
   CI-red merge in each of the last 3 waves), surface a **persona-archive recommendation**
   for owner confirmation — never auto-retire.
+- **Distribution-health probe:** report `trust_signals.distribution_health([...new scores])`
+  on the wave's resulting per-engineer scores — if `degenerate` is True (all pinned at
+  min/max, or zero/low variance), the ledger stopped discriminating: cite its `reasons` in
+  the retro as a process smell (it changes no individual score).
 
 Append a `## Wave {W} Trust Updates ({DATE}) — {theme}` section containing:
 - A `| Rated | Old | New | Reason |` table — every `Reason` cites signal numbers, not

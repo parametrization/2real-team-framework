@@ -21,10 +21,11 @@ Two cleanly separated layers:
     scores.
 
   * **Scoring** (pure, no I/O) — :func:`score_delta`, :func:`decay`,
-    :func:`apply_distribution_discipline`, :func:`negative_signal_line`,
-    :func:`validate_negative_signal_pass`, :func:`retirement_trigger`. Every one
-    is a pure function so the model is unit-testable, and usable standalone on a
-    hand-built signal dict, without touching the SCM at all.
+    :func:`apply_distribution_discipline`, :func:`distribution_health`,
+    :func:`negative_signal_line`, :func:`validate_negative_signal_pass`,
+    :func:`retirement_trigger`. Every one is a pure function so the model is
+    unit-testable, and usable standalone on a hand-built signal dict, without
+    touching the SCM at all.
 
 Durable review-catch ledger (#164)
 -----------------------------------
@@ -110,9 +111,19 @@ Signals per engineer (all integers, all countable from the merged-PR set):
                                review-quality signal).
   verified_reviews             clean verdicts they issued as Requestor whose
                                body carried a concrete ``Verified:`` block
-                               (>=1 real check, e.g. revert→red / Nx
-                               determinism / byte-parity) (positive —
-                               QA-rigor review signal).
+                               (>=1 real check, e.g. revert→red / revert->red /
+                               Nx determinism / byte-parity / N passed / ruff
+                               clean / coverage N%) (positive — QA-rigor review
+                               signal).
+  clean_first_pass             authored PRs merged with no must-fix + no rework
+                               at difficulty tier >=2 (positive — #H2, right
+                               the first time; trivial PRs cannot farm it).
+  missed_catches               clean verdicts they issued as Requestor on a PR
+                               a DIFFERENT reviewer durably caught a must-fix on
+                               (negative — #H4, mirror of must_fix_caught).
+  gate_bypasses                authored PRs merged with the armed review gate
+                               overridden — unresolved must-fix OR < 2 clean
+                               distinct reviews (negative — #H5, hard ding).
   difficulty_points            summed coarse difficulty weight (1-3 per PR,
                                :func:`difficulty_weight`) over authored PRs;
                                feeds the reserved-5 tiebreak, not score_delta.
@@ -214,11 +225,23 @@ _SECTION_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _VERIFIED_CHECK_RE = re.compile(
-    r"revert\s*(?:→|-+|to)?\s*red"  # revert→red / revert to red / revert-red
+    # revert→red / revert->red / revert-red / revert to red. The arrow group
+    # ``(?:→|-+>?|to)`` accepts the unicode arrow, an ASCII arrow (``->`` /
+    # ``-->``), a bare hyphen, or the word ``to``. #270: the old ``-+`` alone
+    # consumed only the hyphen(s) of ``->`` and left the ``>`` to break the
+    # ``\s*red`` tail, so ``revert->red`` scored zero and glyph-decided the W18
+    # rotation. ``-+>?`` swallows the whole ASCII arrow.
+    r"revert\s*(?:→|-+>?|to)?\s*red"
     r"|byte[\s-]?parity"  # byte-parity
     r"|\d+\s*[x×]\s*determinism"  # Nx / N× determinism (substantive, quantified)
     r"|ci[\s-]?rollup"  # CI-rollup ...
-    r"|(?:ci|rollup)\b[^\n]*\bsuccess",  # CI/rollup ... SUCCESS
+    r"|(?:ci|rollup)\b[^\n]*\bsuccess"  # CI/rollup ... SUCCESS
+    # Generic suite evidence, each carrying a number or a named tool so a bare
+    # phrase can never satisfy the gate (anti-gaming, mirrors #259):
+    r"|\d+\s+(?:tests?\s+)?pass(?:ed|es|ing)?\b"  # N passed / N tests pass (quantified)
+    r"|ruff\s+clean"  # ruff clean (named tool)
+    r"|coverage\s+\d+\s*%"  # coverage N% (quantified)
+    r"|all\s+green",  # all green (suite-wide receipt)
     re.IGNORECASE,
 )
 # #259: the bare ``determinism`` and bare ``green ci`` / ``ci green`` alternations
@@ -227,8 +250,9 @@ _VERIFIED_CHECK_RE = re.compile(
 # the substantive forms above are creditable now: the quantified ``Nx
 # determinism`` (a bare "determinism" no longer counts) and a ``CI ... SUCCESS``
 # rollup receipt (a bare "ci green" / "green ci" no longer counts). Genuine
-# blocks — ``revert→red``, ``byte-parity``, ``5× determinism``, ``CI rollup
-# SUCCESS`` — are unaffected.
+# blocks — ``revert→red`` / ``revert->red``, ``byte-parity``, ``5× determinism``,
+# ``CI rollup SUCCESS``, ``42 passed``, ``ruff clean``, ``coverage 91%`` — are
+# unaffected. Bare ``tests pass`` (no adjacent number/tool) still scores zero.
 
 
 def _strip_code_markup(text: str) -> str:
@@ -271,6 +295,25 @@ class Signals:
     # (anti-gaming). Feeds :func:`score_delta` (clean +1 at >=2) and the
     # reserved-5 composite; never counted as a negative.
     verified_reviews: int = 0
+    # Clean-first-pass merges (#H2): authored PRs that merged with NO must-fix
+    # received AND no rework cycle at difficulty tier >=2 (:func:`difficulty_weight`
+    # — a trivial one-liner cannot farm it). Positive — rewards getting a
+    # non-trivial change right the first time. Feeds :func:`score_delta` (clean
+    # +1, once/capped, only on an otherwise-clean wave); never a negative.
+    clean_first_pass: int = 0
+    # Missed catches (#H4): CLEAN verdicts the engineer posted (as Requestor) on a
+    # PR where a DIFFERENT reviewer's must-fix was durably recorded (ledger #164 /
+    # edit-history #229 — ungameable by a later comment amendment). Negative — the
+    # mirror of ``must_fix_caught``: negligent approval of a PR that a peer found a
+    # real must-fix on. Feeds :func:`score_delta` (−1 each) and :meth:`has_negative`.
+    missed_catches: int = 0
+    # Gate bypasses (#H5): authored PRs that merged with the armed review gate
+    # overridden — an unresolved must-fix at merge time OR fewer than 2 distinct
+    # clean reviewer verdicts. Negative — a hard ding like ``ci_red_merges``.
+    # Near-zero in a healthy wave (every PR carries 2 clean reviews and no
+    # unresolved must-fix). Feeds :func:`score_delta` (−1 each) and
+    # :meth:`has_negative`.
+    gate_bypasses: int = 0
     # Summed coarse per-PR difficulty weight over the engineer's authored PRs
     # (:func:`difficulty_weight`, #229). A flagship correctness fix accrues 3, a
     # one-line config change 1, so a wave of hard work outranks a wave of trivial
@@ -293,6 +336,9 @@ class Signals:
                 self.rework_cycles,
                 self.review_false_positives,
                 self.verified_reviews,
+                self.clean_first_pass,
+                self.missed_catches,
+                self.gate_bypasses,
             )
         )
 
@@ -302,6 +348,8 @@ class Signals:
             or self.ci_red_merges
             or self.review_false_positives
             or self.rework_cycles
+            or self.missed_catches
+            or self.gate_bypasses
         )
 
 
@@ -1111,14 +1159,24 @@ def _account_pr(
 
     if comment_histories is not None:
         verdicts = verdicts_from_histories(comment_histories)
+        # The CURRENT (live) comment state — for the #H5 gate check the merge-gate
+        # oracle reads: the newest revision of each comment, NOT the durable
+        # history-recovered catch. Absent histories, the live bodies ARE current.
+        current_bodies = [h[0] for h in comment_histories if h]
     else:
         verdicts = parse_verdicts(comment_bodies or [])
+        current_bodies = comment_bodies or []
+    current_verdicts = parse_verdicts(current_bodies)
     catches = [
         c
         for c in (review_catches or [])
         if c.get("repo") == repo and str(c.get("pr")) == str(number)
     ]
 
+    # Durable catchers for this PR (canonical keys) — the reviewers whose must-fix
+    # is authoritative (ledger #164 preferred, else edit-history-aware verdicts
+    # #229). Drives the #H4 missed-catch mirror below.
+    catcher_keys: set[str] = set()
     pr_had_changes_requested = False
     if catches:
         for c in catches:
@@ -1126,6 +1184,7 @@ def _account_pr(
             author_sig.must_fix_received += 1
             requestor = c.get("requestor")
             if requestor:
+                catcher_keys.add(canon(requestor))
                 bucket(requestor).must_fix_caught += 1
     else:
         for v in verdicts:
@@ -1133,6 +1192,7 @@ def _account_pr(
                 pr_had_changes_requested = True
                 author_sig.must_fix_received += 1
                 if v.requestor:
+                    catcher_keys.add(canon(v.requestor))
                     bucket(v.requestor).must_fix_caught += 1
 
     # #258: dedup ``verified_reviews`` per (reviewer, PR). ``_account_pr`` handles
@@ -1156,6 +1216,47 @@ def _account_pr(
 
     if pr_had_changes_requested:
         author_sig.rework_cycles += 1
+
+    # #H4 missed-catch (mirror of ``must_fix_caught``): when this PR had a DURABLE
+    # must-fix catch, any reviewer who posted a CLEAN verdict on the SAME PR — and
+    # is NOT one of the catchers — negligently approved past a real finding. Keyed
+    # on the canonical reviewer so a name-variant of the catcher is excluded, and
+    # deduped per (reviewer, PR). Gated on the catch being durable — the ledger
+    # (#164) or the edit-history-aware path (#229) — so it is ungameable by a comment
+    # amendment; a legacy live-comment-bodies-only PR (no ledger, no history) does
+    # NOT fire it, since that catch could itself be edited away.
+    durable_catch_source = bool(catches) or comment_histories is not None
+    if pr_had_changes_requested and durable_catch_source:
+        dinged: set[str] = set()
+        for v in verdicts:
+            if v.changes_requested or not v.requestor:
+                continue
+            rk = canon(v.requestor)
+            if rk in catcher_keys or rk in dinged:
+                continue
+            dinged.add(rk)
+            bucket(v.requestor).missed_catches += 1
+
+    # #H5 gate-bypass (hard ding, like ``ci_red_merges``): the armed review gate
+    # requires a merge to land with NO unresolved must-fix AND >=2 DISTINCT clean
+    # reviewer verdicts. Read from the CURRENT comment state (what the merge-gate
+    # oracle sees) — an amended-clean history does not manufacture a bypass. This
+    # is near-zero in a healthy wave; a merge that overrode the gate scores −1.
+    unresolved_must_fix = any(v.changes_requested for v in current_verdicts)
+    clean_distinct_reviewers = {
+        canon(v.requestor)
+        for v in current_verdicts
+        if not v.changes_requested and v.requestor
+    }
+    if unresolved_must_fix or len(clean_distinct_reviewers) < 2:
+        author_sig.gate_bypasses += 1
+
+    # #H2 clean-first-pass: a non-trivial (tier >=2) PR merged with no must-fix and
+    # no rework round — got it right the first time. Trivial (<tier2) PRs cannot
+    # farm it. Positive; the +1 is applied once/clamped in ``score_delta`` and only
+    # on an otherwise-clean wave (``has_negative`` gates it).
+    if not pr_had_changes_requested and difficulty >= 2:
+        author_sig.clean_first_pass += 1
 
 
 def extract_signals(
@@ -1231,8 +1332,12 @@ def score_delta(sig: Signals) -> int:
       negative
         - each CI-red merge:                      -1  (hard ding)
         - each review false-positive:             -1
-        - 2+ must-fix items received as author:   -1
-        - 2+ rework cycles as author:             -1
+        - each missed catch as reviewer (#H4):    -1  (mirror of caught — a
+          clean approval past a peer's durable must-fix)
+        - each gate-bypass merge (#H5):           -1  (hard ding — merged with
+          an unresolved must-fix or < 2 clean distinct reviews)
+        - must-fix items received as author:      -1 at >=2, -2 at >=4  (#H3)
+        - rework cycles as author:                -1 at >=2, -2 at >=4  (#H3)
       positive (only when the iteration is clean of the negatives above)
         - 2+ PRs merged clean:                    +1
         - 2+ must-fix items caught as reviewer:   +1
@@ -1240,17 +1345,28 @@ def score_delta(sig: Signals) -> int:
           reviewer's clean verdicts carrying concrete ``Verified:`` receipts;
           credits demonstrated verification when there were no must-fixes to
           catch)
+        - 1+ clean-first-pass merge (#H2):        +1  (once/capped — a
+          non-trivial tier>=2 PR right the first time)
 
-    ``rework_cycles`` and ``must_fix_received`` are both in
-    :meth:`Signals.has_negative`, so a rework-/must-fix-heavy wave can never also
-    collect the clean-wave positives above.
+    ``rework_cycles``, ``must_fix_received``, ``missed_catches`` and
+    ``gate_bypasses`` are all in :meth:`Signals.has_negative`, so a wave carrying
+    any of them can never also collect the clean-wave positives above. The whole
+    delta stays clamped to [-2, +2] so a single iteration cannot swing trust
+    across the scale.
     """
     delta = 0
     delta -= sig.ci_red_merges
     delta -= sig.review_false_positives
-    if sig.must_fix_received >= 2:
+    delta -= sig.missed_catches
+    delta -= sig.gate_bypasses
+    # Graduated author dings (#H3): the ding deepens with the count.
+    if sig.must_fix_received >= 4:
+        delta -= 2
+    elif sig.must_fix_received >= 2:
         delta -= 1
-    if sig.rework_cycles >= 2:
+    if sig.rework_cycles >= 4:
+        delta -= 2
+    elif sig.rework_cycles >= 2:
         delta -= 1
 
     clean = not sig.has_negative()
@@ -1260,6 +1376,8 @@ def score_delta(sig: Signals) -> int:
         if sig.must_fix_caught >= 2:
             delta += 1
         if sig.verified_reviews >= 2:
+            delta += 1
+        if sig.clean_first_pass >= 1:
             delta += 1
 
     return max(-2, min(2, delta))
@@ -1324,6 +1442,104 @@ def apply_distribution_discipline(
         else:
             out[name] = proposed
     return out
+
+
+@dataclass
+class DistributionHealth:
+    """Verdict on whether a wave's resulting score distribution is discriminating.
+
+    A degenerate spread — everyone pinned at the floor, everyone pinned at the
+    ceiling, or everyone on the same score — means the ledger stopped telling
+    engineers apart, which is a process smell worth surfacing in the retro even
+    though it changes no individual score. All fields are derived, pure numbers.
+    """
+
+    n: int
+    scores: list[int]
+    minimum: int
+    maximum: int
+    mean: float
+    variance: float
+    spread: int
+    all_at_min: bool
+    all_at_max: bool
+    zero_variance: bool
+    low_variance: bool
+    degenerate: bool
+    reasons: list[str]
+
+
+def distribution_health(
+    scores,
+    *,
+    min_score: int = MIN_SCORE,
+    max_score: int = MAX_SCORE,
+    low_variance_threshold: float = 0.5,
+) -> DistributionHealth:
+    """Flag a degenerate per-engineer score spread. Pure — no I/O.
+
+    *scores* is the wave's resulting new-score collection — a list/tuple of ints
+    or a ``{name: score}`` dict (values are used). Answers "is the ledger actually
+    discriminating this wave?" by flagging any of:
+
+      * **all pinned at min** — every score == ``min_score`` (the whole team at
+        the floor);
+      * **all pinned at max** — every score == ``max_score`` (5 handed to all,
+        defeating distribution discipline);
+      * **zero variance** — every score identical (spread 0) but not at a rail;
+      * **low variance** — variance at/under *low_variance_threshold* with a
+        non-zero spread (barely discriminating).
+
+    ``degenerate`` is True iff any reason fired. An empty input is not degenerate
+    (nothing to discriminate) and carries a single explanatory reason.
+    """
+    vals = list(scores.values()) if isinstance(scores, dict) else list(scores)
+    vals = [int(v) for v in vals]
+    n = len(vals)
+    if n == 0:
+        return DistributionHealth(
+            n=0, scores=[], minimum=0, maximum=0, mean=0.0, variance=0.0,
+            spread=0, all_at_min=False, all_at_max=False, zero_variance=False,
+            low_variance=False, degenerate=False, reasons=["no scores to assess"],
+        )
+    lo, hi = min(vals), max(vals)
+    mean = sum(vals) / n
+    variance = sum((v - mean) ** 2 for v in vals) / n
+    spread = hi - lo
+    all_at_min = all(v == min_score for v in vals)
+    all_at_max = all(v == max_score for v in vals)
+    zero_variance = n >= 2 and spread == 0 and not (all_at_min or all_at_max)
+    low_variance = n >= 2 and spread > 0 and variance <= low_variance_threshold
+
+    reasons: list[str] = []
+    if all_at_min:
+        reasons.append(f"all {n} scores pinned at min ({min_score})")
+    if all_at_max:
+        reasons.append(f"all {n} scores pinned at max ({max_score})")
+    if zero_variance:
+        reasons.append(
+            f"zero variance (every score == {vals[0]}) — ledger not discriminating"
+        )
+    elif low_variance:
+        reasons.append(
+            f"low variance ({variance:.3f} <= {low_variance_threshold}) — "
+            "ledger barely discriminating"
+        )
+    return DistributionHealth(
+        n=n,
+        scores=vals,
+        minimum=lo,
+        maximum=hi,
+        mean=mean,
+        variance=variance,
+        spread=spread,
+        all_at_min=all_at_min,
+        all_at_max=all_at_max,
+        zero_variance=zero_variance,
+        low_variance=low_variance,
+        degenerate=bool(reasons),
+        reasons=reasons,
+    )
 
 
 def negative_signal_line(name: str, sig: Signals) -> str:

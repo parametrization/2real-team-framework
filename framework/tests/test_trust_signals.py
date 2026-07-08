@@ -1766,3 +1766,348 @@ def test_verified_check_re_rejects_negating_or_bare_mention() -> None:
     assert ts._has_verified_checks("Verified:\n- revert→red\n") is True
     assert ts._has_verified_checks("Verified:\n- byte-parity OK\n") is True
     assert ts._has_verified_checks("Verified:\n- CI rollup SUCCESS\n") is True
+
+
+# ===========================================================================
+# Scoring-ledger overhaul (#272, W19 S1): five symmetric heuristics + a
+# distribution-health probe. Every rule stays a pure function of countable
+# signals and preserves the ±2/wave clamp.
+# ===========================================================================
+
+
+# ---------------------------------------------- H1: broadened Verified token set
+
+
+def test_revert_arrow_ascii_credits_verified_review_270(tmp_path) -> None:
+    """LOAD-BEARING (#270): the ASCII arrow ``revert->red`` MUST match and credit a
+    ``verified_reviews`` signal — the exact glyph that glyph-decided the W18
+    rotation (both #268 reviewers' substantive blocks scored zero because the
+    ``>`` broke the old ``revert\\s*(?:→|-+|to)?\\s*red`` tail). A false-negative
+    here re-opens #270.
+
+    Mutation bar: reverting ``_VERIFIED_CHECK_RE``'s arrow group to the old
+    ``(?:→|-+|to)?`` leaves the ``>`` of ``->`` unconsumed → ``revert->red``
+    stops matching → ``_has_verified_checks`` is False → ``verified_reviews`` is
+    0 → every assertion below fails.
+    """
+    # Pure detector: BOTH the ASCII and the unicode arrow match.
+    assert ts._has_verified_checks("Verified:\n- revert->red on the failing test\n") is True
+    assert ts._has_verified_checks("Verified:\n- revert→red on the failing test\n") is True
+    # Credit path (end-to-end through _account_pr): the ASCII-arrow Verified block
+    # credits exactly one verified_reviews to the reviewer.
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=930,
+        comment_bodies=[
+            _verified_body(
+                "Tariq.Morales", verified_lines=("revert->red on the failing test",)
+            ),
+        ],
+        ci_red=False,
+    )
+    assert sigs["Tariq Morales"].verified_reviews == 1
+
+
+def test_verified_check_re_accepts_generic_suite_evidence() -> None:
+    """#H1: generic suite receipts each carrying a number or named tool are
+    creditable; a bare phrase with neither is still rejected (anti-gaming).
+    """
+    for tok in ("42 passed", "42 tests pass", "5 tests passed", "ruff clean",
+                "coverage 91%", "all green"):
+        assert ts._has_verified_checks(f"Verified:\n- {tok}\n") is True, tok
+    # Anti-gaming contract preserved: a bare "tests pass" (no adjacent number or
+    # named tool) does NOT count.
+    assert ts._has_verified_checks("Verified:\n- tests pass\n") is False
+    assert ts._has_verified_checks("Verified:\n- all the tests pass\n") is False
+
+
+# ----------------------------------------------------- H2: clean_first_pass
+
+
+def test_clean_first_pass_credited_on_nontrivial_clean_pr(tmp_path) -> None:
+    """#H2: a tier>=2 PR merged with no must-fix and no rework earns one
+    ``clean_first_pass`` (+1 in the clean-wave branch, once/capped)."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=900,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Nia.Rossi", "Replied", None),
+        ],
+        ci_red=False,
+        difficulty=2,
+    )
+    p = sigs["Paloma Gupta"]
+    assert p.clean_first_pass == 1
+    assert p.gate_bypasses == 0  # two clean distinct reviews, nothing unresolved
+    assert ts.score_delta(p) == 1  # the clean-first-pass +1
+
+
+def test_clean_first_pass_not_farmed_by_trivial_pr(tmp_path) -> None:
+    """#H2: a trivial (tier 1) PR cannot farm the clean-first-pass credit."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=901,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Nia.Rossi", "Replied", None),
+        ],
+        ci_red=False,
+        difficulty=1,
+    )
+    assert sigs["Paloma Gupta"].clean_first_pass == 0
+
+
+def test_clean_first_pass_blocked_on_unclean_wave() -> None:
+    """#H2: the +1 only fires on an otherwise-clean wave (``has_negative`` gates
+    it) — a must-fix-heavy author with a clean_first_pass gets no bonus."""
+    dirty = ts.Signals(prs_merged=2, clean_first_pass=1, must_fix_received=2)
+    assert dirty.has_negative() is True
+    assert ts.score_delta(dirty) == -1  # the ding, no clean-first-pass +1
+
+
+# ----------------------------------------------------- H3: graduated dings
+
+
+def test_graduated_must_fix_and_rework_dings() -> None:
+    """#H3: dings deepen with count — >=2 is −1, >=4 is −2 — for both
+    ``must_fix_received`` and ``rework_cycles``, still clamped at −2 total."""
+    assert ts.score_delta(ts.Signals(prs_merged=1, must_fix_received=2)) == -1
+    assert ts.score_delta(ts.Signals(prs_merged=1, must_fix_received=4)) == -2
+    assert ts.score_delta(ts.Signals(prs_merged=1, rework_cycles=2)) == -1
+    assert ts.score_delta(ts.Signals(prs_merged=1, rework_cycles=4)) == -2
+    # Combined deep dings stay clamped at −2 (the ±2/wave floor holds).
+    assert ts.score_delta(ts.Signals(must_fix_received=4, rework_cycles=4)) == -2
+
+
+# ------------------------------------------- H4: missed-catch (durable only)
+
+
+def test_missed_catch_dings_clean_reviewer_via_history(tmp_path) -> None:
+    """#H4: on a PR where a DIFFERENT reviewer's must-fix is durably recorded
+    (edit-history path), a reviewer who only posted a CLEAN verdict is dinged one
+    ``missed_catches``; the catcher is never dinged.
+
+    Mutation bar: dropping the ``rk in catcher_keys`` guard dings the catcher too;
+    dropping the durability gate would (correctly) not fire here since history IS
+    durable, but see the live-only test below.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=910,
+        comment_histories=[
+            # Nia caught a must-fix, later amended in place to clean.
+            [_verdict_body("Nia.Rossi", "Replied", None),
+             _verdict_body("Nia.Rossi", "Request", "Data loss in the amend path.")],
+            # Tariq only ever posted a clean review — negligent approval.
+            [_verdict_body("Tariq.Morales", "Replied", None)],
+        ],
+        ci_red=False,
+    )
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert sigs["Nia Rossi"].missed_catches == 0  # the catcher is not dinged
+    assert sigs["Tariq Morales"].missed_catches == 1  # clean approval past the catch
+
+
+def test_missed_catch_via_ledger_deduped_across_name_variants(tmp_path) -> None:
+    """#H4: the durable ledger (#164) also drives the missed-catch, and a reviewer
+    who posted two clean comments (variant spellings) is dinged exactly once."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ledger = [
+        {"repo": "o/r", "pr": 911, "requestor": "Nia.Rossi", "requestee": "Paloma.Gupta"},
+    ]
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=911,
+        # All live comments read clean (Nia's was amended); Tariq posts twice.
+        comment_bodies=[
+            _verdict_body("Nia.Rossi", "Replied", None),
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Tariq Morales (QA)", "Replied", None),
+        ],
+        ci_red=False,
+        review_catches=ledger,
+    )
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert sigs["Nia Rossi"].missed_catches == 0
+    assert sigs["Tariq Morales"].missed_catches == 1  # deduped per (reviewer, PR)
+
+
+def test_missed_catch_not_fired_on_live_comment_only(tmp_path) -> None:
+    """#H4: a legacy live-comment-bodies-only PR (no ledger, no history) does NOT
+    fire the missed-catch — that catch is itself editable, so the signal would be
+    gameable. This mirrors the #203 ``credits_only_blocker`` invariant.
+
+    Mutation bar: dropping the ``durable_catch_source`` gate dings Tariq here →
+    the last assertion fails.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=912,
+        comment_bodies=[
+            _verdict_body("Nia.Rossi", "Request", "Fix this."),  # live blocking
+            _verdict_body("Tariq.Morales", "Replied", None),  # clean
+        ],
+        ci_red=False,
+    )
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert sigs.get("Tariq Morales", ts.Signals()).missed_catches == 0
+
+
+# ------------------------------------------------------- H5: gate-bypass
+
+
+def test_gate_bypass_on_unresolved_must_fix(tmp_path) -> None:
+    """#H5: a merge whose CURRENT comment state still carries an unresolved
+    blocking must-fix scores one ``gate_bypasses`` (hard ding) on the author."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=920,
+        comment_bodies=[
+            _verdict_body("Nia.Rossi", "Request", "Still unresolved at merge."),
+            _verdict_body("Tariq.Morales", "Replied", None),
+        ],
+        ci_red=False,
+    )
+    assert sigs["Paloma Gupta"].gate_bypasses == 1
+
+
+def test_gate_bypass_on_too_few_clean_reviews(tmp_path) -> None:
+    """#H5: a merge with fewer than 2 distinct clean reviewer verdicts (the armed
+    gate's bar) scores a gate-bypass."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=921,
+        comment_bodies=[_verdict_body("Tariq.Morales", "Replied", None)],  # only one
+        ci_red=False,
+    )
+    assert sigs["Paloma Gupta"].gate_bypasses == 1
+
+
+def test_no_gate_bypass_in_healthy_two_clean_review_merge(tmp_path) -> None:
+    """#H5: near-zero in a healthy wave — two distinct clean reviews and nothing
+    unresolved → no gate-bypass. Distinct-count is canonical (a name variant of
+    one reviewer is not a second reviewer)."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=922,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Nia.Rossi", "Replied", None),
+        ],
+        ci_red=False,
+        difficulty=2,
+    )
+    assert sigs["Paloma Gupta"].gate_bypasses == 0
+
+
+def test_gate_bypass_variant_spellings_not_two_distinct(tmp_path) -> None:
+    """#H5: two clean comments by the SAME reviewer under different spellings are
+    ONE distinct reviewer → still a gate-bypass (the 2-reviewer bar isn't met)."""
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=923,
+        comment_bodies=[
+            _verdict_body("Tariq.Morales", "Replied", None),
+            _verdict_body("Tariq Morales (QA)", "Replied", None),
+        ],
+        ci_red=False,
+    )
+    assert sigs["Paloma Gupta"].gate_bypasses == 1
+
+
+# --------------------------------------------------- distribution_health
+
+
+def test_distribution_health_healthy_spread() -> None:
+    r = ts.distribution_health([2, 3, 4, 5])
+    assert r.degenerate is False
+    assert r.reasons == []
+    assert (r.minimum, r.maximum, r.spread, r.n) == (2, 5, 3, 4)
+
+
+def test_distribution_health_all_pinned_min() -> None:
+    r = ts.distribution_health([1, 1, 1, 1])
+    assert r.all_at_min is True
+    assert r.degenerate is True
+    assert "min" in r.reasons[0]
+
+
+def test_distribution_health_all_pinned_max() -> None:
+    r = ts.distribution_health([5, 5, 5])
+    assert r.all_at_max is True
+    assert r.degenerate is True
+    assert "max" in r.reasons[0]
+
+
+def test_distribution_health_zero_variance_off_the_rails() -> None:
+    # Everyone identical but NOT at a rail → zero-variance flag, not min/max.
+    r = ts.distribution_health([3, 3, 3])
+    assert r.zero_variance is True
+    assert r.all_at_min is False and r.all_at_max is False
+    assert r.degenerate is True
+    assert r.variance == 0.0
+
+
+def test_distribution_health_low_variance_flagged() -> None:
+    r = ts.distribution_health([3, 3, 3, 4])
+    assert r.low_variance is True
+    assert r.zero_variance is False
+    assert r.spread == 1
+    assert r.degenerate is True
+
+
+def test_distribution_health_accepts_dict_and_empty() -> None:
+    d = ts.distribution_health({"a": 2, "b": 4})
+    assert d.n == 2 and d.degenerate is False
+    e = ts.distribution_health([])
+    assert e.n == 0 and e.degenerate is False and e.reasons == ["no scores to assess"]
