@@ -365,5 +365,150 @@ def test_registry_default_and_sidecar_override(tmp_path: Path) -> None:
     assert reg["B10"].model == "meta-and-children"  # untouched default survives
 
 
+# --------------------------------------------------------------- #155 item 1: partial-clone invariant
+
+
+def test_partial_clone_failure_still_runs_after_fingerprint(tmp_path: Path, monkeypatch) -> None:
+    """#155 item 1: when a clone raises PARTWAY through a multi-clone (a child unreachable after
+    the parent already cloned), the read-only after-fingerprint assertion must STILL run. Here the
+    parent's source is mutated right after it clones, so the invariant is violated ON the partial
+    failure — ``provision_real`` must raise ``SourceMutatedError`` (proving the after-check ran
+    despite the child failure), NOT the child's ``MissingFixtureError``. With the pre-#155 layout
+    (after-check skipped once a clone raised) this would surface ``MissingFixtureError`` and FAIL."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+
+    real_clone = real_provision.clone_at
+
+    def clone_then_mutate_parent(source: str, sha: str, dest: Path) -> None:
+        real_clone(source, sha, dest)
+        if Path(source) == parent:  # a concurrent writer dirties the parent right after it clones
+            (parent / "intruder.txt").write_text("mid-provision\n", encoding="utf-8")
+
+    monkeypatch.setattr(real_provision, "clone_at", clone_then_mutate_parent)
+
+    spec = RealFixtureSpec(
+        bucket="B10", source=str(parent), model="meta-and-children",
+        children=(RealChildSpec("api", str(tmp_path / "absent-child"), flavor="product"),),
+    )
+    with pytest.raises(real_provision.SourceMutatedError):
+        provision_real(spec, tmp_path / "wd")
+
+
+def test_partial_clone_failure_preserves_error_and_checks_invariant(
+        tmp_path: Path, monkeypatch) -> None:
+    """Companion to the above: when the source is NOT mutated, a mid-sequence clone failure still
+    runs the after-fingerprint check (call-count proof) but, finding the source unchanged, lets the
+    ORIGINAL ``MissingFixtureError`` propagate — the invariant check must not mask genuine failures."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+
+    calls = {"n": 0}
+    real_fp = real_provision.source_fingerprint
+
+    def counting_fp(source: str):
+        calls["n"] += 1
+        return real_fp(source)
+
+    monkeypatch.setattr(real_provision, "source_fingerprint", counting_fp)
+
+    spec = RealFixtureSpec(
+        bucket="B10", source=str(parent), model="meta-and-children",
+        children=(RealChildSpec("api", str(tmp_path / "absent-child"), flavor="product"),),
+    )
+    with pytest.raises(MissingFixtureError):
+        provision_real(spec, tmp_path / "wd")
+    # before(parent+child) AND after(parent+child) both fingerprinted → the after-check ran
+    assert calls["n"] == 4
+
+
+# --------------------------------------------------------------- #155 item 2: portable defaults
+
+
+def test_default_fixtures_carry_no_hardcoded_home_paths() -> None:
+    """#155 item 2: neither the provisioner source nor the example sidecar may bake in a
+    machine-specific absolute-home path — real runs supply sources via ``--real-config``."""
+    mod_src = Path(real_provision.__file__).read_text(encoding="utf-8")
+    assert "/home/" not in mod_src
+    example = _FRAMEWORK_ROOT / "tests" / "install_quality" / "real-config.botfarm.example.json"
+    assert "/home/" not in example.read_text(encoding="utf-8")
+
+
+def test_default_sources_are_portable_and_env_overridable(monkeypatch) -> None:
+    """The DEFAULT specs DISCOVER their sources (portable), honoring ``REAL_FIXTURE_BASE``, rather
+    than embedding this dev box's absolute paths."""
+    monkeypatch.setenv("REAL_FIXTURE_BASE", "/somewhere/else")
+    assert real_provision._default_source("botfarm_inc") == "/somewhere/else/botfarm_inc"
+    monkeypatch.delenv("REAL_FIXTURE_BASE", raising=False)
+    derived = real_provision._default_source("botfarm_inc")
+    assert Path(derived).is_absolute() and derived.endswith("/botfarm_inc")
+    assert real_provision.DEFAULT_REAL_FIXTURES["B11"].source.endswith("/botfarm_inc")
+    assert real_provision.DEFAULT_REAL_FIXTURES["B10"].source.endswith("/noorinalabs-main")
+
+
+# --------------------------------------------------------------- #155 item 3: merge, not replace
+
+
+def test_override_pin_merges_preserving_children(tmp_path: Path, monkeypatch) -> None:
+    """#155 item 3: overriding only ``pin`` (via ``--real-config`` or ``real_fixtures``) must
+    PRESERVE the bucket's existing ``children``/``source``/etc — a merge, not a wholesale replace
+    that resets ``children`` to ``()``. A FULL ``RealFixtureSpec`` value stays a whole-spec replace."""
+    seeded = RealFixtureSpec(
+        bucket="B10", source="/seed/parent", model="meta-and-children",
+        children=(RealChildSpec("api", "/seed/api", flavor="product"),
+                  RealChildSpec("web", "/seed/web", flavor="infra")))
+    monkeypatch.setitem(real_provision.DEFAULT_REAL_FIXTURES, "B10", seeded)
+
+    # (a) partial patch via the sidecar JSON: only pin
+    sidecar = tmp_path / "real.json"
+    sidecar.write_text('{"B10": {"pin": "cafef00d"}}', encoding="utf-8")
+    reg = real_provision.real_registry({"real_config": str(sidecar)})
+    assert reg["B10"].pin == "cafef00d"                            # override applied
+    assert [c.path for c in reg["B10"].children] == ["api", "web"]  # children PRESERVED (merge)
+    assert reg["B10"].source == "/seed/parent"                     # untouched keys preserved
+    assert reg["B10"].model == "meta-and-children"
+
+    # (b) partial patch via real_fixtures as a dict: only pin
+    reg2 = real_provision.real_registry({"real_fixtures": {"B10": {"pin": "beadfeed"}}})
+    assert reg2["B10"].pin == "beadfeed"
+    assert [c.path for c in reg2["B10"].children] == ["api", "web"]
+
+    # (c) a FULL RealFixtureSpec value is still a wholesale replace (back-compat)
+    reg3 = real_provision.real_registry(
+        {"real_fixtures": {"B10": RealFixtureSpec(bucket="B10", source="/new")}})
+    assert reg3["B10"].children == ()                              # explicit full spec resets children
+
+
+# --------------------------------------------------------------- #155 item 5: nested child paths
+
+
+def test_nested_child_path_clones_via_mkdir_parents(tmp_path: Path) -> None:
+    """#155 item 5: a multi-level child path (``packages/api``) must clone — its leading dirs are
+    created with ``mkdir(parents=True)`` — instead of degrading to a skip."""
+    parent = tmp_path / "parent"
+    _make_repo(parent, {"pyproject.toml": "[project]\nname='root'\n"})
+    api = tmp_path / "api-src"
+    _make_repo(api, {"pyproject.toml": "[project]\nname='api'\n"})
+    spec = RealFixtureSpec(
+        bucket="B10", source=str(parent), model="meta-and-children",
+        children=(RealChildSpec("packages/api", str(api), flavor="product"),))
+    wd = tmp_path / "wd"
+    ctx = provision_real(spec, wd)
+    assert (wd / "packages" / "api" / ".git").is_dir()             # nested child cloned
+    assert [c["path"] for c in ctx["child"]["children"]] == ["packages/api"]
+
+
+def test_clone_at_clean_error_when_parent_uncreatable(tmp_path: Path) -> None:
+    """When a child's leading path is genuinely uncreatable (a path element is a file), ``clone_at``
+    raises a clean ``MissingFixtureError`` (→ runner skip) rather than a cryptic git failure."""
+    src = tmp_path / "src"
+    _existing_repo(src)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("i am a file, not a dir\n", encoding="utf-8")  # blocks mkdir(parents=True)
+    with pytest.raises(MissingFixtureError) as ei:
+        real_provision.clone_at(str(src), "HEAD", blocker / "child" / "clone")
+    assert "parent directory" in str(ei.value)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

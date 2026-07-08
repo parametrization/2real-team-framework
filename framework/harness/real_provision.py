@@ -23,9 +23,10 @@ runs are #101 / #109 and are never cloned in CI. Stdlib only.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -99,6 +100,38 @@ class RealFixtureSpec:
             children=tuple(RealChildSpec.from_dict(c) for c in d.get("children", ())),
         )
 
+    def merge(self, d: dict) -> RealFixtureSpec:
+        """Return a copy with ONLY the keys present in ``d`` overridden (#155 item 3).
+
+        A ``--real-config`` / ``real_fixtures`` override is a partial patch, not a wholesale
+        replacement: overriding just ``pin`` must preserve the existing ``children`` (and
+        ``source``/``ref``/``model``) rather than silently resetting them to their empty defaults.
+        ``children`` is only replaced when the override explicitly carries a ``children`` key.
+        """
+        children = self.children
+        if "children" in d:
+            children = tuple(RealChildSpec.from_dict(c) for c in d["children"])
+        return replace(
+            self,
+            source=d.get("source", self.source),
+            pin=d.get("pin", self.pin),
+            ref=d.get("ref", self.ref),
+            model=d.get("model", self.model),
+            children=children,
+        )
+
+
+#: Base directory the DEFAULT specs discover their sibling checkouts under. Env-overridable
+#: (``REAL_FIXTURE_BASE``); otherwise derived from THIS file's location — the real checkouts sit
+#: as siblings of the framework repo (``<parent-of-repo-root>/<name>``). This keeps the defaults
+#: portable: no machine-specific absolute-home literal is baked into version control (#155 item 2).
+#: They remain a best-effort LOCAL-ONLY convenience — real runs MUST supply sources via
+#: ``--real-config`` (#101/#109); a dev box that lacks the sibling checkout degrades to a skip.
+def _default_source(name: str) -> str:
+    base = os.environ.get("REAL_FIXTURE_BASE")
+    root = Path(base) if base else Path(__file__).resolve().parents[3]
+    return str(root / name)
+
 
 #: Documented current HEADs (from #150 discovery), kept for reference/reproducibility only —
 #: the DEFAULT specs resolve the LIVE ``refs/heads/main`` at run time (``pin=None``) so a dev
@@ -107,12 +140,12 @@ class RealFixtureSpec:
 DEFAULT_REAL_FIXTURES: dict[str, RealFixtureSpec] = {
     # B11 standalone-real-world -> botfarm_inc (HEAD a4e622dde79436ee8230de662020c3f3f0ee7e9d)
     "B11": RealFixtureSpec(
-        bucket="B11", source="/home/parameterization/code/botfarm_inc",
+        bucket="B11", source=_default_source("botfarm_inc"),
         pin=None, ref="refs/heads/main", model="single-repo",
     ),
     # B10 meta-real-world -> noorinalabs-main (HEAD 582416e85413f52b2972ae8def36a37eb486f818)
     "B10": RealFixtureSpec(
-        bucket="B10", source="/home/parameterization/code/noorinalabs-main",
+        bucket="B10", source=_default_source("noorinalabs-main"),
         pin=None, ref="refs/heads/main", model="meta-and-children", children=(),
     ),
 }
@@ -163,7 +196,18 @@ def clone_at(source: str, sha: str, dest: Path) -> None:
 
     ``--no-local`` (local sources only) forces a real object copy so the source ``.git`` is never
     hardlinked or otherwise touched. ``dest`` must be empty or nonexistent (git's requirement).
+
+    A nested child ``path`` (e.g. ``packages/api``) needs its leading dirs to exist; #155 item 5
+    makes that explicit via ``mkdir(parents=True)`` so a multi-level child clones rather than
+    degrading to a skip, and raises a clean ``MissingFixtureError`` if the parent is genuinely
+    uncreatable (e.g. a path element is an existing file) instead of a cryptic git error.
     """
+    dest = Path(dest)
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise MissingFixtureError(
+            f"cannot create parent directory for clone dest {str(dest)!r}: {exc}") from None
     args = ["git", "clone", "-q"]
     if _is_local(source):
         args.append("--no-local")
@@ -226,38 +270,50 @@ def provision_real(spec: RealFixtureSpec | None, wd: Path, opts: dict | None = N
 
     before = {s: source_fingerprint(s) for s in _all_sources(spec)}
 
-    sha = resolve_pin(spec.source, spec.ref, spec.pin)
-    clone_at(spec.source, sha, wd)
+    def _assert_source_unchanged() -> bool:
+        after = {s: source_fingerprint(s) for s in _all_sources(spec)}
+        if before != after:
+            changed = [s for s in before if before[s] != after[s]]
+            raise SourceMutatedError(
+                f"source(s) mutated during provision (read-only invariant violated): {changed}")
+        return True
 
-    ctx: dict = {"extra": {"machine_root": str(wd), "real": True,
-                           "source": spec.source, "pin": sha}}
+    ctx: dict | None = None
+    try:
+        sha = resolve_pin(spec.source, spec.ref, spec.pin)
+        clone_at(spec.source, sha, wd)
 
-    if spec.model == "meta-and-children":
-        if not spec.children:
-            # #155 item 4: a bare --include-real B10 with no --real-config resolves to a
-            # degenerate zero-children meta install. Not fatal (a childless meta is a valid,
-            # if trivial, install), but surface it instead of silently degrading — #101 supplies
-            # children explicitly via --real-config.
-            warnings.warn(
-                f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
-                "degenerate meta install; supply children via --real-config (#155 item 4).",
-                stacklevel=2,
-            )
-        children_ctx = []
-        for child in spec.children:
-            child_sha = resolve_pin(child.source, child.ref, child.pin)
-            clone_at(child.source, child_sha, wd / child.path)
-            children_ctx.append({"path": child.path, "rel": "..", "flavor": child.flavor})
-        ctx["child"] = {"children": children_ctx}
-        ctx["yaml"] = str(_write_meta_yaml(wd, spec))
+        ctx = {"extra": {"machine_root": str(wd), "real": True,
+                         "source": spec.source, "pin": sha}}
 
-    after = {s: source_fingerprint(s) for s in _all_sources(spec)}
-    unchanged = before == after
-    ctx["extra"]["source_unchanged"] = unchanged
-    if not unchanged:
-        changed = [s for s in before if before[s] != after[s]]
-        raise SourceMutatedError(
-            f"source(s) mutated during provision (read-only invariant violated): {changed}")
+        if spec.model == "meta-and-children":
+            if not spec.children:
+                # #155 item 4: a bare --include-real B10 with no --real-config resolves to a
+                # degenerate zero-children meta install. Not fatal (a childless meta is a valid,
+                # if trivial, install), but surface it instead of silently degrading — #101
+                # supplies children explicitly via --real-config.
+                warnings.warn(
+                    f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
+                    "degenerate meta install; supply children via --real-config (#155 item 4).",
+                    stacklevel=2,
+                )
+            children_ctx = []
+            for child in spec.children:
+                child_sha = resolve_pin(child.source, child.ref, child.pin)
+                clone_at(child.source, child_sha, wd / child.path)
+                children_ctx.append({"path": child.path, "rel": "..", "flavor": child.flavor})
+            ctx["child"] = {"children": children_ctx}
+            ctx["yaml"] = str(_write_meta_yaml(wd, spec))
+    finally:
+        # #155 item 1: the read-only invariant is defense-in-depth, so the after-fingerprint
+        # assertion MUST run even when a clone raised partway through a multi-clone (e.g. a child
+        # unreachable after the parent already cloned) — otherwise a partial failure would skip
+        # the check entirely. A genuine source mutation raises SourceMutatedError here, taking
+        # priority over (and chaining from) any in-flight provisioning error; an unchanged source
+        # lets the original error propagate untouched.
+        unchanged = _assert_source_unchanged()
+        if ctx is not None:
+            ctx["extra"]["source_unchanged"] = unchanged
     return ctx
 
 
@@ -266,16 +322,34 @@ def provision_real(spec: RealFixtureSpec | None, wd: Path, opts: dict | None = N
 
 def real_registry(opts: dict | None = None) -> dict[str, RealFixtureSpec]:
     """The effective bucket->spec map: DEFAULTs overlaid by a ``--real-config`` sidecar JSON
-    (``opts['real_config']``) then by an in-process ``opts['real_fixtures']`` (tests)."""
+    (``opts['real_config']``) then by an in-process ``opts['real_fixtures']`` (tests).
+
+    #155 item 3 — overrides MERGE, they do not wholesale-replace: a partial patch (a ``dict``
+    from the sidecar JSON, or a ``dict`` value in ``real_fixtures``) updates only its provided
+    keys and preserves the rest of the existing bucket spec, so overriding just ``pin`` no longer
+    silently drops ``children`` back to ``()``. A full ``RealFixtureSpec`` value in
+    ``real_fixtures`` is still an explicit whole-spec replacement (back-compat for callers that
+    build a complete spec). A partial patch for a bucket with no existing/default spec must carry
+    a ``source`` (falls back to ``from_dict``).
+    """
     opts = opts or {}
     reg = dict(DEFAULT_REAL_FIXTURES)
+
+    def _apply(bucket: str, override: dict | RealFixtureSpec) -> None:
+        if isinstance(override, RealFixtureSpec):
+            reg[bucket] = override                       # explicit whole-spec replacement
+        elif bucket in reg:
+            reg[bucket] = reg[bucket].merge(override)     # partial patch merges onto existing
+        else:
+            reg[bucket] = RealFixtureSpec.from_dict(bucket, override)  # brand-new bucket
+
     cfg_path = opts.get("real_config")
     if cfg_path:
         data = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
         for bucket, d in data.items():
-            reg[bucket] = RealFixtureSpec.from_dict(bucket, d)
-    for bucket, spec in (opts.get("real_fixtures") or {}).items():
-        reg[bucket] = spec
+            _apply(bucket, d)
+    for bucket, override in (opts.get("real_fixtures") or {}).items():
+        _apply(bucket, override)
     return reg
 
 
