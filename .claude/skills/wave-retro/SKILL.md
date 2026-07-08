@@ -165,9 +165,11 @@ PR as the feedback log — never as a separate direct-to-default commit.
 Every row applies the mechanical policy from `trust_signals.py` and cites its numbers:
 
 - **Delta:** `new = clamp(old + delta, 1, 5)` — bidirectional, already clamped to ±2 per
-  wave by `score_delta`. Each CI-red merge / review false-positive is −1; 3+ must-fix
-  received is −1; a clean wave with 2+ PRs merged or 2+ must-fix caught as reviewer is +1
-  each. A single clean PR is **not** a bump.
+  wave by `score_delta`. Each CI-red merge / review false-positive is −1; 2+ must-fix
+  received is −1; 2+ rework cycles is −1; a clean wave with 2+ PRs merged, 2+ must-fix
+  caught as reviewer, or 2+ verified reviews (reviewer verdicts carrying a concrete
+  `Verified:` block) is +1 each — so QA rigor isn't zero-credit when there are no
+  must-fixes. A single clean PR is **not** a bump.
 - **Decay toward neutral:** an engineer with no signal for 3 consecutive waves drifts one
   step toward 3 (`trust_signals.decay(old, waves_since_signal)`). A stale 4 or 2 is no
   longer earned; decay is one step per retro, never a reset.
