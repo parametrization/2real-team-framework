@@ -1494,6 +1494,64 @@ def test_distribution_unchanged_without_difficulty() -> None:
     assert out["B"] == ts.MAX_SCORE - 1
 
 
+# ------------------------------------------- reserved-5 composite (#275)
+
+
+def test_review_value_lets_reviewer_hold_reserved_5_over_clean_author() -> None:
+    """The W20 regression: a pure reviewer who caught a real defect and filed a
+    verified review (no authoring, no difficulty) must be able to out-composite
+    a clean author who shipped a flagship diff but added zero review value.
+    Before #275 ``difficulty_points`` alone decided the reserved 5, so the
+    reviewer (composite 2) lost to the author (composite 4) every time — the
+    exact shape that demoted Tariq 5→4 in favour of Nia in Wave 20.
+    """
+    reviewer = ts.Signals(must_fix_caught=1, verified_reviews=1)  # difficulty=0
+    clean_author = ts.Signals(prs_merged=1, difficulty_points=3)  # no review value
+    out = ts.apply_distribution_discipline(
+        {
+            "Reviewer": (ts.MAX_SCORE, reviewer),
+            "Author": (ts.MAX_SCORE, clean_author),
+        }
+    )
+    assert out["Reviewer"] == ts.MAX_SCORE  # holds the 5 on review value
+    assert out["Author"] == ts.MAX_SCORE - 1  # merely clean, no longer dominant
+
+
+def test_merely_clean_author_without_review_value_does_not_win_reserved_5() -> None:
+    """Guard: the reserve discipline still holds under the new weighting — an
+    author with no review value and no signal at all (composite 0) cannot claim
+    the 5 just because everyone else in the pool is net-negative that iteration.
+    """
+    zero_signal = ts.Signals()  # nothing happened — composite 0
+    had_a_must_fix = ts.Signals(prs_merged=1, must_fix_received=1)  # composite 0
+    out = ts.apply_distribution_discipline(
+        {
+            "Quiet": (ts.MAX_SCORE, zero_signal),
+            "Dinged": (3, had_a_must_fix),
+        }
+    )
+    assert out["Quiet"] == ts.MAX_SCORE - 1  # composite 0 is not strictly positive
+    assert out["Dinged"] == 3  # proposed <5 passes through untouched
+
+
+def test_difficulty_composite_cap_prevents_single_handed_dominance() -> None:
+    """A flagship diff (difficulty=5, well above the cap) no longer buries a
+    reviewer who caught one real defect and filed one verified review — the
+    capped difficulty contribution (``DIFFICULTY_COMPOSITE_CAP``) can tip a
+    close race but can't out-rank real review work by raw diffstat size alone.
+    """
+    flagship_author = ts.Signals(prs_merged=1, difficulty_points=5)
+    reviewer = ts.Signals(must_fix_caught=1, verified_reviews=1)
+    out = ts.apply_distribution_discipline(
+        {
+            "Flagship": (ts.MAX_SCORE, flagship_author),
+            "Reviewer": (ts.MAX_SCORE, reviewer),
+        }
+    )
+    assert out["Reviewer"] == ts.MAX_SCORE
+    assert out["Flagship"] == ts.MAX_SCORE - 1
+
+
 # ------------------------------------------- _pr_comment_histories (I/O, mocked)
 
 

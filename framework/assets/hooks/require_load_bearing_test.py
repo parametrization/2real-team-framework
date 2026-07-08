@@ -110,14 +110,39 @@ override audiences never collide:
 
 `<class>` must be a key in `policy.load_bearing_test_exceptions` (a map of
 class -> human rationale) and `<rationale>` must be non-empty. This map ships
-PRE-SEEDED with one class, `refactor` (#176 — Wave 3 S3): a pure refactor / no
-external-behavior-change PR has no new behavior to cover, so the hard-block
+PRE-SEEDED with two classes: `refactor` (#176 — Wave 3 S3), a pure refactor /
+no external-behavior-change PR has no new behavior to cover, so the hard-block
 posture with zero configured bypass classes was a dead end for that legitimate
-case. A repo may add more classes via its own config — see
+case; and `docs` (#284 — see "Automatic docs/comment-only exception" below). A
+repo may add more classes via its own config — see
 `policy.load_bearing_test_exceptions` in `framework.config.schema.json`. An
 unrecognized/missing class, or an empty rationale, still blocks — the override
 is validated, not a free escape hatch. Every attempted override (valid or not)
 is logged via `_framework_log.log_pretooluse_block` for the audit trail.
+
+Automatic docs/comment-only exception (#284)
+===============================================
+
+The manual override above still requires a human to type a rationale for
+every PR — fine for a genuine refactor, overkill for a docstring or comment
+addition, which has no new behavior to cover in the first place (the Wave 20
+case, #279/#284: a docstring cross-reference added to a behavior file tripped
+the gate with no way to say "there is nothing to test here" short of the
+manual override ceremony). When the repo's config seeds a `docs` class under
+`policy.load_bearing_test_exceptions`, a behavior file is exempted from
+pairing AUTOMATICALLY, per file, with no env var needed, when EVERY added
+line in that file's diff is a comment or part of a docstring (see
+`_patch_is_docs_only`) — i.e. the file gained no line that looks like an
+executable statement. A single added line that is not blank, a `#` comment,
+or docstring content makes the whole file "real code" again and the file
+falls back to the normal pairing check; mixing a hidden behavior line into an
+otherwise doc-only diff does not get a free pass. This mirrors the
+"lightweight, deterministic, not semantic" detection posture used everywhere
+else in this module (see "Detection signal" above): no AST parse, just a
+per-line scan of the added diff content. Opt-in via the config map, like the
+manual override — a repo that forks the schema without the `docs` class keeps
+the strict pre-#284 posture (every new behavior line, docstring or not, needs
+a paired test or an explicit `LOAD_BEARING_TEST_EXCEPTION` override).
 
 Fires on
 ========
@@ -136,7 +161,9 @@ module) so the parsing logic has exactly one source of truth.
 Exit codes:
     0 — allow (not a `gh pr create`/`gh pr ready`, no behavior file with a
         substantive added line in the diff, every such behavior file has its own
-        paired test-file change, or a validated override was supplied)
+        paired test-file change, every remaining unpaired file is docs/comment-
+        only under an active `docs` exception (#284), or a validated override
+        was supplied)
     2 — block (one or more behavior files lack a paired test-file change, an
         unverifiable diff, or an invalid/unconfigured override attempt)
 """
@@ -319,6 +346,109 @@ def _behavior_file_paired(behavior_path: str, test_files: list[str]) -> bool:
     return False
 
 
+# --- Automatic docs/comment-only exception (#284) -----------------------------
+
+#: Recognizes a (stripped) line that OPENS, or entirely IS, a triple-quoted
+#: string — the conventional docstring placement this repo (and PEP 257) use,
+#: e.g. `"""Summary."""` or a bare `"""` opening a multi-line docstring. A
+#: triple-quote appearing mid-line (e.g. `x = """foo"""`, a real assignment)
+#: does NOT match — it falls through to the "real code" branch in
+#: `_patch_is_docs_only` below. Deliberately naive (no tokenizer — the diff
+#: patch is not standalone valid Python) but tight in the direction that
+#: matters: it only ever WIDENS what counts as "real code", never narrows it.
+_DOCSTRING_OPEN_RE = re.compile(r'^("""|\'\'\')')
+
+#: The `policy.load_bearing_test_exceptions` class key that arms the automatic
+#: per-file exception below (see module docstring, "Automatic docs/comment-only
+#: exception"). Also usable as a manual `LOAD_BEARING_TEST_EXCEPTION=docs:...`
+#: override class once seeded, same as any other configured class.
+_DOCS_EXCEPTION_CLASS = "docs"
+
+
+def _patch_is_docs_only(patch: object) -> bool:
+    """True if EVERY added, non-trivial line of `patch` is a `#` comment or
+    part of a docstring — i.e. no added line looks like an executable
+    statement. Returns False for a missing/binary/non-str patch, or a patch
+    with no docstring/comment content at all (nothing to exempt).
+
+    A single added line that is not blank, a comment, or docstring content
+    (open/interior/close) makes the WHOLE patch "real code" and returns False
+    immediately — a doc-only diff cannot hide a behavior line by mixing it in
+    with genuine docstring content.
+
+    Bypass closed (#284 must-fix, reported independently by Paloma + Tariq
+    with working PoCs): the original check only looked at whether a line
+    ENDS with the closing quote to decide "this line self-closes the
+    docstring". A line that opens a triple-quoted string, closes it again a
+    few characters later, and then has trailing real code on the SAME line
+    (e.g. a bare word wrapped in triple-quotes immediately followed by
+    `;import os`) does NOT end with the closing quote, so the old check
+    misread it as an UNTERMINATED multi-line open and set
+    `in_docstring = True`, which then blindly swallowed every subsequent
+    added line (including the injected `os.system(...)` call) until some
+    later, unrelated line happened to end in a triple-quote. Fixed by
+    finding the closing quote's actual POSITION in the line (open case:
+    search the body after the opening quote; interior case: search the
+    whole line) and inspecting what follows it: empty or a `#` comment
+    closes the docstring cleanly; anything else is real code trailing a
+    self-close, and the whole patch is real code (fail SAFE — return False —
+    never fail open). This applies to both the open-line self-close and an
+    interior line closing a genuine multi-line docstring, since the exact
+    same trailing-code shape is possible on either.
+    """
+    if not patch or not isinstance(patch, str):
+        return False
+    in_docstring = False
+    close_quote = '"""'
+    saw_docs_or_comment = False
+    for raw in patch.splitlines():
+        if raw.startswith("+++") or not raw.startswith("+"):
+            continue
+        stripped = raw[1:].strip()
+        if not stripped:
+            continue
+        if in_docstring:
+            idx = stripped.find(close_quote)
+            if idx == -1:
+                saw_docs_or_comment = True  # whole line is docstring interior
+                continue
+            trailing = stripped[idx + 3 :].strip()
+            if trailing and not trailing.startswith("#"):
+                return False  # closes mid-line, then real code follows
+            saw_docs_or_comment = True
+            in_docstring = False
+            continue
+        if stripped.startswith("#"):
+            saw_docs_or_comment = True
+            continue
+        opens = _DOCSTRING_OPEN_RE.match(stripped)
+        if opens:
+            quote = opens.group(1)
+            close_quote = quote
+            body = stripped[3:]
+            idx = body.find(quote)
+            saw_docs_or_comment = True
+            if idx == -1:
+                in_docstring = True  # unterminated on this line -> multi-line
+                continue
+            trailing = body[idx + 3 :].strip()
+            if trailing and not trailing.startswith("#"):
+                return False  # self-closes, then real code follows on the SAME line
+            continue  # genuine single-line docstring, stays closed
+        return False
+    return saw_docs_or_comment and not in_docstring
+
+
+def _docs_only_exception_active(input_data: dict) -> bool:
+    """True if the repo's config seeds a `docs` class under
+    `policy.load_bearing_test_exceptions` (#284) — see module docstring. Opt-in:
+    a repo that forks the schema without this class keeps the strict
+    pre-#284 posture (every behavior file, docstring-only or not, needs a
+    paired test or an explicit override)."""
+    exceptions = config(input_data).get("policy.load_bearing_test_exceptions", {}) or {}
+    return _DOCS_EXCEPTION_CLASS in exceptions
+
+
 # --- Override validation (mirrors ADMIN_MERGE_EXCEPTION in
 #     validate_pr_ci_status.py, under a distinct env var / config key) --------
 
@@ -464,6 +594,13 @@ def check(input_data: dict) -> dict | None:
         return None
 
     unpaired = [f for f in behavior_files if not _behavior_file_paired(f, test_files)]
+    if unpaired and _docs_only_exception_active(input_data):
+        patch_by_filename = {
+            entry.get("filename"): entry.get("patch")
+            for entry in files
+            if isinstance(entry, dict) and isinstance(entry.get("filename"), str)
+        }
+        unpaired = [f for f in unpaired if not _patch_is_docs_only(patch_by_filename.get(f))]
     if not unpaired:
         return None
 
