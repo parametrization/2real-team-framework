@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.4 (Phase 6 Wave 12: SYMMETRIC TRUST SCORING + ROLLUP HYGIENE — new verified_reviews positive signal + newly-active rework_cycles≥2 ding + must_fix_received ding tightened ≥3→≥2 [#254], rollup-hygiene charter runbook step codifying the W11 stale-local-branch slip [#255]), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.5 (Phase 6 Wave 13: HARDEN THE MACHINERY — verified_reviews per-(reviewer,PR) dedup + tightened _VERIFIED_CHECK_RE [#258/#259], rulesets-aware CI gate [#262], require_children --real-config surface + node unparseable-card warn [#251/#252]; ⚠️ W13's own retro exposed #270: _VERIFIED_CHECK_RE misses `revert->red` ASCII arrow → glyph-decided the reserved-5 rotation), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,8 +11,8 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-08): released v0.10.4 — Phase 6 Wave 12 (SYMMETRIC TRUST
-SCORING + ROLLUP HYGIENE) COMPLETE, merged to main, published to PyPI + npm.** Phase 4
+**Current baseline (2026-07-08): released v0.10.5 — Phase 6 Wave 13 (HARDEN THE MACHINERY)
+COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
 **Phase 6 Wave 1** (v0.6.0) *proved it in the wild* against real diverged forks; **Phase 6 Wave 2**
@@ -55,9 +55,30 @@ decay (all have a signal), no retirement. **Reserved-5 still HELD (Tariq 5, othe
 threshold-bound: rotation waits on a wave large/concentrated enough to clear ≥2 verified reviews.** New
 tech-debt #258 (per-(reviewer,PR) `verified_reviews` dedup) / #259 (tighten bare-`determinism`
 `_VERIFIED_CHECK_RE`). Both S1 + S2 dogfooded THIS wave (symmetric signal scored this very retro; rollup
-step used in this wave's own escape-hatch rollup → content-probe PASS). See [[handoff]] for the exact
-pickup (next = owner picks the theme; **no wave reserved**, stub #260 filed for wave 18). The
-foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+step used in this wave's own escape-hatch rollup → content-probe PASS); **Phase 6 Wave 13** (v0.10.5)
+*HARDENED THE MACHINERY* (owner picked themes 1+2) — 3 file-disjoint stories: S1 `verified_reviews`
+per-(reviewer,PR) dedup [`credited_verified` set in `_account_pr`] + tightened `_VERIFIED_CHECK_RE`
+[dropped bare `determinism`/`ci green`] (#258/#259, PR #266, Paloma→Tariq+Nia); S2 rulesets-aware CI gate
+[`_rulesets_enforce_required_checks` reads `rules/branches/{base}`; True if EITHER classic OR rulesets
+enforces; fail-open preserved] (#262, PR #267, Nia→Tariq+Ibrahim — NOTE the hook is wired IN PLACE from
+`framework/assets/hooks/`, NO `.claude/hooks/` mirror, only `skills/` byte-mirrored per `reinstall.py`);
+S3 `require_children` `--real-config` sidecar surface [default-off #244 preserved] + node
+`usedNamesFromRoster` stderr warn on unparseable `**Name:**` (#251/#252, PR #268, Ibrahim→Nia+Paloma).
+**3 PRs/0 CR/33% conc; all 6 verdicts clean first-pass w/ independent revert→red.** `trust_signals score
+18`: **Tariq +1→5 EARNED (verified_reviews=2, first reserved-5 earned by signal not incumbency);
+Nia/Paloma/Ibrahim 4→4 delta 0.** ⚠️ **HEADLINE: the rotation was GLYPH-DECIDED** — `_VERIFIED_CHECK_RE`
+matches `revert→red` but NOT `revert->red` (ASCII arrow; the `>` breaks `revert\s*(?:→|-+|to)?\s*red`), so
+both #268 reviewers' (Nia, Paloma) substantive blocks scored ZERO → Nia landed `verified_reviews=1` (only
+#266, used `→`), Paloma 0; had Nia's #268 block matched she'd hit 2 as a diff-3 author → likely TAKEN the
+reserved 5 on composite. Mechanical scores STAND; owner call on W18 reserved-5 deferred pending fix.
+**NEW tech-debt: #269** (rulesets `parameters` non-dict guard, non-blocking crashes-into-fail-open),
+**#270** (HIGH — the `revert->red` arrow false-negative). Also filed as standing backlog: **#264**
+(re-audit botfarm_inc + noorinalabs-main for last-week learnings → feeds #102), **#265** (`2real-team
+restore` product CLI command — `repo_space.py` has `restore_assets`+manifest [#108] but NOT surfaced on the
+product CLI, and its contract is "managed assets" not "pristine"). See [[handoff]] for the exact pickup
+(next = owner picks the theme; **no wave reserved**, stub #271 filed for wave 19; readiest = #270/#269 +
+broaden Verified token-set [small hardening], #264 audit, #265 restore command, #110/#102 P2 [larger]).
+The foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
 
 **Phase 6 Wave 11 → v0.10.3 (2026-07-08, rollup direct-push merge `be5ec26`, bump `68814f8`, retro
 `9b7f1ac`, ontology `52c4a89`) — "Harden + Process."** A combined hardening + process wave (owner
