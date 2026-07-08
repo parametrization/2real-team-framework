@@ -1523,3 +1523,38 @@ class TestRestore:
             app, ["restore", "--target", str(tmp_path), "--non-interactive"]
         )
         assert result.exit_code == 0, result.output
+
+
+class TestInstallBranch:
+    """The packaged ``2real-team install-branch`` command (bridges to install_branch.py, #279)."""
+
+    def test_non_git_repo_refuses(self, tmp_path: Path):
+        """A non-git target refuses (exit 1) and creates nothing (message wraps under rich, so
+        assert behaviorally; the engine test covers the exact message text)."""
+        result = runner.invoke(
+            app, ["install-branch", "--target", str(tmp_path), "--non-interactive"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "git repo" in result.output.lower()  # the plan line printed before refusing
+        assert not (tmp_path / ".claude").exists()
+
+    def test_dry_run_creates_no_branch(self, tmp_path: Path):
+        """--dry-run on a clean git repo previews the plan; creates no branch and no files."""
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@t",
+             "commit", "-q", "--allow-empty", "-m", "seed"], check=True,
+        )
+        result = runner.invoke(
+            app,
+            ["install-branch", "--target", str(tmp_path), "--dry-run", "--non-interactive"],
+        )
+        assert result.exit_code == 0, result.output
+        branches = subprocess.run(
+            ["git", "-C", str(tmp_path), "branch", "--list", "real-team/install"],
+            capture_output=True, text=True,
+        )
+        assert branches.stdout.strip() == ""
+        assert not (tmp_path / ".claude").exists()

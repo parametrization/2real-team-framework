@@ -646,6 +646,61 @@ def restore(
         raise typer.Exit(proc.returncode)
 
 
+@app.command(name="install-branch")
+def install_branch(
+    target: str = typer.Option(".", help="Target directory"),
+    owner: str = typer.Option(None, help="scm.owner (GitHub org/user) for the staged install"),
+    branch: str = typer.Option(
+        None, "--branch", help="Install branch name to create (default: real-team/install)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview the plan; create no branch"
+    ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt; proceed without the confirmation gate (automation)",
+    ),
+    return_to_original: bool = typer.Option(
+        False,
+        "--return",
+        help="After staging, check the original branch back out (tree left clean; install "
+        "parked on the branch) instead of staying on the install branch",
+    ),
+) -> None:
+    """Stage a framework install onto a throwaway git branch — trial it, then merge or delete.
+
+    The git-native sibling of `2real-team restore`: instead of installing onto your working tree
+    (undo later via the manifest), it creates a dedicated install branch off HEAD, runs the install
+    there, and commits it as one commit. Try it out, then `git merge` the branch to keep it or
+    `git branch -D` to walk away clean — no manifest bookkeeping. Refuses in a non-git repo or a
+    dirty tree (use a plain install + `restore` there); --dry-run previews only.
+    """
+    from .framework_install import stage_install_framework
+
+    target_path = Path(target).resolve()
+    proc = stage_install_framework(
+        target_path,
+        branch=branch,
+        owner=owner,
+        dry_run=dry_run,
+        non_interactive=non_interactive,
+        return_to_original=return_to_original,
+    )
+    if proc is None:
+        console.print(
+            "[yellow]Cannot stage install:[/yellow] bundled framework assets not found "
+            "(re-run from a source checkout, or use the standalone install-branch command)."
+        )
+        raise typer.Exit(1)
+    if proc.stdout:
+        console.print(proc.stdout.rstrip())
+    if proc.returncode != 0:
+        if proc.stderr:
+            console.print(f"[red]{proc.stderr.strip()}[/red]")
+        raise typer.Exit(proc.returncode)
+
+
 def _extract_field(content: str, field: str) -> str | None:
     """Extract a field value from a roster card."""
     for line in content.splitlines():
