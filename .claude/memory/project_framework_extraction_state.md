@@ -1,6 +1,6 @@
 ---
 name: project_framework_extraction_state
-description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.1 (Phase 6 Wave 9: FIXED the gate & scorer — trust scorer credits resolved catches from comment edit-history + difficulty weight, CI-green merge precondition blocks pending merges on unenforced bases, documented amend-in-place + rollup escape-hatch, wave-end review-load; applied the W13 retro proposals), what's built, what's deferred. Read first to pick up.
+description: Where the noorinalabs→2real framework extraction stands — shipped to v0.10.2 (Phase 6 Wave 10: HARDENED the installer — amend path reconciles [not unions] config hook module-lists onto canonical [#162], real-repo provisioner hardening [#155 items 1/2/3/5: partial-clone fingerprint-on-failure, de-hardcoded fixtures, merge-not-replace overrides, nested-child mkdir; item 4→#101]; the deferred W8 follow-on), what's built, what's deferred. Read first to pick up.
 metadata:
   type: project
 ---
@@ -11,7 +11,7 @@ orchestration machinery from the sibling `noorinalabs-main` repo (`.claude/` +
 `GENERICISATION-BACKLOG.md` (36 net-new artifacts: 20 hooks, 7 charter files, 5 libs,
 4 skills + the shared-config knob set + stack-opinionated assets §C).
 
-**Current baseline (2026-07-07): released v0.10.1 — Phase 6 Wave 9 (FIX the gate & scorer)
+**Current baseline (2026-07-08): released v0.10.2 — Phase 6 Wave 10 (HARDEN the installer)
 COMPLETE, merged to main, published to PyPI + npm.** Phase 4
 ("self-hosting & quality machinery") made the framework trustworthy run on itself; **Phase 5**
 ("installer robustness", v0.5.0) made the installer trustworthy on repos *other than this one*;
@@ -31,9 +31,45 @@ reviewer stopped user-data-loss on the flagship before it reached main); **Phase
 *FIXED the gate & scorer* — applied the W13 retro proposals: trust scorer credits resolved catches from
 comment edit-history (closing the amend-in-place erasure) + difficulty weight, CI-green merge precondition
 blocks a pending merge when the base has no branch-protection enforcement, documented amend-in-place +
-rollup escape-hatch, mechanized wave-end review-load. See [[handoff]] for the exact pickup (next = owner
-picks the theme — installer-hardening #162/#155 the deferred W8 follow-on; no wave reserved). The
+rollup escape-hatch, mechanized wave-end review-load; **Phase 6 Wave 10** (v0.10.2) *HARDENED the
+installer* — the deferred W8 follow-on: the amend path now reconciles (not unions) the config hook
+module-lists onto the canonical shipped set so an upgrade-over-diverged install drops stale entries (#162),
+and the real-repo provisioner got 4/5 hardening items (partial-clone fingerprint-on-failure, de-hardcoded
+fixtures, merge-not-replace `--real-config` overrides, nested-child `mkdir(parents=True)`; item 4→#101)
+(#155). See [[handoff]] for the exact pickup (next = owner picks the theme; **no wave reserved**). The
 foundation (PR #41) shipped long ago; Phase 3 (v0.4.0) below.
+
+**Phase 6 Wave 10 → v0.10.2 (2026-07-08, rollup direct-push merge `69e7ca6`, bump `2585ae8`, wrapup
+`8fa9f2c`, ontology `d979da2`) — "Harden the installer."** The deferred W8 installer-hardening follow-on
+and the second half of the approved W9→W10 two-wave plan. **2 PRs, 0 changes-requested cycles, 50%
+concentration (2 distinct authors), 809 tests. All 4 reviewer verdicts clean first-pass.** File-disjoint
+(`framework/install/bootstrap.py` vs `framework/harness/real_provision.py`). Meta #237; stories #238/#239.
+- **S1 #238/PR#240 (Paloma → Nia + Tariq):** fixes #162. The keep-&-amend path called `write_config(force=
+  False)`, which SKIPPED an existing `framework.config.json` entirely → diverged hook lists survived and the
+  oracle `m_config_module_lists_complete` failed. New `reconcile_module_lists()` + `_RECONCILED_HOOK_LISTS`
+  fully REPLACE the six framework-owned hook lists with the canonical set (drop stale, restore order,
+  `agent`→[], `stop`→["session_handoff"]) while preserving user fields (`scm.owner`, `policy`, user
+  `pre_push_commands`). Idempotent, fail-open on malformed config. All three reviewers mutation-proved a
+  union would still fail the oracle.
+- **S2 #239/PR#241 (Ibrahim → Paloma + Tariq):** fixes #155 items 1/2/3/5 (item 4 owned by #101). In
+  `framework/harness/real_provision.py`: (1) the read-only source after-fingerprint assertion now runs on
+  partial clone failure via try/finally, `SourceMutatedError` prioritized, original error not swallowed;
+  (2) removed hardcoded `/home/...` `DEFAULT_REAL_FIXTURES` (env-overridable `_default_source()`); (3)
+  `--real-config`/`real_fixtures` overrides MERGE (preserve `children`) instead of replace, full spec still
+  replaces (back-compat); (5) nested child paths clone via `mkdir(parents=True)`, clean error otherwise.
+  Test file renamed `test_real_provisioner.py`→`test_real_provision.py` to satisfy the pairing gate.
+- **Trust (`score 15`):** Paloma difficulty=2 / Ibrahim difficulty=3, both delta 0; clean wave, edit-history
+  crediting did not fire. **Tariq 5→5** (reserved HELD — sole reviewer of both PRs, union/finally mutation
+  probes). **Nia 4→4** (5-READY but review-only this wave; now flagship-caliber 3 of last 4 waves without
+  taking the 5 — the rotation tension is the sharpest standing item). **Paloma 4→4** (flagship S1 + a
+  mutation-probed S2 review). **Ibrahim 4→4** (clean S2).
+- **✅ Both W14 orchestration incidents designed out** (distinct agent names + `isolation: worktree` → no
+  collision; both PRs confirmed 12/12 CI-green before the gated merge → no red-merge). Two contained minor
+  incidents: an errant bootstrap inside Paloma's isolated worktree (compound `cd`-after-hook-block; caught
+  via `git status`, PR diff verified clean, never reached the PR) + a concurrent-agent temp-file collision
+  (switched to per-agent-prefixed names). Proposals: per-agent temp-file namespacing; guard e2e `cd` on
+  `mkdir`; resolve the reserved-5 rotation. New tech-debt filed: #242 (amend-reconcile doc note), #243
+  (source-less new-bucket `--real-config` KeyError, pre-existing).
 
 **Phase 6 Wave 9 → v0.10.1 (2026-07-07, rollup direct-push merge `7ee2bdb`, bump `9e8b2fa`, wrapup
 `1495b46`, ontology `9368687`) — "Fix the gate & scorer."** Hardened the trust/gate machinery the team
