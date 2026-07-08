@@ -157,6 +157,18 @@ fields (the exact form the roster carries) — `trust_signals.py` keys reviewer
 identity off that field, so a nickname or role suffix (`Tariq (QA)`) attributes
 the signal to the wrong (or no) engineer.
 
+**This grammar is reviewer-only — a PR author's reply to a must-fix is a PLAIN
+comment, NEVER a `Requestor:` / `RequestOrReplied:` verdict.** The `Requestor:`
+field names a *reviewer*, and a reviewer reviews someone else's PR; if the PR
+author answers a must-fix by wearing the verdict header on their own PR, the
+scorer would read them as a third reviewer of their own PR and manufacture
+spurious `verified_reviews` / `missed_catches` (the Wave-21 slip, #288). So when
+you are the author, just reply in prose ("Fixed in <sha> — <what changed>"), with
+no verdict header. As a durable backstop the scorer and the review-load counter
+now **author-exclude** any verdict whose `Requestor:` resolves to the PR's own
+author (mirroring the merge gate's exclusion of a self-addressed verdict), but
+the convention is still to never post one.
+
 ### Request vs. Replied, Must-fix vs. Tech-debt (semantics)
 
 The tokens carry meaning beyond their shape. `validate_review_comment_format`

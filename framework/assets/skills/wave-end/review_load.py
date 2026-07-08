@@ -74,22 +74,31 @@ class ReviewLoad:
 def review_load(prs, *, canon=None) -> dict[str, ReviewLoad]:
     """Pure: fold a wave's verdict comments into ``{reviewer: ReviewLoad}``.
 
-    ``prs`` is an iterable of ``(pr_key, comment_bodies)`` — ``pr_key`` any
-    hashable PR identity, ``comment_bodies`` the list of that PR's issue-comment
-    body strings. ``canon`` is an optional ``name -> canonical_name`` mapper
-    (default identity); pass ``trust_signals._canonicalizer(cfg)`` to fold name
-    variants to their roster identity exactly as the scorer does.
+    ``prs`` is an iterable of ``(pr_key, author, comment_bodies)`` — ``pr_key``
+    any hashable PR identity, ``author`` that PR's author identity (the head
+    commit author name the scorer buckets by; may be ``None`` when unknown),
+    ``comment_bodies`` the list of that PR's issue-comment body strings.
+    ``canon`` is an optional ``name -> canonical_name`` mapper (default
+    identity); pass ``trust_signals._canonicalizer(cfg)`` to fold name variants
+    to their roster identity exactly as the scorer does.
 
     Verdicts with no ``Requestor:`` are skipped (nobody to attribute the load
-    to). Ordering of ``prs`` never affects the counts — the result is a pure
-    function of the multiset of (reviewer, pr) pairs.
+    to). A verdict whose ``Requestor:`` resolves to the PR's own ``author`` is
+    author-excluded (#288): the author wearing reviewer grammar on their own PR
+    is not a review turn and must not add to anyone's load — the same exclusion
+    ``trust_signals`` applies to the scoring signals, via the shared
+    :func:`trust_signals.is_author_self_review` helper. Ordering of ``prs`` never
+    affects the counts — the result is a pure function of the multiset of
+    (reviewer, pr) pairs.
     """
     canon = canon or (lambda n: n)
     out: dict[str, ReviewLoad] = {}
-    for pr_key, comment_bodies in prs:
+    for pr_key, author, comment_bodies in prs:
         seen_this_pr: set[str] = set()
         for v in ts.parse_verdicts(comment_bodies):
             if not v.requestor:
+                continue
+            if ts.is_author_self_review(v.requestor, author, canon):
                 continue
             name = canon(v.requestor)
             load = out.setdefault(name, ReviewLoad())
@@ -139,7 +148,12 @@ def extract_review_load(
     prs = ts.merged_prs(wave, status_path, label=label, cfg=cfg)
     canon = ts._canonicalizer(cfg)
     rows = [
-        (pr["number"], ts._pr_comment_bodies(pr["repo"], pr["number"])) for pr in prs
+        (
+            pr["number"],
+            pr.get("commit_author_name"),
+            ts._pr_comment_bodies(pr["repo"], pr["number"]),
+        )
+        for pr in prs
     ]
     return review_load(rows, canon=canon)
 

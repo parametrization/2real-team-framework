@@ -660,6 +660,115 @@ def test_durable_ledger_attributes_two_distinct_reviewers(tmp_path) -> None:
     assert sigs["Nia Rossi"].must_fix_caught == 1
 
 
+# =========================================================================== #288 author-exclusion
+# The charter's ``Requestor:`` names the REVIEWER, and a reviewer reviews someone
+# ELSE's PR. A verdict whose Requestor resolves to the PR's own author is the
+# author wearing reviewer grammar on their own PR (the W21 slip: a must-fix reply
+# that landed in ``Requestor:`` form on the author's own PR — issue #288). It must
+# accrue NO reviewer signal. These drive the real ``_account_pr`` and are the
+# mutation bar for the exclusion: reverting the filter re-introduces the spurious
+# signals and each test goes red.
+# ===========================================================================
+
+
+def test_account_pr_author_self_verdict_excluded_from_reviewer_signals(tmp_path) -> None:
+    """The W21 exact scenario: a PR authored by Ibrahim gets ONE genuine must-fix
+    from a real reviewer (Nia), and Ibrahim's own reply wears ``Requestor:
+    Ibrahim`` on his own PR carrying a clean ``Verified:`` block.
+
+    The author self-verdict must be author-excluded: it earns Ibrahim NO
+    ``verified_reviews`` (it is not a review) and NO ``missed_catches`` (he is not
+    a negligent third reviewer of his own PR). The genuine reviewer's catch still
+    lands, and the author still takes the real must-fix he received.
+
+    Mutation bar: reverting the author-exclusion filter credits Ibrahim's clean
+    self-verdict as a verified review (``verified_reviews == 1``) and — because the
+    PR has a durable catch he did not make — dings him a missed catch
+    (``missed_catches == 1``); both assertions below then fail.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Ibrahim El-Amin",
+        repo="o/r",
+        number=287,
+        comment_histories=[
+            [_verdict_body("Nia.Rossi", "Request", "Fix the real bug.")],
+            [_verified_body("Ibrahim.El-Amin")],  # author self-verdict, clean + Verified
+        ],
+        ci_red=False,
+    )
+    # Genuine reviewer's catch is credited; the author takes the real must-fix.
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 1
+    assert sigs["Ibrahim El-Amin"].rework_cycles == 1
+    # The author self-verdict accrues NO reviewer signal to the author.
+    assert sigs["Ibrahim El-Amin"].verified_reviews == 0
+    assert sigs["Ibrahim El-Amin"].missed_catches == 0
+
+
+def test_account_pr_author_self_request_is_not_a_received_mustfix(tmp_path) -> None:
+    """An author's own ``Request`` with a Must-fix on their own PR (Requestor ==
+    author) is not a reviewer catch: it credits the author NO ``must_fix_caught``,
+    is NOT a ``must_fix_received`` for them, and starts NO ``rework_cycles`` round.
+    A genuine reviewer's clean verdict on the same PR is untouched.
+
+    Mutation bar: reverting the filter counts the author as their own reviewer —
+    ``must_fix_caught == 1``, ``must_fix_received == 1``, ``rework_cycles == 1`` —
+    and all three assertions fail.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Ibrahim El-Amin",
+        repo="o/r",
+        number=290,
+        comment_bodies=[
+            _verdict_body("Ibrahim.El-Amin", "Request", "I flag my own bug."),
+            _verdict_body("Nia.Rossi", "Replied", None),  # genuine clean reviewer
+        ],
+        ci_red=False,
+    )
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 0
+    assert sigs["Ibrahim El-Amin"].must_fix_caught == 0
+    assert sigs["Ibrahim El-Amin"].rework_cycles == 0
+
+
+def test_account_pr_ledger_self_catch_excluded(tmp_path) -> None:
+    """A durable-ledger catch whose Requestor is the PR author (a self-catch) is
+    author-excluded just like the comment path: it is not counted, while a genuine
+    reviewer's ledger catch on the same PR still lands.
+
+    Mutation bar: reverting the ledger-loop filter counts the self-catch —
+    ``must_fix_received == 2`` and the author gains ``must_fix_caught == 1`` — and
+    the assertions fail.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ledger = [
+        {"repo": "o/r", "pr": 700, "requestor": "Ibrahim.El-Amin", "requestee": "Ibrahim.El-Amin"},
+        {"repo": "o/r", "pr": 700, "requestor": "Nia.Rossi", "requestee": "Ibrahim.El-Amin"},
+    ]
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Ibrahim El-Amin",
+        repo="o/r",
+        number=700,
+        comment_bodies=[_verdict_body("Nia.Rossi", "Replied", None)],
+        ci_red=False,
+        review_catches=ledger,
+    )
+    assert sigs["Ibrahim El-Amin"].must_fix_received == 1  # only the genuine catch
+    assert sigs["Nia Rossi"].must_fix_caught == 1
+    assert sigs["Ibrahim El-Amin"].must_fix_caught == 0  # no self-catch credit
+    assert sigs["Ibrahim El-Amin"].rework_cycles == 1
+
+
 # ===========================================================================
 # Integration-branch resolution (#100): phase-aware branch.integration template.
 # ===========================================================================
