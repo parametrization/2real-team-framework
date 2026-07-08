@@ -196,6 +196,21 @@ _RULESET_EMPTY_CHECKS = (
     '[{"type": "required_status_checks", "ruleset_id": 7, '
     '"parameters": {"required_status_checks": []}}]'
 )
+# A required-status-checks rule whose `parameters` is a non-dict (a LIST). The
+# rulesets API can shape it this way; `.get(...)` on a list would raise (#269).
+_RULESET_LIST_PARAMS = (
+    '[{"type": "required_status_checks", "ruleset_id": 7, '
+    '"parameters": [{"required_status_checks": [{"context": "node (20)"}]}]}]'
+)
+# A LIST-parameters rule (must be skipped, not raise) sitting BEFORE a
+# well-formed enforcing rule — proves the guard preserves the other rule's
+# enforcement info instead of crashing the whole scan into fail-open.
+_RULESET_LIST_PARAMS_THEN_ENFORCING = (
+    '[{"type": "required_status_checks", "ruleset_id": 7, '
+    '"parameters": [{"required_status_checks": [{"context": "lint"}]}]}, '
+    '{"type": "required_status_checks", "ruleset_id": 8, '
+    '"parameters": {"required_status_checks": [{"context": "node (20)"}]}}]'
+)
 
 
 def test_rulesets_true_on_enforcing_rule(monkeypatch) -> None:
@@ -265,6 +280,29 @@ def test_rulesets_none_on_non_list_payload(monkeypatch) -> None:
 def test_rulesets_none_without_repo_or_base() -> None:
     assert hook._rulesets_enforce_required_checks(None, "main") is None
     assert hook._rulesets_enforce_required_checks("acme/widget", None) is None
+
+
+def test_rulesets_list_parameters_does_not_raise_or_false_enforce(monkeypatch) -> None:
+    # #269: the rulesets API can return `parameters` as a non-dict (a list).
+    # `.get(...)` on a list would raise AttributeError -> crash into fail-open.
+    # The guard skips such a rule as carrying no enforcement info: no raise, and
+    # (with no OTHER enforcing rule) a DEFINITIVE False — not a manufactured one.
+    monkeypatch.setattr(
+        hook.subprocess, "run", lambda *a, **k: _FakeProc(0, _RULESET_LIST_PARAMS)
+    )
+    assert hook._rulesets_enforce_required_checks("acme/widget", "main") is False
+
+
+def test_rulesets_list_parameters_preserves_other_rule_enforcement(monkeypatch) -> None:
+    # The list-parameters rule is skipped, but a well-formed enforcing rule after
+    # it is still honored -> True. Proves the guard preserves real enforcement
+    # info instead of discarding the whole scan on one malformed rule.
+    monkeypatch.setattr(
+        hook.subprocess,
+        "run",
+        lambda *a, **k: _FakeProc(0, _RULESET_LIST_PARAMS_THEN_ENFORCING),
+    )
+    assert hook._rulesets_enforce_required_checks("acme/widget", "main") is True
 
 
 # --------------------------------------------------------------------------- #
