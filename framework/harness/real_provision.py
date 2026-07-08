@@ -86,11 +86,13 @@ class RealFixtureSpec:
     ref: str = "refs/heads/main"
     model: str = "single-repo"                 # "single-repo" | "meta-and-children"
     children: tuple[RealChildSpec, ...] = ()
+    require_children: bool = False             # #251: per-bucket opt-in zero-children hard guard
 
     def to_dict(self) -> dict:
         return {"bucket": self.bucket, "source": self.source, "pin": self.pin,
                 "ref": self.ref, "model": self.model,
-                "children": [c.to_dict() for c in self.children]}
+                "children": [c.to_dict() for c in self.children],
+                "require_children": self.require_children}
 
     @classmethod
     def from_dict(cls, bucket: str, d: dict) -> RealFixtureSpec:
@@ -98,6 +100,7 @@ class RealFixtureSpec:
             bucket=bucket, source=d["source"], pin=d.get("pin"),
             ref=d.get("ref", "refs/heads/main"), model=d.get("model", "single-repo"),
             children=tuple(RealChildSpec.from_dict(c) for c in d.get("children", ())),
+            require_children=bool(d.get("require_children", False)),
         )
 
     def merge(self, d: dict) -> RealFixtureSpec:
@@ -111,6 +114,9 @@ class RealFixtureSpec:
         children = self.children
         if "children" in d:
             children = tuple(RealChildSpec.from_dict(c) for c in d["children"])
+        require_children = self.require_children
+        if "require_children" in d:
+            require_children = bool(d["require_children"])
         return replace(
             self,
             source=d.get("source", self.source),
@@ -118,6 +124,7 @@ class RealFixtureSpec:
             ref=d.get("ref", self.ref),
             model=d.get("model", self.model),
             children=children,
+            require_children=require_children,
         )
 
 
@@ -266,16 +273,20 @@ def _guard_zero_children(spec: RealFixtureSpec, opts: dict) -> None:
     zero-children meta install. By DEFAULT this is surfaced with a ``warnings.warn`` and the
     trivial install proceeds — a childless meta is a valid (if trivial) install, and a smoke-test
     ``--include-real`` run should degrade rather than crash. A real provisioning run that MUST have
-    children (``#101``/``#109``) can opt into a HARD guard with ``opts['real_require_children']``:
-    the harness then raises ``MissingFixtureError`` (degraded to a *skip* by the runner) instead of
-    shipping the degenerate zero-children install, so a misconfigured real run fails visibly rather
-    than silently provisioning an empty meta.
+    children (``#101``/``#109``) can opt into a HARD guard two equivalent ways: the global
+    ``opts['real_require_children']`` (all buckets), OR the bucket spec's own ``require_children``
+    flag (#251 — settable per bucket through the ``--real-config`` sidecar JSON, e.g.
+    ``{"B10": {"require_children": true}}``, so an operator toggles the guard without editing code).
+    Either enabled, the harness raises ``MissingFixtureError`` (degraded to a *skip* by the runner)
+    instead of shipping the degenerate zero-children install, so a misconfigured real run fails
+    visibly rather than silently provisioning an empty meta. Both surfaces default OFF (#244): the
+    guard stays a warn-and-proceed unless one is explicitly enabled.
     """
-    if opts.get("real_require_children"):
+    if opts.get("real_require_children") or spec.require_children:
         raise MissingFixtureError(
             f"real fixture {spec.bucket!r} is meta-and-children with zero children and "
             "real_require_children is set — refusing the degenerate zero-children meta install; "
-            "supply children via --real-config (#155 item 4 / #244)."
+            "supply children via --real-config (#155 item 4 / #244 / #251)."
         )
     warnings.warn(
         f"real fixture {spec.bucket!r} is meta-and-children with zero children — "
