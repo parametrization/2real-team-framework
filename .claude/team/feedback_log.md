@@ -901,3 +901,53 @@ concentration (2 authors), 809 tests. All 4 reviewer verdicts clean first-pass. 
 - **Still open:** #101 item 4 (bare B10 zero-children guard) · #234 (node RNG seed + name-dedupe, then
   drop the `vitest --retry` quarantine) · the rulesets-vs-classic branch-protection probe · #110
   (distribute as a Claude Code skill) · more #102 P2.
+
+## Retrospective: Wave 16 (Phase 6 Wave 11) — 2026-07-08 — "Harden + Process"
+
+### Wave Metrics
+3 PRs merged (#248 S1, #249 S2, #247 S3), all file-disjoint. Issues closed: #243 #244 #242 #234 #245.
+6/6 reviewer verdicts clean first-pass (2 per PR, author-exclusive). CI 12/12 green on the rollup; both
+publish workflows (npm + PyPI, OIDC) succeeded → **v0.10.3**. Tech-debt filed: #251 (real_require_children
+CLI surface), #252 (usedNamesFromRoster warn on unparseable card). **Counter drift: none** — claimed
+pr=3/cr=0/conc=33 all matched recomputation exactly (3 PRs, one per author, zero ChangesRequested).
+
+### Top-Implementer Concentration
+1 / 3 = **33%** — evenly split across Paloma, Ibrahim, Nia (each authored one story). Healthy; well below
+the 60% force-call threshold.
+
+### Per-Engineer Assessments
+- **Tariq Morales** (5→5): QA on all 3, real revert/determinism/parity verification, caught the doc
+  five-vs-six hook-key discrepancy; `must_fix_caught=0` (clean wave, nothing to catch). delta 0.
+- **Nia Rossi** (4→4): authored S3 — the author wave that answers the W15 review-only concern; clean
+  difficulty-2 docs work is not a bump. delta 0.
+- **Ibrahim El-Amin** (4→4): authored S2 (difficulty 3), root-caused the node flake + proved determinism
+  before dropping the quarantine; cross-reviewed S1. delta 0.
+- **Paloma Gupta** (4→4): authored S1 (multi-issue, well-judged default-off guard); cross-reviewed S2 with
+  5× determinism runs. delta 0.
+
+### Top 3 Going Well
+1. **The prior incident classes are now designed-out AND codified.** No name collision, no red-merge — and
+   S3 promoted the very W14/W15 fixes for those incidents into the charter, so they are enforced doctrine now.
+2. **Even load distribution** (33%, three distinct authors) with fully file-disjoint stories → zero merge
+   conflict, zero cross-story review contention.
+3. **Clean first-pass across the board** — 6/6 verdicts clean with genuine mutation/determinism probes, 0 CR
+   cycles, 0 red-merges.
+
+### Top 3 Pain Points
+1. **Orchestrator rollup slip:** the first rollup merged a STALE LOCAL wave branch (feature PRs had merged
+   into `origin/…`; local ref never fast-forwarded), landing a code-less merge on main. Caught by a
+   post-merge content probe and corrected before the bump/release — but it should not have happened.
+2. **Reserved-5 rotation still unresolved.** Giving Nia an author wave removed the "review-only dead end"
+   framing, but the mechanical "one clean small PR ≠ bump" rule still holds her at 4 while Tariq's 5 rides
+   on a catch-less clean wave. The tension is now purely mechanical, and sharper for it.
+3. **Clean waves starve reviewer signal.** With no must-fixes anywhere, QA rigor (Tariq's real probes)
+   earned zero countable credit — `must_fix_caught` only rewards catching defects that exist.
+
+### Proposed Process Changes (approval-gated — NOT applied)
+1. **Rollup hygiene step:** add an explicit "fast-forward the local wave ref (or merge `origin/<wave>`) and
+   verify feature-code presence on the merge parent" step to the wave-end/escape-hatch rollup runbook, so a
+   stale-local-branch rollup is caught before it reaches main. — Rationale: pain point #1, this wave.
+2. **Reserved-5 rotation (carry-over, now owner-scoped):** the owner deferred the scoring change this wave;
+   W16 confirms the tension is mechanical (clean-small work can't bump). Options remain: rotational-on-streak,
+   or split author/reviewer-excellence signals, or a "verified-clean-review" positive signal so QA rigor on a
+   clean wave isn't zero-credit. — Rationale: pain points #2 and #3.

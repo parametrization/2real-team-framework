@@ -464,3 +464,41 @@ Rows = the team member rating. Columns = the team member being rated.
 | Ibrahim El-Amin | Clean 4-item provisioner fix with the safety-critical fingerprint path proven load-bearing; documented the #101 deferral; flagged the temp-collision | to move toward 5, author an architecturally load-bearing seam or land a real blocking catch — S2 was solid-but-scoped hardening. |
 | Nia Rossi | TL-grade S1 review with an independent end-to-end amend reproduction + union mutation probe | 5-ready but review-only this wave — as your own W14 guidance said, that can't move you off 4; author or catch next wave and the reserved-5 rotation finally resolves in your favor. |
 | Paloma Gupta | Flagship authorship + a genuinely mutation-probed cross-review in the same wave; self-caught and recovered a worktree clobber with zero PR impact | the errant-bootstrap incident traces to a compound `cd`-after-hook-block Bash pattern — tighten e2e scripting (guard `cd` on `mkdir` success, or run e2e in an explicit scratch dir) so a hook-blocked line can't silently redirect later commands. |
+
+## Wave 16 Trust Updates (2026-07-08) — Phase 6 Wave 11 "Harden + Process" → v0.10.3
+
+> **3 PRs, 0 changes-requested cycles, 33% top concentration (3 distinct authors). All 6 reviewer
+> verdicts clean first-pass.** Three file-disjoint stories: S1 provisioner/config hardening (#243/#244/#242),
+> S2 node-flake root-fix (#234), S3 charter process hardening (#245). Shipped as **v0.10.3** (patch).
+> `trust_signals score 16`: every author `delta 0` (one clean PR each — a single clean PR is not a bump).
+> No must-fixes existed anywhere in the wave, so no reviewer earned catch-credit (`must_fix_caught=0` across
+> the board) — a genuinely clean wave, not a scoring gap.
+>
+> **✅ Both prior orchestration incident classes stayed designed-out.** Agents spawned with distinct names
+> (PalomaW11/IbrahimW11/NiaW11 + TariqRevW11/IbrahimRevW11/PalomaRevW11) + explicit `isolation: worktree` →
+> no collision; every PR confirmed CI-green before the gated merge → no red-merge. Notably, **S3 (#247)
+> promoted the W14/W15 fixes for these very incidents into the charter** (per-agent scratch namespacing +
+> e2e cd/mkdir hygiene), so the operational lessons are now enforced doctrine rather than tribal memory.
+>
+> **One self-inflicted orchestration slip (orchestrator, non-charged to engineers):** the rollup merged a
+> STALE LOCAL wave branch (feature PRs had merged server-side into `origin/…`; the local ref was never
+> updated), landing a code-less merge commit (state.json only) on main. Caught immediately by a
+> post-merge content probe (`usedNamesFromRoster` = 0 refs on main), corrected with a follow-up merge of
+> `origin/deployments/phase6/wave-11` before the version bump/release — no release shipped without the
+> code. Lesson: fast-forward the local wave ref (or merge `origin/<wave>` explicitly) at rollup time.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Tariq Morales | 5 | **5** | reserved-5 **HELD** (incumbent; no decay — decay needs 3 consecutive signal-less waves). Sole QA reviewer on all 3 PRs (author-exclusive on none). Did real verification: proved both #248 fixes revert→red, ran the node suite 5× for determinism, checked charter byte-parity + `charter_drift=[]`, and caught that #242's doc note lists the correct SIX reconciled hook keys where the issue prose said "five". But `must_fix_caught=0` — a clean wave offered no catch to demonstrate rigor beyond clean verification. delta 0. |
+| Nia Rossi | 4 | **4** | Authored S3 (#247, difficulty 2) — **finally an author wave, which resolves the W15 "review-only dead end" concern directly**. Clean docs-only charter hardening with verified dual-deploy byte-parity and a correctly-handled stale-manifest checksum (fixed via `install_charter(refresh=True)`, the sanctioned path). But a single clean difficulty-2 PR is not a +1 bump, so the reserved-5 rotation is still unresolved — now less about "she never authors" and more about the mechanical rule that clean-but-small work holds at 4. delta 0. |
+| Ibrahim El-Amin | 4 | **4** | Authored S2 (#234, difficulty 3, the meatiest story): root-caused the node flake (dedupe compared role-prefixed filenames, never bare names) + made the RNG seedable, proved determinism (5–15× clean) before removing the `--retry=2` quarantine, and left the load-bearing tests genuinely revert→red. Also cross-reviewed S1 with real revert probes. Solid senior authorship; no blocking catch or architectural seam to move to 5. delta 0. |
+| Paloma Gupta | 4 | **4** | Authored the multi-issue S1 (#248, difficulty 2): friendly `MissingFixtureError`, a well-judged default-off opt-in zero-children guard (preserving the legitimate childless smoke-test), and an accurate doc note. Also cross-reviewed S2 with 5× determinism runs + dedupe revert probe. Author + substantive cross-review in one wave, all clean. delta 0; a blocking catch or larger seam is the path to 5. |
+
+### Done Well / Needs Improvement (Wave 16 / Phase 6 Wave 11)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | QA-verified all 3 PRs with real revert→red / determinism / byte-parity probes; caught the five-vs-six hook-key doc discrepancy; kept 2 findings appropriately non-blocking tech-debt | reviewed 3/3 but `must_fix_caught=0` — a genuinely clean wave (nothing to catch), so the reserved-5 held on clean verification rather than a demonstrated catch this wave. |
+| Nia Rossi | Author wave at last (S3) — clean charter hardening with proven dual-deploy parity and a sanctioned manifest-refresh recovery | `prs_merged=1`, difficulty-2 docs work → not a +1 bump; the reserved-5 rotation stays unresolved on the mechanical clean-but-small rule, not on opportunity now. |
+| Ibrahim El-Amin | Root-caused the node flake and proved determinism before dropping the CI quarantine; load-bearing tests genuinely revert→red; cross-reviewed S1 with real probes | node flake root-fix was well-scoped hardening, not an architecturally load-bearing seam — author or catch bigger to reach 5. |
+| Paloma Gupta | Multi-issue S1 with a well-judged default-off guard + accurate docs; cross-reviewed S2 with 5× determinism runs | `must_fix_received=0` and clean, but no blocking catch or larger architectural seam — the standing path to 5. |
