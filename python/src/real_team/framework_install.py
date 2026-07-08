@@ -161,3 +161,71 @@ def restore_framework(
     if dry_run:
         cmd += ["--dry-run"]
     return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def stage_install_framework(
+    target: Path,
+    *,
+    branch: str | None = None,
+    owner: str | None = None,
+    shell: str = "bash",
+    merge_model: str | None = None,
+    install_config: Path | str | None = None,
+    with_ontology: bool | None = None,
+    expect: str | None = None,
+    dry_run: bool = False,
+    non_interactive: bool = True,
+    return_to_original: bool = False,
+) -> subprocess.CompletedProcess | None:
+    """Stage a framework install onto a throwaway git branch via ``install/install_branch.py``.
+
+    The git-native sibling of :func:`restore_framework`: rather than installing onto the working
+    tree (undo later via the manifest), it creates a dedicated install branch off HEAD, runs the
+    ordinary bootstrapper there, and commits the install as one commit — so the operator can
+    ``git merge`` it when satisfied or ``git branch -D`` to walk away. Refuses (exit 1) in a
+    non-git repo or dirty tree.
+
+    The staging flags (``branch``/``dry_run``/``non_interactive``/``return_to_original``) are
+    consumed by ``install_branch.py``; the install-shape flags (``owner``/``shell``/``merge_model``
+    /``expect``/… — the same set :func:`install_framework` builds, plus ``expect``) pass THROUGH
+    it to the bootstrapper that runs on the branch. ``--no-team`` is always forwarded (the CLI owns
+    roster scaffolding), as in :func:`install_framework`.
+
+    ``expect`` forwards ``--expect`` (``fresh``/``existing``/``any``) to the staged bootstrap's
+    fresh-vs-existing gate. Staging by definition targets a repo that already has a HEAD commit
+    (there is nothing to branch from otherwise), so callers should default this to ``"any"`` —
+    the shipped bootstrapper default (``fresh``) refuses every realistic install-branch target.
+
+    Returns the CompletedProcess, or None when the framework assets could not be located.
+    """
+    root = resolve_framework_root()
+    if root is None:
+        return None
+
+    cmd: list[str] = [sys.executable, str(root / "install" / "install_branch.py"), str(target)]
+    # Staging flags consumed by install_branch.py itself.
+    if branch:
+        cmd += ["--branch", branch]
+    if dry_run:
+        cmd += ["--dry-run"]
+    if non_interactive:
+        cmd += ["--non-interactive"]
+    if return_to_original:
+        cmd += ["--return"]
+    # Install-shape flags that pass THROUGH to the bootstrapper run on the branch (mirrors
+    # install_framework's flag construction).
+    cmd += ["--no-team", "--shell", shell]
+    if install_config:
+        cmd += ["--install-config", str(install_config)]
+    if owner:
+        cmd += ["--owner", owner]
+    if merge_model:
+        cmd += ["--merge-model", merge_model]
+    if with_ontology is True:
+        cmd += ["--with-ontology"]
+    elif with_ontology is False:
+        cmd += ["--no-ontology"]
+    if expect:
+        cmd += ["--expect", expect]
+
+    return subprocess.run(cmd, capture_output=True, text=True)
