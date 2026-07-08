@@ -72,7 +72,12 @@ and reads the counters recorded here.
 4. Run `git worktree prune`
 5. Scan docs/ and diagrams for staleness against changes
 6. If this is the final wave of the phase, create a PR to the default branch (User
-   approval gate applies — never merge without sign-off)
+   approval gate applies — never merge without sign-off). When that rollup is landed,
+   follow the **rollup pre-flight** in
+   [pull-requests.md](../../team/charter/pull-requests.md): `git fetch origin` and merge
+   `origin/<wave>` **explicitly** (never a stale local ref), then verify feature-code is on
+   the merge parent (`git show <default-branch>:<file> | grep -c <new-symbol>`) BEFORE
+   bump/release — a code-less rollup (state.json only) is a stop-and-investigate.
 7. Hand off to `/wave-retro` — trust deltas, the forced negative-signal pass, the
    feedback-log entry, process proposals, and the next-wave stub all live there, not here.
 
