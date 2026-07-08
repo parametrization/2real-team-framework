@@ -9,9 +9,11 @@ half; the scoring half is usable standalone on a hand-built `Signals` dict.
 
 ## The scoring model (in brief)
 - `score_delta(sig)` — pure, symmetric, clamped to **[-2, +2]**. `-1` per CI-red
-  merge, `-1` per review false-positive, `-1` if `must_fix_received >= 3`; then
-  (only if the iteration is clean of those negatives) `+1` if `prs_merged >= 2`,
-  `+1` if `must_fix_caught >= 2`. New score = `clamp(NEUTRAL + delta, 1, 5)`.
+  merge, `-1` per review false-positive, `-1` if `must_fix_received >= 2`, `-1` if
+  `rework_cycles >= 2`; then (only if the iteration is clean of those negatives)
+  `+1` if `prs_merged >= 2`, `+1` if `must_fix_caught >= 2`, `+1` if
+  `verified_reviews >= 2` (clean reviewer verdicts carrying a concrete `Verified:`
+  block). New score = `clamp(NEUTRAL + delta, 1, 5)`.
 - `decay(old, n)` — drift one step toward NEUTRAL (3) after 3 unsignalled iterations.
 - `apply_distribution_discipline(proposals)` — **5 is reserved**: a proposed 5
   survives only for the top *composite* performer (and only if strictly positive);

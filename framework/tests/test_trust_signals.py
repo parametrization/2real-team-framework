@@ -1521,3 +1521,177 @@ def test_pr_comment_histories_fail_open_on_error(monkeypatch) -> None:
 
 def test_pr_comment_histories_bad_repo_is_none() -> None:
     assert ts._pr_comment_histories("no-slash-repo", 702) is None
+
+
+# ===========================================================================
+# Symmetric trust scoring (#254): verified_reviews (+) and the rework /
+# must-fix downward signals. These pin the score_delta weight table and the
+# extraction of the anti-gaming `Verified:` block.
+# ===========================================================================
+
+
+def _verified_body(
+    requestor: str,
+    *,
+    verdict: str = "Replied",
+    verified_lines: tuple[str, ...] = (
+        "revert→red on the failing test",
+        "5× determinism",
+        "byte-parity OK",
+    ),
+    must_fix: str | None = None,
+) -> str:
+    """A charter-format verdict comment carrying a ``Verified:`` block.
+
+    ``verified_lines=()`` emits a bare ``Verified:`` (boilerplate/empty). A
+    ``must_fix`` str makes it a blocking ``Request`` regardless of ``verdict``.
+    """
+    mf = "Must-fix: None" if must_fix is None else f"Must-fix:\n1. {must_fix}"
+    vblock = (
+        "Verified:\n" + "\n".join(f"- {ln}" for ln in verified_lines)
+        if verified_lines
+        else "Verified:"
+    )
+    return (
+        f"Requestor: {requestor}\n"
+        "Requestee: Paloma.Gupta\n"
+        f"RequestOrReplied: {verdict}\n\n"
+        "**Review**\n"
+        f"{mf}\n"
+        f"{vblock}\n"
+        "Tech-debt: None\n"
+    )
+
+
+# ------------------------------------------------- score_delta weight table
+
+
+def test_verified_reviews_two_gives_clean_wave_bonus() -> None:
+    """2+ verified reviews on a clean wave is +1 — the QA-rigor path when there
+    are no must-fixes to catch. Load-bearing on the new positive branch: deleting
+    the ``verified_reviews >= 2`` bump makes ``rigorous`` score 0.
+    """
+    assert ts.score_delta(ts.Signals(prs_merged=1)) == 0  # a lone clean PR: no bump
+    rigorous = ts.Signals(prs_merged=1, verified_reviews=2)
+    assert ts.score_delta(rigorous) == 1
+    # one verified review is not enough — the threshold is 2, like the others.
+    assert ts.score_delta(ts.Signals(prs_merged=1, verified_reviews=1)) == 0
+
+
+def test_rework_cycles_two_dings_and_blocks_clean_bonus() -> None:
+    """``rework_cycles >= 2`` is −1 AND, being a negative now, blocks the
+    clean-wave ``prs_merged >= 2`` bonus (a rework-heavy wave cannot also collect
+    the positive). Load-bearing on both the ding and ``has_negative``.
+    """
+    heavy = ts.Signals(prs_merged=2, rework_cycles=2)
+    assert heavy.has_negative() is True  # rework is now a negative
+    assert ts.score_delta(heavy) == -1  # −1 for rework; +1 bonus is blocked
+    # A single rework cycle is a negative too (blocks the clean-wave bonus) but
+    # does not reach the −1 ding threshold: net 0, not the +1 a clean 2-PR wave
+    # would earn.
+    one = ts.Signals(prs_merged=2, rework_cycles=1)
+    assert one.has_negative() is True
+    assert ts.score_delta(one) == 0
+
+
+def test_must_fix_received_two_now_dings() -> None:
+    """The author ding threshold tightened 3 → 2: two received must-fixes is −1
+    (it was free under the old ``>= 3``). Load-bearing on the threshold constant.
+    """
+    assert ts.score_delta(ts.Signals(prs_merged=1, must_fix_received=2)) == -1
+    # One received must-fix is still free (blocks the bonus, but no ding).
+    assert ts.score_delta(ts.Signals(prs_merged=1, must_fix_received=1)) == 0
+
+
+def test_clean_no_new_signal_wave_scores_exactly_as_before() -> None:
+    """Regression guard: a wave carrying NONE of the new signals scores exactly
+    the prior deltas — 2 clean PRs + 2 catches → +2; a lone clean PR → 0; an
+    empty wave → 0. Ensures the #254 changes are purely additive.
+    """
+    assert ts.score_delta(ts.Signals(prs_merged=2, must_fix_caught=2)) == 2
+    assert ts.score_delta(ts.Signals(prs_merged=1)) == 0
+    assert ts.score_delta(ts.Signals()) == 0
+
+
+# --------------------------------------------------- _has_verified_checks (pure)
+
+
+def test_has_verified_checks_recognizes_concrete_tokens() -> None:
+    assert ts._has_verified_checks("Verified:\n- revert→red\n") is True
+    assert ts._has_verified_checks("Verified:\n- 5× determinism run\n") is True
+    assert ts._has_verified_checks("Verified: byte-parity confirmed\n") is True
+    assert ts._has_verified_checks("Verified:\n- CI rollup SUCCESS\n") is True
+
+
+def test_has_verified_checks_rejects_boilerplate() -> None:
+    assert ts._has_verified_checks("Verified:\n- looks good to me\n") is False
+    assert ts._has_verified_checks("Verified:\n") is False
+    assert ts._has_verified_checks("no verified block at all") is False
+    # A concrete token OUTSIDE the Verified block (in Tech-debt) is not borrowed.
+    assert (
+        ts._has_verified_checks("Verified: none\nTech-debt: byte-parity follow-up\n")
+        is False
+    )
+
+
+# ------------------------------------------------- verified_reviews extraction
+
+
+def test_verified_block_credits_reviewer_verified_review(tmp_path) -> None:
+    """A reviewer's clean verdict with a concrete ``Verified:`` block credits one
+    ``verified_reviews`` to the Requestor — and no phantom catch.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=800,
+        comment_bodies=[_verified_body("Tariq.Morales")],
+        ci_red=False,
+    )
+    assert sigs["Tariq Morales"].verified_reviews == 1
+    assert sigs["Tariq Morales"].must_fix_caught == 0  # clean review, not a catch
+
+
+def test_boilerplate_verified_block_earns_no_credit(tmp_path) -> None:
+    """An empty or token-less ``Verified:`` block yields verified_reviews=0
+    (anti-gaming). Load-bearing on the concrete-token requirement.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    for lines in ((), ("done",), ("looks good",)):
+        sigs: dict[str, ts.Signals] = {}
+        ts._account_pr(
+            sigs,
+            canon,
+            author="Paloma Gupta",
+            repo="o/r",
+            number=801,
+            comment_bodies=[_verified_body("Tariq.Morales", verified_lines=lines)],
+            ci_red=False,
+        )
+        assert sigs.get("Tariq Morales", ts.Signals()).verified_reviews == 0
+
+
+def test_verified_block_on_blocking_request_not_credited(tmp_path) -> None:
+    """A Verified block on a BLOCKING ``Request`` is not a verified review — the
+    catch scores, but verified_reviews stays 0 (only clean verdicts credit it).
+    Load-bearing on the ``not v.changes_requested`` guard.
+    """
+    canon = ts._canonicalizer(_roster_cfg(tmp_path, _ROSTER))
+    sigs: dict[str, ts.Signals] = {}
+    ts._account_pr(
+        sigs,
+        canon,
+        author="Paloma Gupta",
+        repo="o/r",
+        number=802,
+        comment_bodies=[
+            _verified_body("Tariq.Morales", verdict="Request", must_fix="Fix the bug."),
+        ],
+        ci_red=False,
+    )
+    assert sigs["Tariq Morales"].must_fix_caught == 1
+    assert sigs["Tariq Morales"].verified_reviews == 0
