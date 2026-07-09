@@ -1661,6 +1661,31 @@ def test_difficulty_composite_cap_prevents_single_handed_dominance() -> None:
     assert out["Flagship"] == ts.MAX_SCORE - 1
 
 
+def test_top_composite_tie_keeps_5_for_all_tied() -> None:
+    """Ties at the top composite are INTENDED — two engineers at an equal,
+    strictly-positive max composite both retain 5 (#275, #301). The reserved 5 is
+    not a single rotating seat; collapsing a legitimate tie to one winner would
+    reintroduce the author-only-``difficulty_points`` bias #275 removed. This
+    guards the documented behaviour: if a future reader "fixes" the tie into one
+    seat (e.g. picks a single argmax), one of these two drops to 4 and this fails.
+    """
+    # Two distinct, strictly-positive shapes tuned to the SAME composite (4):
+    #   author   = prs_merged 2 + min(difficulty 2, cap 2)          = 4
+    #   reviewer = REVIEW_VALUE_WEIGHT*(caught 1) + WEIGHT*(verified 1) = 4
+    # Different contribution axes, equal top composite — the exact author-vs-
+    # reviewer parity #275 made reachable.
+    author = ts.Signals(prs_merged=2, difficulty_points=2)
+    reviewer = ts.Signals(must_fix_caught=1, verified_reviews=1)
+    out = ts.apply_distribution_discipline(
+        {
+            "Author": (ts.MAX_SCORE, author),
+            "Reviewer": (ts.MAX_SCORE, reviewer),
+        }
+    )
+    assert out["Author"] == ts.MAX_SCORE  # both tied at the top composite (4)
+    assert out["Reviewer"] == ts.MAX_SCORE  # neither is capped to 4
+
+
 # ------------------------------------------- _pr_comment_histories (I/O, mocked)
 
 
@@ -2278,3 +2303,89 @@ def test_distribution_health_accepts_dict_and_empty() -> None:
     assert d.n == 2 and d.degenerate is False
     e = ts.distribution_health([])
     assert e.n == 0 and e.degenerate is False and e.reasons == ["no scores to assess"]
+
+
+# ---------------------------------- forced negative-signal pass receipts (#296)
+
+
+def test_negative_line_renders_missed_catches() -> None:
+    """Defect A: a ``missed_catches``-only signal set must render a number-citing
+    gap, not the blank ``"Name: "`` receipt. Reverting to the old 4-field ``gaps``
+    list (which omitted ``missed_catches``) makes this line blank → fails.
+    """
+    sig = ts.Signals(prs_merged=1, missed_catches=1, clean_first_pass=1)
+    assert sig.has_negative() is True
+    line = ts.negative_signal_line("Ibrahim El-Amin", sig)
+    assert line == "Ibrahim El-Amin: 1 missed catch(es) as reviewer"
+    # A rendered gap line is NOT a forced-pass violation.
+    assert ts.validate_negative_signal_pass([line]) == []
+
+
+def test_negative_line_renders_gate_bypasses() -> None:
+    """Defect A, second unrendered member: a ``gate_bypasses``-only set renders a
+    number-citing gap. This is the signal Wave 22's #293 made reachable — a
+    self-approved merge now dings ``-1`` and must be citable.
+    """
+    sig = ts.Signals(prs_merged=1, gate_bypasses=2)
+    assert sig.has_negative() is True
+    line = ts.negative_signal_line("X", sig)
+    assert line == "X: 2 gate-bypass merge(s)"
+    assert ts.validate_negative_signal_pass([line]) == []
+
+
+def test_every_negative_field_renders_a_receipt() -> None:
+    """The drift-stopper: for EVERY member of ``has_negative``'s field set, a
+    signal with only that field non-zero yields a non-bare, non-blank,
+    number-citing line that the validator accepts. This is the test that fails
+    when the next-added negative signal is forgotten in the renderer — set alone,
+    the forgotten field would fall through to a blank ``"{name}: "``.
+
+    Driven off the single source of truth ``_NEGATIVE_SIGNAL_FIELDS`` (which
+    ``has_negative`` itself derives from), so the loop can never test fewer fields
+    than the scorer counts.
+    """
+    fields = [name for name, _ in ts._NEGATIVE_SIGNAL_FIELDS]
+    assert fields, "the negative-field source of truth must be non-empty"
+    for name in fields:
+        sig = ts.Signals(**{name: 3})
+        assert sig.has_negative() is True, f"{name} must make has_negative True"
+        line = ts.negative_signal_line("Eng", sig)
+        body = line.split(":", 1)[1].strip()
+        assert body, f"{name}-only rendered a blank receipt: {line!r}"
+        assert not ts._BARE_NONE_RE.match(line), f"{name} rendered a bare-None: {line!r}"
+        assert "3" in body, f"{name} did not cite its count: {line!r}"
+        # The forced-pass validator must accept a real, evidence-carrying line.
+        assert ts.validate_negative_signal_pass([line]) == [], line
+
+
+def test_has_negative_derives_from_negative_field_set() -> None:
+    """``has_negative`` is exactly the OR of ``_NEGATIVE_SIGNAL_FIELDS`` — a
+    non-negative field (e.g. ``prs_merged``) never flips it, and every negative
+    field alone does. Guards the structural derivation against re-drift.
+    """
+    assert ts.Signals(prs_merged=5, must_fix_caught=5).has_negative() is False
+    for name, _ in ts._NEGATIVE_SIGNAL_FIELDS:
+        assert ts.Signals(**{name: 1}).has_negative() is True, name
+
+
+def test_validate_rejects_blank_after_colon() -> None:
+    """Defect B: the validator — whose sole job is banning vacuous entries — must
+    reject an entry blank after the ``"{name}: "`` prefix, the exact shape
+    Defect A used to emit. Reverting the ``_BLANK_ENTRY_RE`` check waves it
+    through (returns ``[]``) → fails.
+    """
+    assert ts.validate_negative_signal_pass(["Ibrahim El-Amin: "]) == ["Ibrahim El-Amin: "]
+    assert ts.validate_negative_signal_pass(["X:"]) == ["X:"]
+    assert ts.validate_negative_signal_pass(["   "]) == ["   "]
+
+
+def test_validate_still_rejects_bare_none_and_accepts_real_gaps() -> None:
+    """No regression on the original contract: bare ``None`` / ``n/a`` / ``-`` are
+    still rejected, and a genuine number-citing gap or a ``metrics clean`` line is
+    still accepted.
+    """
+    assert ts.validate_negative_signal_pass(["None"]) == ["None"]
+    assert ts.validate_negative_signal_pass(["- n/a"]) == ["- n/a"]
+    clean = ts.negative_signal_line("C", ts.Signals(prs_merged=2))
+    gap = ts.negative_signal_line("D", ts.Signals(prs_merged=1, ci_red_merges=1))
+    assert ts.validate_negative_signal_pass([clean, gap]) == []
