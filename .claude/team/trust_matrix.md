@@ -636,3 +636,53 @@ Rows = the team member rating. Columns = the team member being rated.
 | Tariq Morales | Caught the `_patch_is_docs_only` self-close+trailing-code bypass with an executing PoC (`must_fix_caught=1`) + a substantive #286 verified block; carried 2/4 of the review load | metrics clean, but rotates off the reserved-5 — the single seat went to a hybrid author+reviewer; a wave where he both catches a defect AND authors a hard PR is the path back to 5. |
 | Nia Rossi | Substantive verified review on #286 with concrete checks | review-only again (`prs_merged=0`), `verified_reviews=1 < 2` bonus threshold — author or concentrate ≥2 substantive reviews to move. |
 | Ibrahim El-Amin | Root-caused and fixed the classifier bypass robustly (symmetric across both branches, fail-safe) with revert→red tests; fast, clean scoring-hygiene self-correction on the author-note grammar | `must_fix_received=2` + `rework_cycles=1` (the bypass shipped in the first #287 push and needed a rework round); and the author-note verdict-grammar slip (worked around, #288 filed). |
+
+---
+
+## Wave 22 Trust Updates (2026-07-09) — "Mine the siblings, close the gate-parity debt" → v0.12.0
+
+First retro scored under the **author-exclusive scorer** the wave itself shipped (#288/#292). Review
+load came back 6 verdicts across 3 PRs × 2 reviewers with **zero author self-verdicts** — the fix
+visible in its own telemetry. Signals via `trust_signals.py extract/score 22`.
+
+> **⚠️ Scoring-engine defect hit live (filed #296, unfixed at retro time):**
+> `negative_signal_line()` renders only 4 of the 6 `has_negative()` members — `missed_catches` and
+> `gate_bypasses` are omitted — so an engineer whose only negative is a missed catch gets the literal
+> line `"Name: "`. `validate_negative_signal_pass()` does not reject a blank-after-colon line either,
+> so the forced pass accepts it. Ibrahim's −1 this wave is driven **entirely** by `missed_catches=1`,
+> and its receipt came back blank; his negative-signal line below was **hand-written**. Pointedly,
+> `gate_bypasses` — the signal this wave's own S3 (#293) made reachable — is equally unreportable.
+
+> **Reserved-5 resolved as a TIE (owner call).** Paloma and Tariq both close at composite **4**
+> — Paloma `1 + 2×1 caught + min(3,2) − 1 recv`, Tariq `0 + 2×2 caught`. `apply_distribution_discipline`
+> permits every engineer at the max composite to hold 5; the charter's "top relative performer" is
+> singular. Owner seated **both**. This is the author-vs-reviewer parity #275 was built to produce:
+> a pure reviewer who caught both of the wave's must-fixes now ranks level with a flagship author.
+> Charter/code wording reconciliation filed as a follow-up.
+
+> **Owner override — Ibrahim held at 3.** The mechanical delta was **−1 → 2** (`missed_catches=1`).
+> The owner held him at **3**: the missed catch was doc-level (a false prior-art claim), while he
+> authored the wave's security fix (#294, difficulty 3) **clean-first-pass** — a positive that
+> `has_negative()`'s all-or-nothing gate suppressed entirely. Recorded as an **override, not a
+> computed delta**; the suppression rule itself is filed as debt.
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Paloma Gupta | 5 | **5** | delta **0**. Authored S2 #292 (difficulty 3, `prs_merged=1`) and caught the #294 must-fix as reviewer (`must_fix_caught=1`); `must_fix_received=1` + `rework_cycles=1` from her own CR round net it to zero. Composite **4** — tied top. **Holds the reserved 5 on the tie.** |
+| Tariq Morales | 4 | **5** | delta **+1** → reserved-5 (EARNED, tie-seated). `must_fix_caught=2` — caught the wave's *only two* durable must-fixes, on #292 (false "mirrors the merge gate" prior-art claim) and #290 (the #881 no-op misclassification) — with zero negatives: `must_fix_received=0`, `rework_cycles=0`, `ci_red_merges=0`, `review_false_positives=0`. Composite **4**, tied top on pure review value with `prs_merged=0`. Carried 3/6 of the review load. |
+| Nia Rossi | 4 | **3** | delta **−1**: `must_fix_received=2` + `rework_cycles=1`. Authored S1 #290 (difficulty 2); **both** reviewers independently raised the same durable must-fix — the audit's #1-ranked "P0" (#881) was a no-op — forcing the reclassification in `a244f60`/`98f9a45`. Composite **1**. |
+| Ibrahim El-Amin | 3 | **3** | **OWNER OVERRIDE — held.** Mechanical delta **−1 → 2** from `missed_catches=1` (clean verdict on #292 past Tariq's durable must-fix). Offsetting, unscored: authored S3 #294 — the wave's hardest story (difficulty 3, the live self-approval bypass) — with `clean_first_pass=1`, `must_fix_received=0`, `rework_cycles=0`, and both reviewers proving the fix end-to-end through the live gate. `has_negative()` suppressed that clean-first-pass bonus outright. Composite **3**. |
+
+**Distribution health** (`distribution_health([5,5,3,3])`): `degenerate=False`, no reasons — the ledger
+is still discriminating (spread 2, both tiers populated). **Retirement triggers:** none fired
+(`retirement_trigger` clean for all four; Ibrahim's recent history `[4,3,3]` never reaches `<=2`).
+**Decay:** none — every engineer produced signal this wave.
+
+### Done Well / Needs Improvement (Wave 22 / Phase 7 Wave 1)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Tariq Morales | The wave's decisive reviewer: `must_fix_caught=2`, both durable, both on *claims* rather than code — a false prior-art assertion (#292) and a mis-ranked no-op "P0" (#290). Independently re-diffed `92aaaba` against `parse_verdicts` rather than taking the author's word. Reviewed all 3 PRs. | metrics clean: prs_merged=0, must_fix_received=0, ci_red_merges=0, false_positives=0, must_fix_caught=2, verified_reviews=0. Authored nothing this wave — the reserved 5 now rests entirely on review value; `verified_reviews=0` means even his substantive blocks earned `must_fix_caught` instead. |
+| Paloma Gupta | Shipped the author-exclusive scorer (#292) and caught the #294 must-fix — value on both axes, second wave running. Her review of #294 probed the adversarial axis (false-exclusion via shared surname) rather than the happy path. | 1 must-fix received, 1 rework cycle(s) — the false "mirrors the merge gate" claim shipped in her first #292 push and needed Tariq to catch it; the doc asserted a property the code did not yet have. |
+| Nia Rossi | Produced the Phase-7 mining audit that anchors the next several waves, and accepted the demotion of her own #1-ranked finding on evidence. | 2 must-fix received, 1 rework cycle(s) — the audit's headline "P0" (#881) was a **no-op**, caught independently by *both* reviewers. Verify-before-rank: the finding was ranked #1 without diffing it against `parse_verdicts`. |
+| Ibrahim El-Amin | Authored the wave's security fix (#293/#294) clean-first-pass on the hardest story: closed a live self-approval bypass, reused the S2 helper so gate and scorer share **one** exclusion rule, and held the pinned `ReviewState` output shape (#194/#193) by adding keyword-only inputs. | 1 missed catch as reviewer — issued a clean verdict on #292 past the durable must-fix Tariq raised, i.e. approved a doc claim asserting a property the code did not yet have (`missed_catches=1`, `delta=−1`, owner-overridden). `clean_first_pass=1` was suppressed by the `has_negative()` gate. Receipt for this ding came back **blank** from the scorer — see #296. |
