@@ -35,13 +35,19 @@ Per the charter and ``trust_signals.extract_signals``, the **reviewer** is the
 verdict comment's ``Requestor:`` field (``Requestee:`` is the addressed PR
 author). Approvals are therefore counted over distinct **Requestors** whose
 current verdict is clean (a ``Replied`` / non-``Must-fix`` review), NOT over
-requestees. [PINNED-CONTRACT NOTE #194/#193: the frozen ``ReviewState`` *shape*
-is honored exactly — ``state`` / ``approvals`` (int) / ``reviewers_required``
-(int) / ``unresolved_must_fix`` (list). The contract's descriptive comment said
-"distinct requestees"; the charter grammar makes the reviewer the ``Requestor``
-(a requestee is the single PR author, so counting requestees could never reach a
-2-reviewer bar), so this implementation counts distinct Requestors. Flagged to
-Hiro on #193; the dict shape S2/S3 build against is unchanged.]
+requestees. A ``Requestor`` that resolves to the PR's own **author** is excluded
+(#293) — an author cannot review their own PR, so their clean self-verdict must
+not count toward the bar (see :func:`compute_state` and
+``trust_signals.is_author_self_review``). [PINNED-CONTRACT NOTE #194/#193: the
+frozen ``ReviewState`` *shape* is honored exactly — ``state`` / ``approvals``
+(int) / ``reviewers_required`` (int) / ``unresolved_must_fix`` (list). The
+contract's descriptive comment said "distinct requestees"; the charter grammar
+makes the reviewer the ``Requestor`` (a requestee is the single PR author, so
+counting requestees could never reach a 2-reviewer bar), so this implementation
+counts distinct Requestors. #293 adds an optional ``author`` INPUT to
+:func:`compute_state` / :func:`review_state` for author-exclusion; the returned
+dict shape is unchanged. Flagged to Hiro on #193; the dict shape S2/S3 build
+against is unchanged.]
 
 Fail-open posture (FAIL_OPEN = True)
 ====================================
@@ -164,7 +170,11 @@ class ReviewState(TypedDict):
 
 
 def compute_state(
-    verdicts: list[ts.Verdict], reviewers_required: int
+    verdicts: list[ts.Verdict],
+    reviewers_required: int,
+    *,
+    author: str | None = None,
+    canon=None,
 ) -> ReviewState:
     """Pure N-of-M approval state over already-parsed *verdicts*. No I/O.
 
@@ -185,15 +195,49 @@ def compute_state(
     * ``approved`` requires ``approvals >= reviewers_required`` AND no unresolved
       must-fix; otherwise ``pending``.
 
+    Author-exclusion (#293)
+    -----------------------
+    A verdict whose ``Requestor:`` canonicalizes to the PR's own *author* is the
+    author wearing reviewer grammar on their own PR — never a genuine
+    third-party review. Such self-verdicts are dropped **entirely** before
+    anything is computed, so they count toward NEITHER ``approvals`` NOR
+    ``unresolved_must_fix``: an author can neither approve nor block their own
+    PR. This closes the live self-approval bypass where an author's clean
+    ``Requestor: <self>`` supplied one of the required approvals on their own PR
+    (a single real reviewer + the author cleared a 2-reviewer bar). The
+    author-resolution rule is shared with the trust scorer via
+    ``trust_signals.is_author_self_review`` so the gate and the scorer exclude
+    self-verdicts identically (#288 did the scorer; #293 does the gate).
+
+    Fail-open: *author* is optional. With ``author=None`` (the caller could not
+    resolve the PR author) nothing is excluded and behavior is exactly the
+    pre-#293 count — a missing author must never tighten the gate into a false
+    block. Identities fold through *canon* (default
+    ``trust_signals._name_key``), the same fold the approver set uses, so an
+    author written ``Ibrahim El-Amin`` still matches a verdict ``Requestor:
+    Ibrahim.El-Amin``.
+
     Pure and total: never raises on the parsed input, never does I/O.
     """
+    _canon = canon if canon is not None else ts._name_key
+
+    # Author-exclusion (#293): drop the author's own self-verdicts up front so
+    # they influence neither the approval count nor the unresolved-must-fix list.
+    # is_author_self_review is fail-open (a missing requestor/author is never a
+    # self-review), so author=None leaves every verdict in place.
+    scored = [
+        v
+        for v in verdicts
+        if not ts.is_author_self_review(v.requestor, author, _canon)
+    ]
+
     unresolved: list[MustFixEntry] = [
         {
             "requestor": v.requestor,
             "requestee": v.requestee,
             "verdict": v.verdict,
         }
-        for v in verdicts
+        for v in scored
         if v.changes_requested
     ]
 
@@ -202,11 +246,11 @@ def compute_state(
     # still "changes requested" until they amend it.
     blocking_reviewers = {
         ts._name_key(v.requestor)
-        for v in verdicts
+        for v in scored
         if v.changes_requested and v.requestor
     }
     approvers: set[str] = set()
-    for v in verdicts:
+    for v in scored:
         if v.changes_requested or not v.requestor:
             continue
         key = ts._name_key(v.requestor)
@@ -248,6 +292,45 @@ def _reviewers_required(cfg: Any = None) -> int:
     return n if n >= 1 else _FAIL_OPEN_REVIEWERS_REQUIRED
 
 
+def _pr_head_author(repo: str, pr: int) -> str | None:
+    """The PR's head-commit author name, or ``None`` on any failure (fail-open).
+
+    Resolves the same author identity the trust scorer buckets by
+    (``trust_signals.merged_prs`` → the head commit's ``.commit.author.name``,
+    the ``-c user.name`` the committer signed with) rather than a GitHub login,
+    so it lines up with the ``Requestor:`` names in verdict comments once both
+    are folded through the roster ``canon``. Used only to author-exclude the
+    self-verdict from the merge gate (#293).
+
+    FAIL-OPEN and total: any error — a ``gh`` failure/timeout, an empty SHA, a
+    missing author — returns ``None``. A ``None`` author excludes nothing, so an
+    author-fetch failure degrades to the pre-#293 count and can never manufacture
+    a false block. Never raises.
+    """
+    try:
+        sha = ts._run_gh(
+            [
+                "pr",
+                "view",
+                str(int(pr)),
+                "--repo",
+                repo,
+                "--json",
+                "headRefOid",
+                "--jq",
+                ".headRefOid",
+            ]
+        ).strip()
+        if not sha:
+            return None
+        name = ts._run_gh(
+            ["api", f"repos/{repo}/commits/{sha}", "--jq", ".commit.author.name"]
+        ).strip()
+        return name or None
+    except Exception:  # noqa: BLE001 — fail-open: unresolved author => no exclusion
+        return None
+
+
 def review_state(repo: str, pr: int, *, cfg: Any = None) -> ReviewState:
     """Thin I/O wrapper: fetch a PR's comments, parse them, compute the state.
 
@@ -255,6 +338,17 @@ def review_state(repo: str, pr: int, *, cfg: Any = None) -> ReviewState:
     grammar) over the comment bodies from ``trust_signals._pr_comment_bodies``,
     reads ``reviewers_required`` from shared config, and returns the pinned
     :class:`ReviewState`.
+
+    Author-exclusion (#293): also resolves the PR's head-commit author
+    (:func:`_pr_head_author`) and threads it into :func:`compute_state`, folding
+    both author and reviewer identities through the roster ``canon``
+    (``trust_signals._canonicalizer``) so the author's own self-verdict is
+    dropped before approvals are counted — the same author-exclusion rule the
+    trust scorer uses (#288). The author fetch is independently fail-open: an
+    author-resolution failure yields ``None`` (no exclusion, pre-#293 count),
+    never an ``unknown`` state and never a false block. A comment-fetch failure
+    (the state the gate genuinely can't be computed without) still degrades to
+    ``unknown``.
 
     Fail-open: any comment-fetch / parse error returns an ``unknown`` state
     (approvals=0, no must-fix) rather than raising or inventing an approval — an
@@ -275,7 +369,14 @@ def review_state(repo: str, pr: int, *, cfg: Any = None) -> ReviewState:
             "reviewers_required": required,
             "unresolved_must_fix": [],
         }
-    return compute_state(verdicts, required)
+    # Author-exclusion inputs, each independently fail-open (never unknown, never
+    # a false block): an unresolved author or roster simply excludes nothing.
+    author = _pr_head_author(repo, int(pr))
+    try:
+        canon = ts._canonicalizer(cfg if cfg is not None else config())
+    except Exception:  # noqa: BLE001 — no roster => identity-ish canon, no exclusion
+        canon = None
+    return compute_state(verdicts, required, author=author, canon=canon)
 
 
 # ---------------------------------------------------------------------------

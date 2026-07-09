@@ -170,17 +170,18 @@ identities**, so assigning fewer than 2 distinct reviewers leaves
 the PR unable to reach `approved` — it cannot merge. Assign the full slate at kickoff
 so the process the gate checks and the process the team runs are the same one.
 
-> **Documented contract the code does NOT yet meet (#293).** The gate is *intended* to
-> count distinct `Requestor:` identities **other than the author**, matching the
-> author-exclusive assignment above. The current oracle
-> (`pr_review_state.compute_state`) does NOT exclude the author — it counts every
-> distinct `Requestor:`, so an author's own clean self-verdict still counts toward the
-> bar (a **live self-approval bypass**: author self-verdict + one genuine reviewer
-> reaches `approved` at `reviewers_required=2`). #293 brings the code up to this
-> contract by reusing `trust_signals.is_author_self_review`. Until it lands, the
-> author-exclusive bar rests on the assignment convention plus the reviewer-only
-> verdict grammar ([issues.md](issues.md)) — not on the gate. (The trust *scorer* is
-> already author-exclusive, per #288.)
+> **The gate enforces author-exclusion (#293, closed).** The oracle counts clean
+> approvals over distinct `Requestor:` identities **other than the author**, matching the
+> author-exclusive assignment above. `pr_review_state.review_state` resolves the PR's
+> head-commit author and `compute_state` drops any verdict whose `Requestor:` resolves to
+> that author — reusing `trust_signals.is_author_self_review` (the same author-exclusion
+> rule the trust *scorer* uses, per #288). An author's own self-verdict counts toward
+> **neither** the approval bar nor the unresolved-`Must-fix` list — an author can neither
+> approve nor block their own PR. This closed the **live self-approval bypass** #293
+> tracked (author self-verdict + one genuine reviewer reaching `approved` at
+> `reviewers_required=2` — now `pending`). Fail-open: if the author cannot be resolved,
+> the gate excludes nothing and degrades to the reviewer-only count — a missing author
+> never tightens the gate into a false block.
 
 ## CI Gates
 
