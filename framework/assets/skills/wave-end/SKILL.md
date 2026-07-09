@@ -36,21 +36,80 @@ and reads the counters recorded here.
    d. Create tech-debt issues for findings (label: next phase)
    e. Merge if CI green
    f. Close referenced issues
-3. Record the wave's counters and close it **live** — the `wrapup` transition writes
-   `wave_{W}_completed_at`, deactivates the wave, advances `last_completed_wave`, and
-   records the three counters `/wave-retro` reads for drift verification:
+3. **Derive the wave's counters mechanically — never transcribe them from the
+   handoff.** The three counters `/wave-retro` step 2 reads for drift verification
+   MUST be computed from the merged-PR set and `trust_signals.py extract` — the same
+   authority the retro reconciles against. The session handoff narrates *final
+   verdict state* (a PR amended in place after its fix lands reads "clean"); the
+   counters track *round history*. Transcribing the prose is a second source of truth
+   and guarantees drift — it bit twice: Wave 22 recorded `--cr-cycles 1` because the
+   handoff read "3 PRs / 1 CR cycle" and called #290 "2 clean" (true of its amended
+   final state, false of its round history — #290 carried a real rework round), and
+   `trust_signals.py extract 22` disagreed on sight; Wave 11 produced the analogous
+   rollup slip that motivated the `origin/<wave>` runbook step (#255).
+
+   Compute all three from the same merged-PR set the retro uses, then pass the derived
+   values to `wrapup` — do not type numbers from memory:
+
+   ```bash
+   # BASE = the wave's PR base — the integration branch for a wave-branch merge model,
+   # the default branch otherwise (same resolution as step 1 / `/wave-retro` step 1).
+   MM="$(python3 "$LIB/lifecycle.py" merge-model get "$W" 2>/dev/null || echo direct-to-main)"
+   # wave-branch    → BASE=<branch.integration template, the wave's phase + $W>
+   # direct-to-main → BASE=<default branch>; add `--label "wave-$W"` to scope the wave
+
+   # --pr-count and --concentration come from the merged-PR list itself:
+   PRS_JSON="$(gh pr list --state merged --base "$BASE" --json number,author)"
+   PR_COUNT="$(echo "$PRS_JSON" | jq 'length')"
+   CONCENTRATION="$(echo "$PRS_JSON" | jq -r '
+       if length == 0 then 0
+       else ((group_by(.author.login) | map(length) | max) * 100 / length | floor)
+       end')"
+
+   # --cr-cycles = PRs that took >=1 changes-requested round. `trust_signals.py`
+   # increments an author's `rework_cycles` exactly ONCE per PR that carried a rework
+   # round, and the extraction is edit-history-aware (the #164 catch ledger / #229
+   # comment histories), so an in-place verdict amendment does NOT erase the round.
+   # Summing `rework_cycles` across engineers therefore counts reworked PRs per-PR,
+   # not per-verdict (a PR with `reviewers_required=2` can carry two ChangesRequested
+   # verdicts in one round — still one reworked PR). This is the SAME extraction
+   # `/wave-retro` steps 2-3 run, so the wrapup counter and the retro recompute can
+   # never diverge:
+   CR_CYCLES="$(python3 "$LIB/trust_signals.py" extract "$W" \
+       | jq '[.[].rework_cycles] | add // 0')"
+
+   echo "derived counters → --pr-count $PR_COUNT --cr-cycles $CR_CYCLES --concentration $CONCENTRATION"
+   ```
+
+   For a `meta-and-children` project, sweep every repo in `project.repos` (this is
+   what `trust_signals.py` does internally) and union the per-repo `pr list` results
+   before computing `--pr-count` / `--concentration`.
+
+   Then record the counters and close the wave **live** — the `wrapup` transition
+   writes `wave_{W}_completed_at`, deactivates the wave, advances `last_completed_wave`,
+   and stores the three counters `/wave-retro` reads for drift verification:
 
    ```bash
    python3 "$LIB/lifecycle.py" wave wrapup "$W" \
-       --pr-count {N} --cr-cycles {C} --concentration {PCT}
+       --pr-count "$PR_COUNT" --cr-cycles "$CR_CYCLES" --concentration "$CONCENTRATION"
    ```
 
-   Count them from the actual merged-PR set, not from memory: `--pr-count` = merged PRs
-   this wave, `--cr-cycles` = **PRs** that took >=1 changes-requested round (per-PR, not
-   per-verdict — a PR with `reviewers_required=2` can carry 2 ChangesRequested verdicts in
-   one round; count the PR once). This mirrors `trust_signals.py`'s `rework_cycles` signal
-   ("PRs they authored that needed >=1 rework round") so the two counters never drift.
-   `--concentration` = max(PRs by one author) × 100 / total.
+   **The recomputed-vs-claimed reconciliation is bidirectional.** `/wave-retro` step 2
+   independently recomputes these counters; deriving them mechanically here makes the
+   two agree by construction, but state both directions so the reconciliation is
+   unambiguous whenever they differ:
+   - **recomputed `<` claimed AND the gap is fully explained by edited-in-place
+     verdicts** → the **claimed value stands**. A naive recompute from *current*
+     comment bodies under-counts a ChangesRequested verdict that was amended in place
+     to Approved after the fix landed — the historic round still happened, so the
+     wrapup-time count is authoritative-historic. Record a
+     `wave_{W}_counter_corrections` entry documenting the measurement conflict; do NOT
+     correct the historic count downward. (Deriving `--cr-cycles` from the
+     history-aware `extract` above avoids this under-count in the first place.)
+   - **recomputed `>` claimed** → **recomputed wins** — the wrapup missed a real round.
+     This was Wave 22 (claimed 1, recomputed 2: `extract` found `rework_cycles=1` on
+     both #290 and #292). Because this step now derives `--cr-cycles` from that same
+     `extract`, this direction should not resurface at retro time again.
 
    **Emit review-load next to concentration** (#231): concentration tracks *authoring*
    load; the companion number is *reviewing* load — per-reviewer verdict counts, so a
