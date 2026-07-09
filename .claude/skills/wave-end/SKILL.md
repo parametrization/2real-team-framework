@@ -58,13 +58,18 @@ and reads the counters recorded here.
    # wave-branch    → BASE=<branch.integration template, the wave's phase + $W>
    # direct-to-main → BASE=<default branch>; add `--label "wave-$W"` to scope the wave
 
-   # --pr-count and --concentration come from the merged-PR list itself:
-   PRS_JSON="$(gh pr list --state merged --base "$BASE" --json number,author)"
-   PR_COUNT="$(echo "$PRS_JSON" | jq 'length')"
-   CONCENTRATION="$(echo "$PRS_JSON" | jq -r '
-       if length == 0 then 0
-       else ((group_by(.author.login) | map(length) | max) * 100 / length | floor)
-       end')"
+   # --pr-count is identity-AGNOSTIC — it counts merged PRs, not authors — so the raw
+   # `gh` list is correct here even in a single-account (dogfooded) repo where every PR
+   # carries one `author.login` and team identity lives only in `Co-Authored-By`:
+   PR_COUNT="$(gh pr list --state merged --base "$BASE" --json number | jq 'length')"
+
+   # --cr-cycles and --concentration are BOTH identity-SENSITIVE, so both derive from
+   # `trust_signals.py extract` — the only source that resolves team-member identity
+   # (it parses the `Co-Authored-By` trailers). Grouping `gh`'s `.author.login` instead
+   # collapses every PR into the single bot/owner account in a dogfooded repo, pinning
+   # concentration at ~100% forever — exactly the drift this derivation exists to kill.
+   # Extract once and read both counters off it:
+   SIG="$(python3 "$LIB/trust_signals.py" extract "$W")"
 
    # --cr-cycles = PRs that took >=1 changes-requested round. `trust_signals.py`
    # increments an author's `rework_cycles` exactly ONCE per PR that carried a rework
@@ -75,15 +80,22 @@ and reads the counters recorded here.
    # verdicts in one round — still one reworked PR). This is the SAME extraction
    # `/wave-retro` steps 2-3 run, so the wrapup counter and the retro recompute can
    # never diverge:
-   CR_CYCLES="$(python3 "$LIB/trust_signals.py" extract "$W" \
-       | jq '[.[].rework_cycles] | add // 0')"
+   CR_CYCLES="$(echo "$SIG" | jq '[.[].rework_cycles] | add // 0')"
+
+   # --concentration = max(PRs by one author) × 100 / total, over the SAME identity-aware
+   # `authored_prs` lists `/wave-retro` step 2 reconciles against (integer floor; guard
+   # total == 0):
+   CONCENTRATION="$(echo "$SIG" | jq '
+       [ .[].authored_prs | length ] as $lens
+       | ($lens | add) as $total
+       | if ($total // 0) == 0 then 0 else (($lens | max) * 100 / $total | floor) end')"
 
    echo "derived counters → --pr-count $PR_COUNT --cr-cycles $CR_CYCLES --concentration $CONCENTRATION"
    ```
 
-   For a `meta-and-children` project, sweep every repo in `project.repos` (this is
-   what `trust_signals.py` does internally) and union the per-repo `pr list` results
-   before computing `--pr-count` / `--concentration`.
+   For a `meta-and-children` project, `trust_signals.py extract` already sweeps every
+   repo in `project.repos` internally, so `--cr-cycles` / `--concentration` need no
+   manual sweep; union the per-repo `gh pr list` results yourself only for `--pr-count`.
 
    Then record the counters and close the wave **live** — the `wrapup` transition
    writes `wave_{W}_completed_at`, deactivates the wave, advances `last_completed_wave`,
