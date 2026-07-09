@@ -1273,19 +1273,36 @@ See `trust_matrix.md` → *Wave 22 Trust Updates* for the full signal tables. Su
    the narrative grading the mechanical scorer exists to eliminate.
 
 ### Proposed Process Changes
+
+*Dispositions decided by the owner on 2026-07-09. All four are filed; none are applied to the charter
+or skills yet — each lands as a tracked change under its own issue.*
+
 1. **Fix #296 as W23's first story; derive `gaps` from `has_negative()`'s field set.** — *Rationale:* pain point 1.
    Two hand-maintained parallel lists already drifted once; a shared field set makes the drift structurally
    impossible. Add a loop test asserting every `has_negative()` member yields a non-bare line.
+   → **Filed as [#296](https://github.com/parametrization/2real-team-framework/issues/296). Scope into Wave 23.**
 2. **`/wave-end` must recompute counters from `trust_signals.py extract`, never from the handoff.** — *Rationale:*
    pain point 2. The extractor is already the authority the retro reconciles against; having wrapup read a
    *different* source guarantees drift. Amend the `/wave-end` skill step 3 to derive `--cr-cycles` from the
    summed per-engineer `rework_cycles` (count of PRs with ≥1 round), not from prose.
+   → **Filed as [#300](https://github.com/parametrization/2real-team-framework/issues/300). Scope into Wave 23.**
+   The skill must state the rule *bidirectionally*: recomputed < claimed **and** fully explained by
+   edited-in-place verdicts → claimed stands; recomputed > claimed → recomputed wins. Wave 22 was the
+   second case, which the current wording doesn't cover.
 3. **Reconcile the reserved-5 tie rule: charter says singular, code permits ties.** — *Rationale:* the Wave 22
    tie was resolved by owner call because the two disagree. Either amend `pull-requests.md`/`trust_matrix.md`
    wording to "top relative performer(s)" to match `apply_distribution_discipline`, or add a deterministic
    tie-break (fewest negatives, then most `must_fix_caught`). Prefer the former — the tie is *informative*.
+   → **Filed as [#301](https://github.com/parametrization/2real-team-framework/issues/301). Owner chose to
+   pluralize the charter; the code is correct and does not change.** The deterministic tie-break was
+   *rejected*: `must_fix_received` is a consequence of shipping code, so breaking ties on "fewest negatives"
+   would systematically seat reviewers over authors — re-creating, in the opposite direction, the exact
+   author/reviewer asymmetry #275 removed.
 4. **Grade `has_negative()`'s suppression instead of gating it.** — *Rationale:* pain point 3. Consider letting
    hard negatives (`ci_red_merges`, `gate_bypasses`) suppress positives while soft ones (`missed_catches`,
    a single `must_fix_received`) merely offset them. Needs design; file as an exploratory issue, not a wave story.
+   → **Filed as [#302](https://github.com/parametrization/2real-team-framework/issues/302), exploratory.**
+   Deliverable is a design note plus a replay of W12–W22 against the proposed rule — **not** a code change.
+   If the replay moves any historical delta, close it and keep the current gate.
 
-*(Changes 1–4 are proposals only — none applied. Owner approval required before any charter or skill edit.)*
+*(Carry-forward: #296, #300, #301, #302 are wired into the Wave 23 stub, [#297](https://github.com/parametrization/2real-team-framework/issues/297).)*
