@@ -1198,3 +1198,94 @@ displaces defect-catcher" failure mode.
 2. **Memory correction:** `gh api -X PATCH` bodies must use `-F body=@file`, never `-f`. — Rationale: pain #3.
 3. **npm-CI durability:** consider bumping the publish runner to node 22 next Phase to keep `npm@latest`
    viable. — Rationale: pain #2.
+
+---
+
+## Retrospective: Wave 22 (Phase 7 Wave 1 / global 22) — 2026-07-09 — "Mine the siblings, close the gate-parity debt" → v0.12.0
+
+### Wave Metrics
+- **PRs merged:** 3 (#290, #292, #294) — all to `deployments/phase7/wave-1`, rolled up to `main` as `62fffe1`.
+- **Issues closed:** #264, #288, #293 (auto-closed via `Closes` trailers in the rollup merge commit), plus meta #289 and #291 (no-op).
+- **CI health:** green throughout; `ci_red_merges=0` for every engineer. 909 tests pass, ruff clean on the merge parent.
+- **Release:** `v0.12.0`, tag `deployments-phase7-wave-1`; PyPI + npm both verified serving 0.12.0 post-publish.
+- **Tech debt filed:** #295 (gate author-resolution hardening), **#296** (forced negative-signal pass emits+accepts a blank line).
+- **Counter correction (drift verification):** `wave_22_changes_requested_cycles` **claimed 1 → actual 2**.
+  `/wave-end` recorded the handoff's narrative ("#290 was 2 clean"), which described the *final* verdict
+  state after in-place amendment rather than the *round history*. #290 genuinely carried a rework round
+  (both reviewers' durable must-fix on the #881 classification → `a244f60`/`98f9a45` → author re-verify reply).
+  |Δ|=1 ≤ tolerance 2 → corrected in state, recorded in `wave_22_counter_corrections`. `pr_count` (3) and
+  `concentration` (33%) both verified exact. *Note: this is the mirror-image of the documented
+  edited-in-place undercount — here recomputed > claimed, so the claimed value did **not** stand.*
+
+### Review Load (companion to concentration, #231)
+| Reviewer | Verdicts | PRs reviewed |
+|---|---|---|
+| Tariq Morales | 3 | 3 |
+| Paloma Gupta | 2 | 2 |
+| Ibrahim El-Amin | 1 | 1 |
+| Nia Rossi | 0 | 0 |
+
+6 verdicts = 3 PRs × 2 reviewers exactly — **no author self-verdicts present**, which is this wave's own
+S2/S3 fix showing up in its own telemetry. Load is skewed (Tariq 3, Nia 0), but Nia authored S1 and the
+slate is small; not yet a fragility signal.
+
+### Top-Implementer Concentration
+1 / 3 = **33%** — Nia (#290), Paloma (#292), Ibrahim (#294), one apiece. Well under the 60% forced-call
+threshold; the most evenly distributed wave in recent memory. No call required.
+
+### Per-Engineer Assessments
+See `trust_matrix.md` → *Wave 22 Trust Updates* for the full signal tables. Summary:
+
+- **Tariq Morales** — `must_fix_caught=2`, all other signals zero. delta **+1** → **5** (reserved-5, tie-seated).
+- **Paloma Gupta** — `prs_merged=1, must_fix_caught=1, must_fix_received=1, rework_cycles=1`. delta **0** → **5** (holds on tie).
+- **Nia Rossi** — `must_fix_received=2, rework_cycles=1`. delta **−1** → **3**.
+- **Ibrahim El-Amin** — `missed_catches=1`, `clean_first_pass=1` (suppressed). Mechanical **−1 → 2**; **owner override, held at 3**.
+
+`distribution_health([5,5,3,3])` → `degenerate=False`. No decay, no retirement triggers.
+
+### Top 3 Going Well
+1. **The security fix landed with adversarial proof, not assertion.** #293 closed a *live* self-approval
+   bypass on an armed gate (`reviewers_required=2`). Both reviewers independently reproduced the bypass
+   end-to-end against the real gh-backed oracle (`{approvals:2,approved}` → `{approvals:1,pending}`), probed
+   fail-open, probed false-exclusion via a shared-surname near-namesake, and demonstrated revert→red.
+2. **Reviewers attacked *claims*, not just code.** Both of the wave's must-fixes were false assertions that
+   would have shipped as truth: a doc claiming the scorer "mirrors the merge gate" when the gate had no such
+   behavior yet (#292), and an audit ranking a no-op as its #1 "P0" (#290). Both were caught by re-deriving
+   the claim from source rather than trusting the author.
+3. **One exclusion rule, two surfaces.** S3 reused S2's `is_author_self_review` instead of forking a parallel
+   implementation, so gate and scorer now share a single author-identity notion — and the pinned `ReviewState`
+   output shape (#194/#193) was preserved by adding keyword-only *inputs*.
+
+### Top 3 Pain Points
+1. **The scoring engine cannot cite the ding it applies (#296).** `negative_signal_line()` renders 4 of 6
+   `has_negative()` members; `missed_catches` and `gate_bypasses` fall through to a blank `"Name: "`, and
+   `validate_negative_signal_pass()` — whose sole purpose is banning vacuous entries — accepts it. This retro
+   had to hand-write an engineer's evidence line. Worst instance: `gate_bypasses`, the signal *this wave's own
+   S3 made reachable*, would print a blank receipt. Two functions maintaining parallel field lists is the
+   root cause; they must be derived from one source.
+2. **Wrapup counters were transcribed from narrative, not recomputed.** `cr_cycles` was recorded as 1 because
+   the handoff said "#290 was 2 clean" — true of the final verdict state, false of the round history. The
+   `/wave-end` step says "count them from the actual merged-PR set, not from memory," and this wave didn't.
+   Drift verification caught it, but only because the retro reruns the extractor.
+3. **`has_negative()` is an all-or-nothing gate on positives.** One doc-level missed catch zeroed Ibrahim's
+   `clean_first_pass=1` on the wave's hardest PR. A binary "any negative ⇒ no positives" rule cannot distinguish
+   a CI-red merge from a missed doc claim, and it forced an owner override to reach a defensible score — exactly
+   the narrative grading the mechanical scorer exists to eliminate.
+
+### Proposed Process Changes
+1. **Fix #296 as W23's first story; derive `gaps` from `has_negative()`'s field set.** — *Rationale:* pain point 1.
+   Two hand-maintained parallel lists already drifted once; a shared field set makes the drift structurally
+   impossible. Add a loop test asserting every `has_negative()` member yields a non-bare line.
+2. **`/wave-end` must recompute counters from `trust_signals.py extract`, never from the handoff.** — *Rationale:*
+   pain point 2. The extractor is already the authority the retro reconciles against; having wrapup read a
+   *different* source guarantees drift. Amend the `/wave-end` skill step 3 to derive `--cr-cycles` from the
+   summed per-engineer `rework_cycles` (count of PRs with ≥1 round), not from prose.
+3. **Reconcile the reserved-5 tie rule: charter says singular, code permits ties.** — *Rationale:* the Wave 22
+   tie was resolved by owner call because the two disagree. Either amend `pull-requests.md`/`trust_matrix.md`
+   wording to "top relative performer(s)" to match `apply_distribution_discipline`, or add a deterministic
+   tie-break (fewest negatives, then most `must_fix_caught`). Prefer the former — the tie is *informative*.
+4. **Grade `has_negative()`'s suppression instead of gating it.** — *Rationale:* pain point 3. Consider letting
+   hard negatives (`ci_red_merges`, `gate_bypasses`) suppress positives while soft ones (`missed_catches`,
+   a single `must_fix_received`) merely offset them. Needs design; file as an exploratory issue, not a wave story.
+
+*(Changes 1–4 are proposals only — none applied. Owner approval required before any charter or skill edit.)*
