@@ -283,6 +283,27 @@ def _strip_code_markup(text: str) -> str:
     return text
 
 
+# Single source of truth for the negative-signal fields (#296). Both
+# :meth:`Signals.has_negative` (which fields make a wave "dirty") and
+# :func:`negative_signal_line` (how each dirty field renders into a receipt)
+# derive from this ONE list, so a field can never be counted in one place but
+# left unrendered in the other. Each entry is ``(field_name, gap_template)``;
+# the template's ``{n}`` is the field's count. Adding a new negative signal here
+# — and nowhere else — makes it both count toward ``has_negative`` and render a
+# gap string; the loop test ``test_every_negative_field_renders_a_receipt`` fails
+# until a member is covered. (Before #296 these were two hand-maintained parallel
+# lists that had drifted: ``missed_catches`` and ``gate_bypasses`` counted but
+# rendered blank, so the scorer applied a −1 it could not cite.)
+_NEGATIVE_SIGNAL_FIELDS: tuple[tuple[str, str], ...] = (
+    ("ci_red_merges", "{n} CI-red merge(s)"),
+    ("must_fix_received", "{n} must-fix received"),
+    ("rework_cycles", "{n} rework cycle(s)"),
+    ("review_false_positives", "{n} review false-positive(s)"),
+    ("missed_catches", "{n} missed catch(es) as reviewer"),
+    ("gate_bypasses", "{n} gate-bypass merge(s)"),
+)
+
+
 @dataclass
 class Signals:
     """Countable per-engineer signals for one iteration. All fields are evidence."""
@@ -350,14 +371,9 @@ class Signals:
         )
 
     def has_negative(self) -> bool:
-        return bool(
-            self.must_fix_received
-            or self.ci_red_merges
-            or self.review_false_positives
-            or self.rework_cycles
-            or self.missed_catches
-            or self.gate_bypasses
-        )
+        # Derived from the single ``_NEGATIVE_SIGNAL_FIELDS`` source of truth
+        # (#296) so this and :func:`negative_signal_line` can never drift.
+        return any(getattr(self, name) for name, _ in _NEGATIVE_SIGNAL_FIELDS)
 
 
 @dataclass
@@ -1484,6 +1500,22 @@ def apply_distribution_discipline(
     allowed only for the engineer(s) whose composite signal score is the
     iteration maximum AND strictly positive; every other proposed 5 is capped to
     4. Scores of 4 and below pass through untouched.
+
+    **Ties at the top composite are intended — do NOT "fix" this into a single
+    seat (#275, #301).** When two or more engineers share the maximum
+    strictly-positive composite they *all* keep 5; the reserved 5 is not a single
+    rotating seat. This is deliberate: ``difficulty_points`` was author-only and
+    dominated the composite outright, so a flagship *author* always outranked a
+    defect-catching *reviewer* — two live waves rotated the reserved 5 away from
+    the reviewer who caught the wave's only real defect toward a merely-clean
+    author. #275 fixed that by weighting review value (``must_fix_caught`` /
+    ``verified_reviews``) at ``REVIEW_VALUE_WEIGHT`` and capping
+    ``difficulty_points`` at ``DIFFICULTY_COMPOSITE_CAP``, which makes genuine
+    top-of-pool ties reachable and correct. Collapsing a legitimate tie back to
+    one seat would reintroduce exactly the bias #275 removed. The
+    ``top > 0`` guard already prevents the degenerate all-clean-zero-signal wave
+    from handing 5 to everybody, so a tie only forms on real, strictly-positive
+    contribution.
     """
 
     def composite(s: Signals) -> int:
@@ -1634,15 +1666,16 @@ def negative_signal_line(name: str, sig: Signals) -> str:
     that still shows the receipts. Never returns an empty / "None" string.
     """
     if sig.has_negative():
-        gaps = []
-        if sig.ci_red_merges:
-            gaps.append(f"{sig.ci_red_merges} CI-red merge(s)")
-        if sig.must_fix_received:
-            gaps.append(f"{sig.must_fix_received} must-fix received")
-        if sig.rework_cycles:
-            gaps.append(f"{sig.rework_cycles} rework cycle(s)")
-        if sig.review_false_positives:
-            gaps.append(f"{sig.review_false_positives} review false-positive(s)")
+        # Derived from the same ``_NEGATIVE_SIGNAL_FIELDS`` set that
+        # :meth:`Signals.has_negative` tests (#296): every member that is
+        # non-zero renders a number-citing gap. Because the two functions read
+        # one list, a member can never be dirty-but-unrendered — the branch
+        # cannot fall through to a blank ``"{name}: "``.
+        gaps = [
+            template.format(n=count)
+            for name_, template in _NEGATIVE_SIGNAL_FIELDS
+            if (count := getattr(sig, name_))
+        ]
         return f"{name}: " + ", ".join(gaps)
     return (
         f"{name}: metrics clean: prs_merged={sig.prs_merged}, "
@@ -1652,19 +1685,54 @@ def negative_signal_line(name: str, sig: Signals) -> str:
     )
 
 
-# Bare-"None" detector for the forced negative-signal pass. A negative-signal
-# entry of exactly "None" / "n/a" / "-" (case-insensitive, optional bullet /
-# trailing punctuation) is the banned shape.
-_BARE_NONE_RE = re.compile(r"^\s*[-*]?\s*(none|n/?a|-+)\s*[.;]?\s*$", re.IGNORECASE)
+# Vacuous-token detector for a forced-pass receipt BODY (#296). Matches a body
+# that carries no evidence: one of the "no findings" tokens ``none`` / ``n/a`` /
+# ``na`` / ``-`` / ``–`` / ``—`` / ``.`` (case-insensitive, optional leading
+# bullet, optional trailing ``.``/``;``), or repeats of the dash/dot forms
+# (``--`` / ``...``). Tested against the receipt BODY, not the whole line: the
+# forced-pass emitter only ever produces the ``"{name}: {gap}"`` shape, so a
+# whole-line anchor never fires against real input and lets a name-prefixed
+# ``"Name: None"`` — the literal shape the skill header calls banned — slip
+# past. (#296 review must-fix: the original whole-line ``_BARE_NONE_RE`` closed
+# ``"Name: "`` but left ``"Name: None"``, one character away and identically
+# vacuous.)
+_VACUOUS_BODY_RE = re.compile(
+    r"^\s*[-*]?\s*(none|n/?a|[-–—.]+)\s*[.;]?\s*$", re.IGNORECASE
+)
+
+
+def _forced_pass_body(line: str) -> str:
+    """The receipt body: the text after the first ``":"`` (the ``"{name}: "``
+    prefix), or the whole line when there is no colon at all. Whitespace-stripped.
+    A line with no colon (e.g. a bare ``"None"``) is treated as its own body so
+    the pre-#296 whole-line rejection still holds."""
+    _, sep, rest = line.partition(":")
+    return (rest if sep else line).strip()
+
+
+def _is_vacuous_entry(line: str) -> bool:
+    """True when a forced-pass entry carries no citable evidence — the body is
+    empty (blank after the ``"{name}: "`` prefix, or a wholly-blank line) or is a
+    vacuous ``none``/``n/a``/``-``/``.`` token."""
+    body = _forced_pass_body(line)
+    if not body:
+        return True
+    return bool(_VACUOUS_BODY_RE.match(body))
 
 
 def validate_negative_signal_pass(lines: list[str]) -> list[str]:
-    """Return the offending lines that are a bare "None" (forced-pass violation).
+    """Return the offending lines of a forced-pass (forced-pass violations).
 
     Empty return == the pass is clean. Used by a retro to mechanically reject a
-    pass that left a bare "None" in the negative-signal column.
+    pass that left a vacuous entry in the negative-signal column. An entry is
+    vacuous when the receipt BODY (the part after the ``"{name}: "`` prefix, or a
+    whole line with no colon) is empty OR a "no findings" token
+    (``none`` / ``n/a`` / ``na`` / ``-`` / ``–`` / ``—`` / ``.``,
+    case-insensitive) — including the name-prefixed ``"Name: None"`` shape the
+    emitter actually produces, not just a whole-line bare ``None`` (#296). Every
+    such entry asserts a delta with no citable evidence.
     """
-    return [ln for ln in lines if _BARE_NONE_RE.match(ln)]
+    return [ln for ln in lines if _is_vacuous_entry(ln)]
 
 
 def retirement_trigger(

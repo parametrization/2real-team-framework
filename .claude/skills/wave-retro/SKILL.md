@@ -173,9 +173,16 @@ Every row applies the mechanical policy from `trust_signals.py` and cites its nu
 - **Decay toward neutral:** an engineer with no signal for 3 consecutive waves drifts one
   step toward 3 (`trust_signals.decay(old, waves_since_signal)`). A stale 4 or 2 is no
   longer earned; decay is one step per retro, never a reset.
-- **Distribution discipline:** 5 is reserved for the wave's top relative performer with a
+- **Distribution discipline:** 5 is reserved for the wave's top relative performer(s) with a
   strictly positive composite (`trust_signals.apply_distribution_discipline`) — never
-  handed out for merely-clean work; other proposed 5s are capped to 4.
+  handed out for merely-clean work; other proposed 5s are capped to 4. **A tie at the top
+  composite is a reportable finding, not a blocker:** when two or more engineers share the
+  strictly-positive iteration-max composite, `apply_distribution_discipline` seats **all** of
+  them at 5 by design — the author-vs-reviewer parity #275 was built to produce, so do not
+  force a single winner. Record each tied engineer's composite in the retro and seat them all.
+  A deterministic tie-break was considered and rejected (#301): "fewest negatives" would
+  systematically seat reviewers over authors (`must_fix_received` only accrues to authors),
+  re-creating in reverse the asymmetry #275 removed.
 - **Retirement trigger:** run
   `trust_signals.retirement_trigger(score_history, ci_red_history)` per engineer (both
   histories oldest→newest). If it fires (score ≤ 2 in each of the last 3 waves, or ≥ 1
@@ -233,6 +240,12 @@ Based on pain points, propose specific amendments:
 **Section:** {charter/skill/doc section}
 **Rationale:** {why, anchored to a retro finding}
 ```
+
+**Never open a proposed change with a GitHub closing keyword followed by an issue reference**
+(`Fix #NNN`, `Closes #NNN`, `Resolves #NNN`, …): a later PR body that quotes the proposal
+verbatim will auto-close that issue the moment the PR merges — whether or not the work landed.
+This silently closed #296 via PR #299 (#304). Render the reference as backticked `` `#NNN` `` or
+in prose ("per #NNN", "Address #NNN") instead.
 
 **Do NOT apply any charter or process change without explicit user approval.**
 
