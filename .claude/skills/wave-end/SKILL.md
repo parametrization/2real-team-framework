@@ -58,41 +58,69 @@ and reads the counters recorded here.
    # wave-branch    → BASE=<branch.integration template, the wave's phase + $W>
    # direct-to-main → BASE=<default branch>; add `--label "wave-$W"` to scope the wave
 
-   # --pr-count is identity-AGNOSTIC — it counts merged PRs, not authors — so the raw
-   # `gh` list is correct here even in a single-account (dogfooded) repo where every PR
-   # carries one `author.login` and team identity lives only in `Co-Authored-By`:
-   PR_COUNT="$(gh pr list --state merged --base "$BASE" --json number | jq 'length')"
+   # REFUSE to derive counters from a read you cannot trust. `extract` fails SILENT
+   # under a GraphQL rate limit (returns `{}`, exit 0), and `gh pr list --json` is
+   # GraphQL-backed too — the SAME 5,000/hr bucket — so when the budget is pre-exhausted
+   # BOTH come back empty and a naive `${PR_COUNT:-0}` collapses to 0, then the
+   # cross-check compares 0 == 0 and reports health (#307 review). Three ORTHOGONAL
+   # defenses run before any counter is derived or `wave wrapup` is called:
+
+   # (A) Preflight the GraphQL budget over an INDEPENDENT channel. `gh api rate_limit`
+   #     is served over REST — a different bucket that does NOT drain with GraphQL — so
+   #     it stays readable when `gh pr list` / `extract` cannot. If GraphQL is at/near
+   #     zero, the wave read WILL return empty-but-successful; abort now, naming the
+   #     limit. `GQL_FLOOR` is a fail-fast margin; (B) and (C) are the hard guarantees.
+   GQL_FLOOR=100
+   GQL_REMAINING="$(gh api rate_limit --jq '.resources.graphql.remaining' 2>/dev/null)"
+   case "$GQL_REMAINING" in
+       ''|*[!0-9]*)
+           echo 'ABORT: could not read the GraphQL rate-limit budget (REST rate_limit failed).' >&2
+           echo '  Cannot establish that the wave read will succeed — refusing to record counters.' >&2
+           exit 1 ;;
+   esac
+   if [ "$GQL_REMAINING" -lt "$GQL_FLOOR" ]; then
+       echo "ABORT: GraphQL budget near-exhausted ($GQL_REMAINING < $GQL_FLOOR)." >&2
+       echo '  gh pr list and trust_signals extract both draw on this bucket and would' >&2
+       echo '  return empty-but-successful, recording FALSE zero counters. Wait for reset —' >&2
+       echo '  gh api rate_limit --jq .resources.graphql — then re-run step 3 from the top.' >&2
+       exit 1
+   fi
+
+   # (B) --pr-count is identity-AGNOSTIC (a count of PRs, not authors, so `gh`'s single
+   #     dogfood `.author.login` is fine here) — but its READ can still fail. Capture the
+   #     exit status EXPLICITLY: a failed `gh pr list` must not collapse into '' and then
+   #     0 via `${VAR:-0}`. A non-zero exit, or non-numeric stdout, is an ABORT, not a
+   #     zero. (This is what the pre-exhausted case trips — `gh pr list` exits non-zero.)
+   PR_LIST="$(gh pr list --state merged --base "$BASE" --json number)"; PR_LIST_RC=$?
+   PR_COUNT="$(printf '%s' "$PR_LIST" | jq 'length' 2>/dev/null)"
+   if [ "$PR_LIST_RC" -ne 0 ] || ! printf '%s' "$PR_COUNT" | grep -Eq '^[0-9]+$'; then
+       echo "ABORT: gh pr list failed (exit $PR_LIST_RC) or returned a non-numeric count." >&2
+       echo '  A failed read is NOT an empty wave — refusing to record zero counters.' >&2
+       exit 1
+   fi
 
    # --cr-cycles and --concentration are BOTH identity-SENSITIVE, so both derive from
-   # `trust_signals.py extract` — the only source that resolves team-member identity
-   # (it parses the `Co-Authored-By` trailers). Grouping `gh`'s `.author.login` instead
-   # collapses every PR into the single bot/owner account in a dogfooded repo, pinning
-   # concentration at ~100% forever — exactly the drift this derivation exists to kill.
-   # Extract once and read both counters off it — a second call could straddle a
-   # rate-limit boundary and return different data:
+   # `trust_signals.py extract` — the only source that resolves team-member identity (it
+   # parses the `Co-Authored-By` trailers); grouping `gh`'s `.author.login` would collapse
+   # a dogfooded repo to ~100% concentration forever (#307). Extract ONCE — a second call
+   # could straddle a rate-limit boundary and return different data:
    SIG="$(python3 "$LIB/trust_signals.py" extract "$W")"
 
-   # GUARDRAIL — `extract` fails SILENT (#300 follow-up; the fix at the `extract`
-   # level is tracked separately on the trust_signals surface). It is SCM-dependent,
-   # and under a GitHub API rate limit it returns `{}` with exit 0 and no stderr. The
-   # `add // 0` / zero-total guards below would then record `cr_cycles=0,
-   # concentration=0` — a PLAUSIBLE-looking lie (a genuinely clean wave IS 0),
-   # indistinguishable from "we could not read GitHub". So the record must not be
-   # written from an unreadable extract. You already know PR_COUNT independently from
-   # `gh pr list`; cross-check it against extract's identity-aware `authored_prs`
-   # total. An empty map — or ANY disagreement, which also catches a PARTIAL read —
-   # for a wave that merged PRs is an ABORT, never a zero:
-   SIG_ENGINEERS="$(echo "$SIG" | jq 'length' 2>/dev/null || echo 0)"
-   SIG_PR_TOTAL="$(echo "$SIG" | jq '[.[].authored_prs | length] | add // 0' 2>/dev/null || echo 0)"
-   if [ "${PR_COUNT:-0}" -gt 0 ] && { [ "${SIG_ENGINEERS:-0}" -eq 0 ] || [ "${SIG_PR_TOTAL:-0}" -ne "${PR_COUNT}" ]; }; then
+   # (C) Cross-check `extract` against the now-TRUSTED PR_COUNT (reads (A)+(B) confirmed
+   #     succeeded). `extract` still fails SILENT (`{}`, exit 0) — the #300 follow-up; the
+   #     library-level fix is #311 on the trust_signals surface, not touched here. An
+   #     empty map — or ANY disagreement, which also catches a PARTIAL read — for a wave
+   #     that merged PRs is an ABORT, never a zero. A genuinely empty wave reaches here
+   #     only after the reads SUCCEEDED, so PR_COUNT == 0 is then a real zero and proceeds:
+   SIG_ENGINEERS="$(printf '%s' "$SIG" | jq 'length' 2>/dev/null || echo 0)"
+   SIG_PR_TOTAL="$(printf '%s' "$SIG" | jq '[.[].authored_prs | length] | add // 0' 2>/dev/null || echo 0)"
+   if [ "$PR_COUNT" -gt 0 ] && { [ "${SIG_ENGINEERS:-0}" -eq 0 ] || [ "${SIG_PR_TOTAL:-0}" -ne "$PR_COUNT" ]; }; then
        echo "ABORT: trust_signals extract could not be trusted for wave $W" >&2
        echo "  gh pr list count = $PR_COUNT, but extract shows $SIG_ENGINEERS engineer(s)" >&2
-       echo "  covering $SIG_PR_TOTAL authored PR(s). An empty/short extract for a wave" >&2
-       echo "  that merged PRs means the READ FAILED (usually a GraphQL rate limit)," >&2
-       echo "  NOT that no rework happened. Do NOT run 'wave wrapup' with these numbers —" >&2
-       echo "  it would write false counters into state.json that nothing downstream" >&2
-       echo "  could tell from real zeros. Wait for reset —" >&2
-       echo "  'gh api rate_limit --jq .resources.graphql' — and re-run step 3 from the top." >&2
+       echo "  covering $SIG_PR_TOTAL authored PR(s). An empty/short extract for a wave that" >&2
+       echo "  merged PRs means the READ FAILED (usually a GraphQL rate limit), NOT that no" >&2
+       echo "  rework happened. Do NOT run 'wave wrapup' with these numbers. Wait for reset" >&2
+       echo "  and re-run step 3 from the top." >&2
        exit 1
    fi
 
