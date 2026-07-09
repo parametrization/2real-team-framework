@@ -68,8 +68,33 @@ and reads the counters recorded here.
    # (it parses the `Co-Authored-By` trailers). Grouping `gh`'s `.author.login` instead
    # collapses every PR into the single bot/owner account in a dogfooded repo, pinning
    # concentration at ~100% forever — exactly the drift this derivation exists to kill.
-   # Extract once and read both counters off it:
+   # Extract once and read both counters off it — a second call could straddle a
+   # rate-limit boundary and return different data:
    SIG="$(python3 "$LIB/trust_signals.py" extract "$W")"
+
+   # GUARDRAIL — `extract` fails SILENT (#300 follow-up; the fix at the `extract`
+   # level is tracked separately on the trust_signals surface). It is SCM-dependent,
+   # and under a GitHub API rate limit it returns `{}` with exit 0 and no stderr. The
+   # `add // 0` / zero-total guards below would then record `cr_cycles=0,
+   # concentration=0` — a PLAUSIBLE-looking lie (a genuinely clean wave IS 0),
+   # indistinguishable from "we could not read GitHub". So the record must not be
+   # written from an unreadable extract. You already know PR_COUNT independently from
+   # `gh pr list`; cross-check it against extract's identity-aware `authored_prs`
+   # total. An empty map — or ANY disagreement, which also catches a PARTIAL read —
+   # for a wave that merged PRs is an ABORT, never a zero:
+   SIG_ENGINEERS="$(echo "$SIG" | jq 'length' 2>/dev/null || echo 0)"
+   SIG_PR_TOTAL="$(echo "$SIG" | jq '[.[].authored_prs | length] | add // 0' 2>/dev/null || echo 0)"
+   if [ "${PR_COUNT:-0}" -gt 0 ] && { [ "${SIG_ENGINEERS:-0}" -eq 0 ] || [ "${SIG_PR_TOTAL:-0}" -ne "${PR_COUNT}" ]; }; then
+       echo "ABORT: trust_signals extract could not be trusted for wave $W" >&2
+       echo "  gh pr list count = $PR_COUNT, but extract shows $SIG_ENGINEERS engineer(s)" >&2
+       echo "  covering $SIG_PR_TOTAL authored PR(s). An empty/short extract for a wave" >&2
+       echo "  that merged PRs means the READ FAILED (usually a GraphQL rate limit)," >&2
+       echo "  NOT that no rework happened. Do NOT run 'wave wrapup' with these numbers —" >&2
+       echo "  it would write false counters into state.json that nothing downstream" >&2
+       echo "  could tell from real zeros. Wait for reset —" >&2
+       echo "  'gh api rate_limit --jq .resources.graphql' — and re-run step 3 from the top." >&2
+       exit 1
+   fi
 
    # --cr-cycles = PRs that took >=1 changes-requested round. `trust_signals.py`
    # increments an author's `rework_cycles` exactly ONCE per PR that carried a rework
