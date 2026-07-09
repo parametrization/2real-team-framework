@@ -6,7 +6,8 @@ Re-audit of the two sibling SOURCE repos for `.claude/` (hooks, charter, skills,
 product code, hooks, or assets were modified.
 
 - `botfarm_inc` — `/home/parameterization/code/botfarm_inc` (Phase 4 W7 → Phase 6 W1)
-- `noorinalabs-main` — `/home/parameterization/code/noorinalabs-main` (Phase 7 W18 → Phase 8 W24;
+- `noorinalabs-main` — `/home/parameterization/code/noorinalabs-main` (Phase 6 W17 → Phase 8 W24;
+  the since-2026-06-24 window reaches back to P6W17, where #864 lands;
   no nested child-repo `.claude/` trees exist — single top-level tree)
 
 Classification vocabulary (same as the [2026-06 backlog](../noorinalabs-2026-06/GENERICISATION-BACKLOG.md)):
