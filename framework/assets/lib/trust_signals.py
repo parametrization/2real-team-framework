@@ -1685,33 +1685,54 @@ def negative_signal_line(name: str, sig: Signals) -> str:
     )
 
 
-# Bare-"None" detector for the forced negative-signal pass. A negative-signal
-# entry of exactly "None" / "n/a" / "-" (case-insensitive, optional bullet /
-# trailing punctuation) is the banned shape.
-_BARE_NONE_RE = re.compile(r"^\s*[-*]?\s*(none|n/?a|-+)\s*[.;]?\s*$", re.IGNORECASE)
+# Vacuous-token detector for a forced-pass receipt BODY (#296). Matches a body
+# that carries no evidence: one of the "no findings" tokens ``none`` / ``n/a`` /
+# ``na`` / ``-`` / ``–`` / ``—`` / ``.`` (case-insensitive, optional leading
+# bullet, optional trailing ``.``/``;``), or repeats of the dash/dot forms
+# (``--`` / ``...``). Tested against the receipt BODY, not the whole line: the
+# forced-pass emitter only ever produces the ``"{name}: {gap}"`` shape, so a
+# whole-line anchor never fires against real input and lets a name-prefixed
+# ``"Name: None"`` — the literal shape the skill header calls banned — slip
+# past. (#296 review must-fix: the original whole-line ``_BARE_NONE_RE`` closed
+# ``"Name: "`` but left ``"Name: None"``, one character away and identically
+# vacuous.)
+_VACUOUS_BODY_RE = re.compile(
+    r"^\s*[-*]?\s*(none|n/?a|[-–—.]+)\s*[.;]?\s*$", re.IGNORECASE
+)
 
-# Blank-entry detector (#296). An entry that carries no evidence after the
-# ``"{name}: "`` prefix — everything after the first colon is whitespace
-# (``"Name: "`` / ``"Name:"``), or the whole line is blank — is just as vacuous
-# as a bare "None". This is the exact blank receipt the unrendered
-# ``missed_catches`` / ``gate_bypasses`` used to emit: the scorer applied a −1
-# that the forced pass then waved through with nothing to cite.
-_BLANK_ENTRY_RE = re.compile(r"^\s*(?:[^:]*:)?\s*$")
+
+def _forced_pass_body(line: str) -> str:
+    """The receipt body: the text after the first ``":"`` (the ``"{name}: "``
+    prefix), or the whole line when there is no colon at all. Whitespace-stripped.
+    A line with no colon (e.g. a bare ``"None"``) is treated as its own body so
+    the pre-#296 whole-line rejection still holds."""
+    _, sep, rest = line.partition(":")
+    return (rest if sep else line).strip()
+
+
+def _is_vacuous_entry(line: str) -> bool:
+    """True when a forced-pass entry carries no citable evidence — the body is
+    empty (blank after the ``"{name}: "`` prefix, or a wholly-blank line) or is a
+    vacuous ``none``/``n/a``/``-``/``.`` token."""
+    body = _forced_pass_body(line)
+    if not body:
+        return True
+    return bool(_VACUOUS_BODY_RE.match(body))
 
 
 def validate_negative_signal_pass(lines: list[str]) -> list[str]:
     """Return the offending lines of a forced-pass (forced-pass violations).
 
     Empty return == the pass is clean. Used by a retro to mechanically reject a
-    pass that left a vacuous entry in the negative-signal column — either a bare
-    "None" / "n/a" / "-" token OR an entry blank after the ``"{name}: "`` prefix
-    (#296). Both shapes assert a delta with no citable evidence.
+    pass that left a vacuous entry in the negative-signal column. An entry is
+    vacuous when the receipt BODY (the part after the ``"{name}: "`` prefix, or a
+    whole line with no colon) is empty OR a "no findings" token
+    (``none`` / ``n/a`` / ``na`` / ``-`` / ``–`` / ``—`` / ``.``,
+    case-insensitive) — including the name-prefixed ``"Name: None"`` shape the
+    emitter actually produces, not just a whole-line bare ``None`` (#296). Every
+    such entry asserts a delta with no citable evidence.
     """
-    return [
-        ln
-        for ln in lines
-        if _BARE_NONE_RE.match(ln) or _BLANK_ENTRY_RE.match(ln)
-    ]
+    return [ln for ln in lines if _is_vacuous_entry(ln)]
 
 
 def retirement_trigger(

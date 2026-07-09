@@ -2352,7 +2352,7 @@ def test_every_negative_field_renders_a_receipt() -> None:
         line = ts.negative_signal_line("Eng", sig)
         body = line.split(":", 1)[1].strip()
         assert body, f"{name}-only rendered a blank receipt: {line!r}"
-        assert not ts._BARE_NONE_RE.match(line), f"{name} rendered a bare-None: {line!r}"
+        assert not ts._is_vacuous_entry(line), f"{name} rendered a vacuous line: {line!r}"
         assert "3" in body, f"{name} did not cite its count: {line!r}"
         # The forced-pass validator must accept a real, evidence-carrying line.
         assert ts.validate_negative_signal_pass([line]) == [], line
@@ -2371,21 +2371,50 @@ def test_has_negative_derives_from_negative_field_set() -> None:
 def test_validate_rejects_blank_after_colon() -> None:
     """Defect B: the validator — whose sole job is banning vacuous entries — must
     reject an entry blank after the ``"{name}: "`` prefix, the exact shape
-    Defect A used to emit. Reverting the ``_BLANK_ENTRY_RE`` check waves it
-    through (returns ``[]``) → fails.
+    Defect A used to emit. Reverting the body-empty check waves it through
+    (returns ``[]``) → fails.
     """
     assert ts.validate_negative_signal_pass(["Ibrahim El-Amin: "]) == ["Ibrahim El-Amin: "]
     assert ts.validate_negative_signal_pass(["X:"]) == ["X:"]
     assert ts.validate_negative_signal_pass(["   "]) == ["   "]
 
 
-def test_validate_still_rejects_bare_none_and_accepts_real_gaps() -> None:
-    """No regression on the original contract: bare ``None`` / ``n/a`` / ``-`` are
-    still rejected, and a genuine number-citing gap or a ``metrics clean`` line is
-    still accepted.
+def test_validate_rejects_name_prefixed_vacuous_token() -> None:
+    """#296 review must-fix: the validator must reject a vacuous token that
+    carries a ``"{name}: "`` prefix — the ONLY shape the forced-pass emitter
+    produces. A whole-line anchor (the original ``_BARE_NONE_RE``) never fired
+    against real input, so ``"Ibrahim El-Amin: None"`` — one character from the
+    already-rejected ``"Ibrahim El-Amin: "`` and identically vacuous — sailed
+    through. Reverting to whole-line anchoring re-accepts all of these → fails.
+    """
+    vacuous = [
+        "Ibrahim El-Amin: None",
+        "Name: none",
+        "Name: -",
+        "Name: n/a",
+        "Name: N/A",
+        "Name: na",
+        "Name: .",
+        "Name: --",
+        "Name: - none.",
+    ]
+    for entry in vacuous:
+        assert ts.validate_negative_signal_pass([entry]) == [entry], entry
+
+
+def test_validate_still_rejects_whole_line_bare_none_and_accepts_real_gaps() -> None:
+    """No regression on the original contract (a whole line with no colon) AND no
+    over-tightening: bare ``None`` / ``n/a`` / ``-`` whole lines are still
+    rejected, while a genuine number-citing gap, a real ``missed_catches``
+    receipt, and a ``metrics clean`` line are all still ACCEPTED.
     """
     assert ts.validate_negative_signal_pass(["None"]) == ["None"]
     assert ts.validate_negative_signal_pass(["- n/a"]) == ["- n/a"]
-    clean = ts.negative_signal_line("C", ts.Signals(prs_merged=2))
-    gap = ts.negative_signal_line("D", ts.Signals(prs_merged=1, ci_red_merges=1))
-    assert ts.validate_negative_signal_pass([clean, gap]) == []
+    real = [
+        "Name: 1 missed catch(es) as reviewer",
+        ts.negative_signal_line("C", ts.Signals(prs_merged=2)),
+        ts.negative_signal_line("D", ts.Signals(prs_merged=1, ci_red_merges=1)),
+        # A gap whose text merely CONTAINS a vacuous substring must not trip it.
+        "Name: 2 gate-bypass merge(s), 1 review false-positive(s)",
+    ]
+    assert ts.validate_negative_signal_pass(real) == []
