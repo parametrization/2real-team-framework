@@ -1,95 +1,82 @@
 <!-- handoff: manual — written by the /handoff skill; the session_handoff auto-hook must not overwrite this file. Delete it (or this line) to re-enable auto-refresh. -->
-# Session Handoff — 2026-07-08 (Phase 7 Wave 1 / global wave 22 — EXECUTION COMPLETE, HOLDING AT OWNER ROLLUP GATE)
+# Session Handoff — 2026-07-09 (Phase 7 Wave 2 / global wave 23 — ROLLED UP TO MAIN, NO RELEASE CUT)
 
-## ✅ READ FIRST — Wave 22 is fully built and gated; NOTHING is on main yet
-All **3 stories are merged to the integration branch `deployments/phase7/wave-1`** and each cleared
-the 2-reviewer gate. The wave is **NOT rolled up** — it is paused at the **owner approval gate** for
-`rollup → main + release v0.12.0`. The owner said they were near their weekly limit and asked to stop.
-**Do NOT merge to main or tag a release without explicit owner go-ahead** (that approval was still
-pending when the session ended).
+## ✅ READ FIRST — Wave 23 is on `main`. Trust scoring is PARKED. No release tagged.
 
-Open question the owner has NOT yet answered (ask on resume):
-- **Version number:** `0.12.0` (proposed — new author-exclusion behavior across two surfaces reads as
-  a minor bump) vs `0.11.2` (the gate fix alone is arguably a patch). I recommended `0.12.0`.
-- **Explicit go-ahead** to `merge → main` + cut the release.
+Wave 23 ("The record must not lie") is **complete and merged to `main`** via rollup PR #316
+(merge commit `cdbc009`). All 12 CI checks green. The owner explicitly approved the rollup and
+**stopped before any release** — no tag, no PyPI, no npm. `main` is at `v0.12.x` unreleased.
 
-## What Wave 22 shipped (Phase 7 opener — "Mine the siblings, close the gate-parity debt")
-3 file-disjoint stories · 3 PRs · 1 CR cycle · 33% concentration. Meta issue **#289**.
+**Do NOT tag or publish a release without explicit owner go-ahead.**
 
-- **S1 #264 / PR #290** (Nia → Paloma + Tariq, 2 clean): sibling-repo mining audit note
-  `intake/2026-07/MINING-FINDINGS.md`. Re-ranked top ports after both reviewers independently
-  proved the audit's #1 "P0" (#881) was a **no-op** (our `parse_verdicts` already has both #881 guards
-  + a stricter third) → I closed the spun-off #291 as no-op. Top net-new ports carried forward:
-  #864 `verify_deployable_merge`, #424 reviewer-load kickoff gate, #907/#895.
-- **S2 #288 / PR #292** (Paloma → Ibrahim + Tariq, **1 CR** → 2 clean): author-exclusive **scorer**.
-  New `is_author_self_review(requestor, author, canon)` in `trust_signals.py` (fail-open/total), applied
-  in `_account_pr` + `review_load`; drops author self-verdicts before accounting. **CR was doc-only:**
-  Tariq caught a false "mirrors the merge gate" claim (the gate did NOT yet author-exclude — that was
-  exactly #293); fixed in `864fc46` + `81517b9`, which ALSO reconciled a pre-existing false line in
-  `pull-requests.md`. 5 revert→red tests.
-- **S3 #293 / PR #294** (Ibrahim → Paloma + Tariq, 2 clean): author-exclusive **merge gate** — closes a
-  **LIVE self-approval bypass**. `pr_review_state.compute_state`/`review_state` now resolve the PR
-  **head-commit author** (`_pr_head_author`, fail-open) + roster canon and drop author self-verdicts,
-  reusing the S2 helper — ONE exclusion rule for gate + scorer. **Pinned `ReviewState` output shape
-  unchanged** (#194/#193 — only keyword-only `author`/`canon` INPUTS added). Both reviewers proved the
-  bypass closed end-to-end through the LIVE gate with a real `gh` author fetch:
-  before `{approvals:2,approved}` → after `{approvals:1,pending}`. Self-verdicts dropped ENTIRELY
-  (neither approvals nor unresolved_must_fix — an author can't approve OR block their own PR).
+## What landed (4 stories, all 2/2 gate-approved, file-disjoint)
 
-## The security fix in one line
-The armed merge gate (this repo: `reviewers_required=2`, `pr_review_gate_enabled=true`) used to count an
-author's own clean `Requestor:<self>` verdict toward the 2-approval bar, so a 1-real-reviewer PR could
-self-approve. **W22 closed it on both the gate and the scorer.**
+| PR | Issue | Author | Rounds | What |
+|---|---|---|---|---|
+| #306 | #296 | Paloma | 1 CR | `_NEGATIVE_SIGNAL_FIELDS` single source of truth; `_VACUOUS_BODY_RE` rejects `"Name: None"`/`-`/`n/a`/blank |
+| #307 | #300 | Nia | 2 CR | `/wave-end` derives counters from `trust_signals extract`; 3 read-trust defenses (REST rate-limit preflight, `PR_LIST_RC=$?`, cross-check) |
+| #305 | #301 | Ibrahim | clean | reserved-5 pluralized to "top relative performer(s)"; ties intended, documented |
+| #309 | #304 | Tariq | 1 CR | `validate_pr_body.py` PreToolUse hook — blocks closing keywords in PR bodies |
 
-## Rollup runbook (run ONLY after owner approves — this is the pending next action)
-1. `git checkout main && git pull --ff-only` ; `git fetch origin`
-2. `git merge --no-ff origin/deployments/phase7/wave-1` — **owner identity** `-c user.name/-c user.email`,
-   message via **`-F <file>`** (never inline heredoc).
-3. **Content-probe main BEFORE bump** (code-less rollup = stop-and-investigate):
-   `git show main:framework/assets/lib/pr_review_state.py | grep -c _pr_head_author` (expect ≥1) and
-   `grep -c is_author_self_review framework/assets/lib/trust_signals.py`.
-4. Bump `0.11.1 → 0.12.0` (or owner's chosen number), push bare (`; echo rc=$?`, never piped).
-5. GitHub Release tag **`deployments-phase7-wave-1`** (charter: slashes→hyphens), notes = the 3-story
-   summary above.
-6. Dual-publish PyPI + npm. **npm CI durability:** `publish-npm.yml` is pinned to `npm@^11.5.1`
-   (npm@12 dropped node-20) with a `workflow_dispatch` trigger — if the npm job fails, dispatch it on main.
-   Carry-forward: bump the publish runner to node 22 to un-pin.
-7. `/wave-end 22` — merges are done, so mainly: **close #264/#288/#293** (they did NOT auto-close —
-   "Closes #293" only fires on merge to the DEFAULT branch, and these merged to the integration branch),
-   record counters (`--pr-count 3 --cr-cycles 1 --concentration 33`), emit review-load, prune worktrees.
-8. `/wave-retro 22` — **first retro under the new author-exclusive scorer.** Trust deltas are mechanical
-   (`trust_signals.py score`). Watch: S2's fix means author self-verdicts no longer inflate reviewer
-   signals; S3's `#H5`-style change means a self-approved merge would register as a `gate_bypass` (−1).
-   Standing matrix entering the retro: **Paloma 5, Tariq 4, Nia 4, Ibrahim 3.** Then draft the wave-23 stub.
+All four issues **closed from commit trailers**, each attributed to its own author's commit
+(verified: #296 ← Paloma's `6bd8c7a`, not Tariq's hook commit). That attribution *was* the point of #304.
 
-## `gh`/commit mechanics (unchanged, keep applying)
-- Owner commits: `git -c user.name="Steven French" -c user.email="parametrization@gmail.com"` — never global config.
-- Team commits: roster identity + TWO `Co-Authored-By` trailers (member + Claude).
-- Commit messages via **`-F <file>`**. `gh api -X PATCH` comment bodies via **`-F body=@file`, NEVER `-f`**
-  (`-f` sends the literal `@path` string — hit 3× historically).
-- Verdicts are PR **comments** (`gh pr comment`, `gh pr review` is blocked). `Requestor:`=reviewer,
-  `Requestee:`=author — never swap. An author's must-fix reply is a PLAIN comment, never verdict grammar.
-- Merge gate oracle: `pr_review_state.review_state('parametrization/2real-team-framework', <pr>)` — pass
-  the **owner/repo** string (bare repo name → gh error → fail-open `unknown`; that bit me as a diagnostic
-  false-alarm this session, NOT a real gate problem).
+## 🚨 THE BLOCKER — #314: the scorer contradicts itself. Wave 23 deltas NOT applied.
 
-## Open issues / debt after W22
-- **#264, #288, #293** — resolved by merged PRs, **close them in `/wave-end`** (did not auto-close).
-- **#295** (NEW, filed this session, label `bug`, low/hardening) — Tariq's 2 non-blocking S3 follow-ups:
-  (a) log the silent `_pr_head_author→None` fail-open so a rare flake re-opening the hole is observable;
-  (b) union-in `gh pr view --json author` login to close the commit-suggestion/rebase head-author vector.
-- **#291** — CLOSED this session as a no-op (the audit's #881 "P0" false alarm).
-- Carry-forward ports from the #264 audit: **#864** `verify_deployable_merge`, **#424** reviewer-load
-  kickoff gate, **#907/#895**; plus **#110**, more #102 P2, npm-CI node-22 bump.
-- Next wave = **23** (Phase 7). Stub not yet drafted — `/wave-retro` Step 9 drafts it after rollup.
+`composite()` (the reserved-5 ranking key) subtracts `must_fix_received`, `ci_red_merges`,
+`review_false_positives` — but **NOT `missed_catches`**. `score_delta()` charges −1 per missed catch.
 
-## Mechanical state at session end
-- Branch: `main` (NOT yet updated with W22 — rollup pending). `.claude/memory/handoff.md` modified (this file).
-- Integration branch `deployments/phase7/wave-1` HEAD = `2e1b3e5` (Merge #294); contains all 3 stories
-  (#290/f83c648, #292/423ba56, #294/2e1b3e5).
-- Open PRs: none (all 3 merged to integration branch).
-- Lifecycle: `current_wave=wave-22`, `wave_22_active=true`, kicked off, merge-model `wave-branch`,
-  `wave_22_meta_issue=#289`. **`wave wrapup` NOT yet run** (that's `/wave-end`, post-rollup).
-- Trust matrix: **Paloma 5, Tariq 4, Nia 4, Ibrahim 3** (unchanged since W21 — W22 deltas computed in retro).
-- v0.11.1 is the live release on main/PyPI/npm; v0.12.0 is staged-but-not-cut.
-- Local stale feature branches (all merged server-side) — harmless housekeeping.
+Reproduced live on Wave 23 data:
+- **Ibrahim holds the highest composite (7) AND the worst delta (−2 → 1)** simultaneously.
+- Because the reserved 5 requires `composite == top`, his 7 caps **Paloma and Tariq 5 → 4 for a third
+  engineer's number**.
+
+Root cause: `verified_reviews=2` and `missed_catches=2` come from **the same two reviews** — his clean
+verdicts on #307 and #309, each carrying a substantive `Verified:` block, each past a defect the
+co-reviewer caught. `_has_verified_checks` validates that a receipt is *detailed*, not that the review
+*worked*. Composite pays `+2×2` for the ritual; delta charges `−1×2` for the outcome.
+
+**Owner decision: park all deltas.** Matrix scores held at Paloma 5, Tariq 5, Nia 3, Ibrahim 3.
+Mechanical output recorded as evidence in `trust_matrix.md` under "Wave 23 Trust Updates". Precedent: W15, W20.
+This is the **second consecutive wave** Ibrahim's positives were gated away (Wave 22 needed an owner override).
+
+## Open issues from the Wave 23 sweep — every one "a component asserting something it never verified"
+
+- **#314** — composite/delta negative-set split. **Headline for Wave 24; blocks scoring.**
+- **#308** — charter claims the merge gate doesn't author-exclude. False since #293/#294 (Wave 22).
+  **Owner scoped this into Wave 24.**
+- **#302** — policy question: grade `has_negative()` suppression (hard gate vs soft offset). Orthogonal to #314.
+- **#310** — no structural guard forces a new negative `Signals` field into `_NEGATIVE_SIGNAL_FIELDS`.
+- **#311** — `trust_signals extract` returns `{}` at **exit 0** under GraphQL exhaustion. Should fail loud (scorer), not open (hook).
+- **#312** — commit messages auto-close too, and are unguarded. **`mask_code` must NOT be reused there**:
+  backticks are inert markdown in a PR body, literal characters in a commit message.
+- **#313** — `review_load.py` crashes in the framework's own repo (`.claude/` has no `lib/`/`hooks/`) while its
+  comment claims it works in both trees. `/wave-end` resolves the broken copy first. The **Wave 22 review-load
+  figure cannot have come from a clean run of it.**
+
+Next-wave stub: **#315** (theme TBD — owner sets it). `global_wave_seq` still 23; the id is reserved via
+`wave_24_meta_issue`, not a counter bump.
+
+## Hard-won operational facts (cost real time this session)
+
+- **`gh` caches HTTP responses in `/tmp/gh-cli-cache`, NOT `~/.cache/gh`.** `gh pr merge` sends
+  `X-Gh-Cache-Ttl: 24h0m0s`, so a GraphQL **rate-limit error caches as a 200 and replays for 24 hours**.
+  Symptom: `gh pr merge` reports "rate limit already exceeded" with a frozen `X-Ratelimit-Reset` and an
+  identical `X-Github-Request-Id` on every attempt, while plain `gh api graphql` reads show thousands
+  remaining. Fix: `find /tmp/gh-cli-cache -type f ! -name 'run-log-*.zip' -delete`. Cost ~80 minutes.
+- **Never pipe `gh pr merge` (or any command whose exit code matters) through `sed`/`grep`/`tail` under
+  `set -e`** — the pipeline's status comes from the filter, which always succeeds. This reported **4 merges
+  that never happened**. Verify against the API: `gh api repos/OWNER/REPO/pulls/N --jq .merged`.
+  `warn_pipe_mask_rc.py` exists for this and did **not** fire (retro follow-up).
+- **`jq '.blockers // "none"'`** on `pr_review_state.py` output prints a confident `"none"` — the real key is
+  **`unresolved_must_fix`**. Nearly filed a bug against a working merge gate.
+- The merge gate matches only `gh\s+pr\s+(ready|merge)`. `gh api graphql` mutations, REST `PUT .../merge`, and
+  local pushes **all bypass it**. Never route around a rate limit that way — it is a `gate_bypasses` signal.
+
+## Suggested next step
+
+Ask the owner for the Wave 24 theme on **#315**. The obvious spine is **#314 + #308 + #310** ("the scorer
+must not lie" — reconcile the negative sets, add the structural guard, fix the stale charter claim), with
+#311/#312/#313 as small file-disjoint companions. Trust scoring stays parked until #314 lands.
+
+Nothing is released. `main` = `cdbc009`.
