@@ -655,10 +655,11 @@ visible in its own telemetry. Signals via `trust_signals.py extract/score 22`.
 
 > **Reserved-5 resolved as a TIE (owner call).** Paloma and Tariq both close at composite **4**
 > — Paloma `1 + 2×1 caught + min(3,2) − 1 recv`, Tariq `0 + 2×2 caught`. `apply_distribution_discipline`
-> permits every engineer at the max composite to hold 5; the charter's "top relative performer" is
-> singular. Owner seated **both**. This is the author-vs-reviewer parity #275 was built to produce:
-> a pure reviewer who caught both of the wave's must-fixes now ranks level with a flagship author.
-> Charter/code wording reconciliation filed as a follow-up.
+> permits every engineer at the max composite to hold 5, and the reserved-5 wording now reads "top
+> relative performer(s)" to match — pluralized in #301 after this tie (at retro time it read singular,
+> which forced the owner call). Owner seated **both**. This is the author-vs-reviewer parity #275 was
+> built to produce: a pure reviewer who caught both of the wave's must-fixes now ranks level with a
+> flagship author.
 
 > **Owner override — Ibrahim held at 3.** The mechanical delta was **−1 → 2** (`missed_catches=1`).
 > The owner held him at **3**: the missed catch was doc-level (a false prior-art claim), while he
