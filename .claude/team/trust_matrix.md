@@ -687,3 +687,50 @@ is still discriminating (spread 2, both tiers populated). **Retirement triggers:
 | Paloma Gupta | Shipped the author-exclusive scorer (#292) and caught the #294 must-fix — value on both axes, second wave running. Her review of #294 probed the adversarial axis (false-exclusion via shared surname) rather than the happy path. | 1 must-fix received, 1 rework cycle(s) — the false "mirrors the merge gate" claim shipped in her first #292 push and needed Tariq to catch it; the doc asserted a property the code did not yet have. |
 | Nia Rossi | Produced the Phase-7 mining audit that anchors the next several waves, and accepted the demotion of her own #1-ranked finding on evidence. | 2 must-fix received, 1 rework cycle(s) — the audit's headline "P0" (#881) was a **no-op**, caught independently by *both* reviewers. Verify-before-rank: the finding was ranked #1 without diffing it against `parse_verdicts`. |
 | Ibrahim El-Amin | Authored the wave's security fix (#293/#294) clean-first-pass on the hardest story: closed a live self-approval bypass, reused the S2 helper so gate and scorer share **one** exclusion rule, and held the pinned `ReviewState` output shape (#194/#193) by adding keyword-only inputs. | 1 missed catch as reviewer — issued a clean verdict on #292 past the durable must-fix Tariq raised, i.e. approved a doc claim asserting a property the code did not yet have (`missed_catches=1`, `delta=−1`, owner-overridden). `clean_first_pass=1` was suppressed by the `has_negative()` gate. Receipt for this ding came back **blank** from the scorer — see #296. |
+
+## Wave 23 Trust Updates (2026-07-09) — "The record must not lie"
+
+> **⚠️ SCORING PARKED — no deltas applied this wave (owner decision, 2026-07-09; filed #314).**
+> The mechanical scorer returned an internally contradictory result. `composite()` — the
+> reserved-5 ranking key — subtracts `must_fix_received`, `ci_red_merges` and
+> `review_false_positives`, but **not `missed_catches`**, while `score_delta()` charges −1 per
+> missed catch. Consequences, both reproduced live on this wave's data:
+>
+> 1. **Ibrahim ranks first and last simultaneously** — highest composite (**7**) and worst
+>    delta (**−2 → 1**, the floor).
+> 2. **His composite demotes two others.** `apply_distribution_discipline` caps a proposed 5
+>    unless `composite == top`. Ibrahim's 7 is top and he is not proposed a 5, so Paloma (6)
+>    and Tariq (6) are both capped **5 → 4** for a *third engineer's* number.
+>
+> Root cause: `verified_reviews=2` and `missed_catches=2` came from **the same two reviews** —
+> Ibrahim's clean verdicts on #307 and #309, each carrying a substantive `Verified:` block, each
+> past a defect his co-reviewer caught. `_has_verified_checks` validates that a receipt is
+> detailed; it cannot validate that the review worked. The composite pays `+2×2` for the ritual;
+> the delta charges `−1×2` for the outcome; the two never reconcile.
+>
+> Writing `Ibrahim 3→1` and `Paloma/Tariq 5→4` into the permanent ledger would record three
+> demotions produced by a defect rather than by conduct — in the wave themed *the record must
+> not lie*. **Scores below are the mechanical output, recorded as evidence, NOT applied.**
+> Precedent: W15, W20 (scoring parked pending #275).
+
+| Rated | Old | New | Reason (cites signals) |
+|-------|-----|-----|------------------------|
+| Paloma Gupta | 5 | **5** *(held; mech. 4)* | delta **0**. Authored S1 #306 (`prs_merged=1`, difficulty 3); caught the wave's sharpest defect as reviewer (`must_fix_caught=1`, `verified_reviews=1`) — twice on #307: the `author.login` concentration collapse, then the abort guard that anchored on a GraphQL read failing in lockstep with the read it checked. `must_fix_received=1` + `rework_cycles=1` net to zero. Composite **6**. Mechanically capped 5→4 by Ibrahim's composite 7 — **not applied** (#314). |
+| Tariq Morales | 5 | **5** *(held; mech. 4)* | delta **0**. Authored S4 #309 (`prs_merged=1`, difficulty 3); caught the #306 must-fix (`must_fix_caught=1`, `verified_reviews=1`) — `validate_negative_signal_pass` still accepting `"Ibrahim El-Amin: None"`, i.e. #296's failure surviving inside #296's own fix. `must_fix_received=1` + `rework_cycles=1` from the closing keywords in his own commit message net to zero. Composite **6**. Mechanically capped 5→4 by a third engineer's composite — **not applied** (#314). |
+| Nia Rossi | 3 | **3** *(parked; mech. 2)* | delta **−1**: `must_fix_received=1`, `rework_cycles=1`, `missed_catches=1`. Authored S2 #307 (difficulty 3); its abort guard cross-checked `extract` against `gh pr list`, which shares the GraphQL bucket `extract` drains — under a pre-exhausted budget both fail together and the guard certifies `0 == 0`. Caught the #309 commit-message closing keywords as reviewer (`must_fix_caught=1`). Composite **6**. Her delta is the one *uncontaminated* by #314 (both negatives are counted in `composite`); parked with the rest for a single coherent ledger entry. |
+| Ibrahim El-Amin | 3 | **3** *(parked; mech. 1)* | delta **−2**: `missed_catches=2` — clean verdicts on #307 and #309, each with a substantive `Verified:` block, each past the defect his co-reviewer caught. Offsetting, suppressed by `has_negative()`: authored S3 #305, **the wave's only clean-first-pass PR** (`prs_merged=1`, `clean_first_pass=1`, `must_fix_received=0`, `rework_cycles=0`). Composite **7 — the wave's highest**, inflated by `verified_reviews=2` earned on precisely the two reviews that failed. Second consecutive wave his positives were gated away (cf. Wave 22 owner override). **Not applied** (#314; policy question in #302). |
+
+**Distribution health** (`distribution_health([4,4,2,1])` on the mechanical output): `degenerate=False`,
+no reasons. **Retirement triggers:** none fired — `retirement_trigger` clean for all four; Ibrahim's
+history `[4,3,1]` never reaches `<=2` in all three. **Decay:** none — every engineer produced signal.
+**Reserved 5:** unresolved this wave. The mechanical seat-holder by composite is Ibrahim (7), who is
+simultaneously proposed the floor score; the seat is **held by Paloma and Tariq** pending #314.
+
+### Done Well / Needs Improvement (Wave 23)
+
+| Engineer | Done Well | Needs Improvement (forced negative-signal line) |
+|----------|-----------|--------------------------------------------------|
+| Paloma Gupta | Two catches on one PR, both reproduced against the live API rather than argued. The second — that Nia's abort guard anchored on a read failing in lockstep with the read it checked — required noticing that `gh pr list` and `extract` share one GraphQL bucket, then demonstrating the guard skipping under a genuinely exhausted budget. Refused to clear her block at round 2 when a fix looked plausible but did not fire. | 1 must-fix received, 1 rework cycle(s) — her #306 validator still accepted `"Ibrahim El-Amin: None"`, the exact string #296 exists to ban: `_BARE_NONE_RE` was whole-line-anchored while the emitter only ever produces `"{name}: {gap}"`, so the bare-None branch never fired against real input. |
+| Tariq Morales | Caught #296's failure mode surviving inside #296's own fix, with an executing PoC rather than a reading of the regex. Then, told his own commit message carried the defect his PR exists to prevent, amended it message-only and proved the tree byte-identical (`c9e67d5` before and after) so his reviewer's approval remained honest. | 1 must-fix received, 1 rework cycle(s) — commit `73c901a` carried **four** closing keywords, two bound to #296, in the very commit shipping the auto-close guard. It would have auto-closed issue 296 from the wrong commit on rollup. His own hook masks backticks — right for PR bodies (markdown), wrong for commit messages (plain text), which is why his self-check read clean (#312). |
+| Nia Rossi | Caught the #309 commit-message closing keywords. Fixed her own guard twice under adversarial review without defending the earlier version, and on the second pass anchored on `gh api rate_limit` — REST, a genuinely orthogonal bucket — rather than another GraphQL read. Ran the revert→red herself. | 1 must-fix received, 1 rework cycle(s), 1 missed catch(es) as reviewer. Her first abort guard's "independent" anchor was not independent; `test_genuinely_empty_wave_proceeds` did not miss the bug, it **encoded it as a requirement**. A passing suite certified the blind spot. |
+| Ibrahim El-Amin | The wave's only clean-first-pass PR (#305). Handled its genuinely hard question well: he edited a blockquote inside the *Wave 22* retro section during a wave themed on not rewriting the record, and both reviewers independently reached the same conclusion — the old text made a **present-tense claim about live policy** the PR falsifies, so freezing it would leave the ledger asserting something currently false. He back-annotated, preserved the historical fact, and left `trust_matrix.md:197` byte-untouched. | 2 missed catch(es) as reviewer — clean verdicts on #307 and #309, each carrying a substantive `Verified:` block, each past a real defect his co-reviewer found. The blocks were detailed and the reviews still did not work; `_has_verified_checks` cannot tell the difference, and the composite paid `+4` for them (#314). Verify-the-claim, not the shape: on #309 the closing keywords were in the commit message he had in hand. |

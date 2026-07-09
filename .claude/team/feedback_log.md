@@ -1306,3 +1306,104 @@ or skills yet — each lands as a tracked change under its own issue.*
    If the replay moves any historical delta, close it and keep the current gate.
 
 *(Carry-forward: #296, #300, #301, #302 are wired into the Wave 23 stub, [#297](https://github.com/parametrization/2real-team-framework/issues/297).)*
+
+---
+
+## Retrospective: Wave 23 — 2026-07-09
+
+**Theme:** "The record must not lie" — scoring receipts + process-record integrity ([#297](https://github.com/parametrization/2real-team-framework/issues/297)).
+
+### Wave Metrics
+
+- **4 PRs merged**, all file-disjoint, each with a 2/2 armed-gate approval: #306 (Paloma, S1 `#296`),
+  #307 (Nia, S2 `#300`), #305 (Ibrahim, S3 `#301`), #309 (Tariq, S4 `#304`).
+- **CI:** green throughout; **979 tests pass** on the integrated branch; `ruff` clean; dual-tree
+  byte-parity holds; `reinstall.py --check` in sync.
+- **cr_cycles 3/4** — #306, #307 (two rounds), #309 each took ≥1 rework round. #305 clean-first-pass.
+- **Counter drift: zero.** Claimed `pr_count=4, cr_cycles=3, concentration=25` matched the
+  recomputation exactly — because `/wave-end` derived them with the code S2 shipped *this wave*,
+  rather than counting by hand. Both of that code's new read-trust defenses were exercised live at
+  wrapup (`graphql remaining 4763 >= 100`; `gh pr list` rc=0; cross-check `sum(authored_prs)=4 == 4`).
+  No `wave_23_counter_corrections` entry was needed — the first wave since W12 with none.
+- **Tech-debt filed: 6** — `#308`, `#310`, `#311`, `#312`, `#313`, `#314`.
+
+### Top-Implementer Concentration
+
+1 / 4 = **25%** — four authors, one PR each. The flattest the metric can express; no call required.
+**Review load** (`review_load.py counts 23`): Ibrahim 2v/2prs, Nia 2v/2prs, Paloma 2v/2prs,
+Tariq 2v/2prs. Perfectly even on both axes.
+
+### Per-Engineer Assessments
+
+Signals via `trust_signals.py extract/score 23`. **Deltas parked — see below.**
+
+- **Paloma Gupta** — `prs_merged=1, must_fix_caught=1, verified_reviews=1, must_fix_received=1, rework_cycles=1, difficulty=3` → delta **0**, composite **6**.
+  *Negative-signal line:* 1 must-fix received, 1 rework cycle(s) — her #306 validator still accepted `"Ibrahim El-Amin: None"`, the exact string `#296` exists to ban. Severity: minor.
+- **Tariq Morales** — `prs_merged=1, must_fix_caught=1, verified_reviews=1, must_fix_received=1, rework_cycles=1, difficulty=3` → delta **0**, composite **6**.
+  *Negative-signal line:* 1 must-fix received, 1 rework cycle(s) — commit `73c901a` carried 4 closing keywords, 2 bound to `#296`, in the commit shipping the auto-close guard. Severity: moderate (would have misattributed an issue close on rollup).
+- **Nia Rossi** — `prs_merged=1, must_fix_caught=1, verified_reviews=1, must_fix_received=1, rework_cycles=1, missed_catches=1, difficulty=3` → delta **−1**, composite **6**.
+  *Negative-signal line:* 1 must-fix received, 1 rework cycle(s), 1 missed catch(es) as reviewer — her abort guard anchored on a GraphQL read that fails in lockstep with the read it checks. Severity: moderate.
+- **Ibrahim El-Amin** — `prs_merged=1, clean_first_pass=1, verified_reviews=2, missed_catches=2, must_fix_received=0, rework_cycles=0, difficulty=2` → delta **−2**, composite **7 (highest)**.
+  *Negative-signal line:* 2 missed catch(es) as reviewer — clean verdicts on #307 and #309, each with a substantive `Verified:` block, each past the defect his co-reviewer caught. Severity: moderate.
+
+**Forced negative-signal pass:** clean — 4/4 engineers with concrete receipts, validated by
+`validate_negative_signal_pass`. Dogfooded: the fix S1 shipped this wave now **rejects** the exact
+blank line (`"Ibrahim El-Amin: "`) that Wave 22's retro was forced to hand-write around.
+
+### Trust deltas: PARKED (owner decision) — `#314`
+
+The scorer returned an internally contradictory result. `composite()` omits `missed_catches` from its
+negative set while `score_delta()` charges −1 each. Ibrahim therefore holds the **highest composite
+(7)** and the **worst delta (−2 → 1)** simultaneously; and because the reserved 5 requires
+`composite == top`, his 7 caps **Paloma and Tariq from 5 → 4 for a third engineer's number**.
+
+Root cause: `verified_reviews=2` and `missed_catches=2` arise from **the same two reviews**.
+`_has_verified_checks` validates that a receipt is detailed, not that the review worked.
+
+No deltas applied. Mechanical output recorded as evidence in `trust_matrix.md`.
+
+### Top 3 Going Well
+
+1. **Adversarial review is finding real defects at a rate no test suite reaches.** All four stories
+   contained the defect they were written to eliminate. Every catch was reproduced with an executing
+   PoC or a live API call before it was acted on — none was argued from a reading of the code.
+2. **Dogfooding closed the loop within the wave.** `/wave-end` derived its counters with S2's code,
+   exercising both of S2's new read-trust defenses live; the forced pass ran through S1's fixed
+   validator; `/wave-retro`'s own skill text already carried S3's pluralized tie rule and S4's
+   closing-keyword warning. Zero counter drift — the first such wave since W12.
+3. **Reviewers refused to clear blocks on plausible-looking fixes.** Paloma held her #307 block
+   through two fix rounds, the second time because the guard passed its unit tests but did not fire
+   against a live exhausted budget. Nia verified Tariq's amend with a raw scan rather than his own
+   masking matcher, which would have under-counted.
+
+### Top 3 Pain Points
+
+1. **The scorer's two halves disagree about negatives** (`#314`). Reproduced live; parks this wave's
+   deltas. Second consecutive wave in which Ibrahim's positives were gated away by `has_negative()`
+   (cf. Wave 22 owner override) — the policy question is `#302`, but the consistency defect is new.
+2. **Receipts are validated for shape, never for result.** `verified_reviews` pays `2×` for a
+   substantive `Verified:` block on a review that missed the defect. The wave's own theme, applied to
+   the wave's own scorer.
+3. **Tooling reports success it never checked.** Three separate instances *by the coordinator*:
+   `gh pr merge` piped through `sed` reported 4 merges that never happened (`set -e` read `sed`'s exit
+   code); a `jq` query for a non-existent `.blockers` key printed a confident `"none"` and nearly
+   produced a bug report against a working merge gate; a grep of `extract` call-sites was reported as
+   a call count. The repo ships `warn_pipe_mask_rc.py` for the first of these and it did not fire.
+
+### Proposed Process Changes
+
+1. **Reconcile `composite()` and `score_delta()` onto one declared negative set.** Extend
+   `_NEGATIVE_SIGNAL_FIELDS` (added in `#296`) to carry a composite weight and a delta weight per
+   field, so a new negative cannot enter one and be forgotten in the other. Generalizes `#310`.
+   *Rationale:* pain point 1; `#314`.
+2. **Forfeit `verified_reviews` on a PR where the reviewer's own `missed_catches` fired.** A receipt
+   for a review that missed the defect should not outscore the review that caught it.
+   *Rationale:* pain point 2; `#314`.
+3. **Make `warn_pipe_mask_rc.py` fire on `cmd | sed` / `| grep` / `| tail` under `set -e`,** and add
+   an `/wave-end` step that verifies each merge against the API rather than the client's exit code.
+   *Rationale:* pain point 3.
+4. **Fix `review_load.py`'s dual-deploy path resolution** (`#313`) — it crashes in the framework's own
+   repo while its comment claims it works in both trees. Confirm or correct the Wave 22 review-load
+   figure, which cannot have come from a clean run.
+
+*(Carry-forward into the Wave 24 stub: `#314` [headline], `#308`, `#302`, `#310`, `#311`, `#312`, `#313`.)*
