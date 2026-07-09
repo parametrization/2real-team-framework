@@ -204,6 +204,179 @@ def test_blocking_reviewer_not_double_counted_as_approver():
 
 
 # ---------------------------------------------------------------------------
+# Author-exclusion (#293): the author's own self-verdict never counts toward the
+# merge bar. Closes the live self-approval bypass — an author's clean
+# `Requestor: <self>` supplied one of the required approvals on their own PR, so
+# a single real reviewer + the author cleared a 2-reviewer bar.
+# ---------------------------------------------------------------------------
+
+
+def test_author_self_clean_verdict_excluded_bypass_repro():
+    """Tariq's exact repro (#293): author self-verdict + ONE genuine reviewer at
+    bar=2 must read `pending`, not `approved`.
+
+    BEFORE #293 this was `approvals=2 / approved` — the author supplied one of
+    the two "approvals" on their own PR. Mutation bar: neutralizing the
+    author-exclusion (dropping the `is_author_self_review` filter) flips this
+    back to approved -> fails.
+    """
+    verdicts = [
+        _approval("Ibrahim.El-Amin"),  # author's own clean self-verdict
+        _approval("Nia.Rossi"),  # the ONE genuine reviewer
+    ]
+    state = prs.compute_state(
+        verdicts, reviewers_required=2, author="Ibrahim.El-Amin"
+    )
+    assert state["approvals"] == 1  # only Nia — the author self-verdict dropped
+    assert state["state"] == "pending"
+
+
+def test_two_genuine_reviewers_still_approved_with_author_set():
+    """Author-exclusion must not tighten the gate for legitimate PRs: two
+    genuine (non-author) reviewers still reach `approved` even when the author is
+    threaded in.
+
+    Mutation bar: an over-broad exclusion (e.g. excluding by Requestee, or
+    dropping every verdict) would strip a real reviewer here -> fails.
+    """
+    verdicts = [_approval("Nia.Rossi"), _approval("Tariq.Morales")]
+    state = prs.compute_state(
+        verdicts, reviewers_required=2, author="Ibrahim.El-Amin"
+    )
+    assert state["approvals"] == 2
+    assert state["state"] == "approved"
+
+
+def test_author_self_must_fix_does_not_manufacture_a_blocking_reviewer():
+    """An author's own `Must-fix` self-verdict is dropped entirely (#293): it
+    creates NEITHER an unresolved-must-fix blocker NOR a phantom reviewer. An
+    author can neither block nor approve their own PR.
+
+    Here the author self-blocks and two genuine reviewers approve at bar=2 ->
+    the self-block must not flip the state to changes_requested.
+
+    Mutation bar: excluding the author only from `approvers` but NOT from
+    `unresolved_must_fix` would leave the self-must-fix standing and read
+    changes_requested -> fails.
+    """
+    verdicts = [
+        _changes_requested("Ibrahim.El-Amin"),  # author self-`Must-fix`
+        _approval("Nia.Rossi"),
+        _approval("Tariq.Morales"),
+    ]
+    state = prs.compute_state(
+        verdicts, reviewers_required=2, author="Ibrahim.El-Amin"
+    )
+    assert state["unresolved_must_fix"] == []  # self-block dropped, not standing
+    assert state["approvals"] == 2  # the two genuine reviewers
+    assert state["state"] == "approved"
+
+
+def test_author_exclusion_folds_name_variants():
+    """Author `Ibrahim El-Amin` and verdict `Requestor: Ibrahim.El-Amin` are the
+    same person — the self-verdict is excluded despite the punctuation variant
+    (default canon folds via `_name_key`, the same fold the approver set uses).
+
+    Mutation bar: comparing raw (unfolded) strings would miss the variant and
+    count the author self-verdict -> the bypass repro would reach approved.
+    """
+    verdicts = [
+        _approval("Ibrahim.El-Amin"),  # author's self-verdict (dotted form)
+        _approval("Nia.Rossi"),
+    ]
+    state = prs.compute_state(
+        verdicts, reviewers_required=2, author="Ibrahim El-Amin"  # spaced form
+    )
+    assert state["approvals"] == 1
+    assert state["state"] == "pending"
+
+
+def test_author_none_fails_open_to_pre_293_count():
+    """FAIL-OPEN: an unresolved author (`author=None`, the default) excludes
+    nothing — behavior is exactly the pre-#293 count. A missing author must never
+    tighten the gate into a false block.
+
+    The bypass repro WITHOUT a resolved author still reaches `approved` (the
+    pre-fix behavior), proving the exclusion is gated on a known author and never
+    fabricated. Mutation bar: making author-exclusion fire on `author=None` (or
+    raising) would flip this to pending -> fails.
+    """
+    verdicts = [_approval("Ibrahim.El-Amin"), _approval("Nia.Rossi")]
+
+    # explicit None
+    state = prs.compute_state(verdicts, reviewers_required=2, author=None)
+    assert state["approvals"] == 2
+    assert state["state"] == "approved"
+
+    # default (author param omitted) — identical pre-#293 behavior
+    state_default = prs.compute_state(verdicts, reviewers_required=2)
+    assert state_default["approvals"] == 2
+    assert state_default["state"] == "approved"
+
+
+def test_review_state_wrapper_threads_author_and_excludes_self(monkeypatch):
+    """End-to-end through the I/O wrapper: the head-commit author is fetched and
+    threaded into `compute_state`, so an author self-verdict + one genuine
+    reviewer at bar=2 reads `pending` — the live merge gate no longer counts a
+    self-approval (#293).
+
+    Mutation bar: reverting `review_state` to call `compute_state` without the
+    fetched author flips this to approved -> fails.
+    """
+    author_body = (
+        "Requestor: Ibrahim.El-Amin\nRequestee: Ibrahim.El-Amin\n"
+        "RequestOrReplied: Replied\n\n**Review: self-check**\n"
+        "Must-fix: None\nTech-debt: None\n"
+    )
+    reviewer_body = (
+        "Requestor: Nia.Rossi\nRequestee: Ibrahim.El-Amin\n"
+        "RequestOrReplied: Replied\n\n**Review: LGTM**\n"
+        "Must-fix: None\nTech-debt: None\n"
+    )
+    monkeypatch.setattr(
+        ts, "_pr_comment_bodies", lambda _repo, _num: [author_body, reviewer_body]
+    )
+    monkeypatch.setattr(prs, "_pr_head_author", lambda _repo, _num: "Ibrahim.El-Amin")
+
+    class _Cfg:
+        def get(self, _dotted, default=None):
+            return 2
+
+    state = prs.review_state("acme/widget", 42, cfg=_Cfg())
+    assert state["approvals"] == 1  # only Nia; the author self-verdict excluded
+    assert state["state"] == "pending"
+
+
+def test_review_state_wrapper_author_fetch_failure_fails_open(monkeypatch):
+    """If the author cannot be resolved (`_pr_head_author` -> None), the wrapper
+    excludes nothing and computes the pre-#293 state — an author-fetch failure
+    must never manufacture a false block or an `unknown`. Two clean Requestors
+    (one of whom happens to be the real author) still reach `approved`.
+
+    Mutation bar: turning an author-fetch failure into a block/unknown would flip
+    this off `approved` -> fails.
+    """
+    body_a = (
+        "Requestor: Ibrahim.El-Amin\nRequestee: Ibrahim.El-Amin\n"
+        "RequestOrReplied: Replied\n\n**Review: self**\nMust-fix: None\nTech-debt: None\n"
+    )
+    body_b = (
+        "Requestor: Nia.Rossi\nRequestee: Ibrahim.El-Amin\n"
+        "RequestOrReplied: Replied\n\n**Review: LGTM**\nMust-fix: None\nTech-debt: None\n"
+    )
+    monkeypatch.setattr(ts, "_pr_comment_bodies", lambda _repo, _num: [body_a, body_b])
+    monkeypatch.setattr(prs, "_pr_head_author", lambda _repo, _num: None)
+
+    class _Cfg:
+        def get(self, _dotted, default=None):
+            return 2
+
+    state = prs.review_state("acme/widget", 42, cfg=_Cfg())
+    assert state["state"] == "approved"  # fail-open: no exclusion
+    assert state["approvals"] == 2
+
+
+# ---------------------------------------------------------------------------
 # Fail-open posture.
 # ---------------------------------------------------------------------------
 
@@ -270,6 +443,10 @@ def test_review_state_wrapper_reuses_parse_verdicts(monkeypatch):
     )
 
     monkeypatch.setattr(ts, "_pr_comment_bodies", lambda _repo, _num: [nia, ibrahim])
+    # Keep hermetic: author-exclusion (#293) added a head-commit author fetch to
+    # the wrapper; stub it (no genuine reviewer here is the author) so the test
+    # never shells out to a live `gh`.
+    monkeypatch.setattr(prs, "_pr_head_author", lambda _repo, _num: None)
 
     class _Cfg:
         def get(self, _dotted, default=None):
@@ -293,6 +470,7 @@ def test_review_state_wrapper_surfaces_must_fix_from_real_body(monkeypatch):
     )
 
     monkeypatch.setattr(ts, "_pr_comment_bodies", lambda _repo, _num: [blocking])
+    monkeypatch.setattr(prs, "_pr_head_author", lambda _repo, _num: None)
 
     class _Cfg:
         def get(self, _dotted, default=None):
@@ -332,6 +510,9 @@ _N2_MUSTFIX_NIA = (
 
 def _n2_state(bodies, monkeypatch):
     monkeypatch.setattr(ts, "_pr_comment_bodies", lambda _repo, _num: bodies)
+    # Hermetic: stub the #293 head-commit author fetch (none of these Requestors
+    # is the PR author) so the wrapper never shells out to a live `gh`.
+    monkeypatch.setattr(prs, "_pr_head_author", lambda _repo, _num: None)
 
     class _Cfg:  # reviewers_required = 2 (the standing N=2 bar)
         def get(self, _dotted, default=None):
