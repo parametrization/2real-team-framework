@@ -164,12 +164,23 @@ of that PR's verdicts, per the verdict grammar in [issues.md](issues.md). The
 {{reviewers_required}} reviewers must be {{reviewers_required}} *different* people; the
 same reviewer counted twice does not satisfy the bar, and no self-review is permitted.
 
-This assignment convention is what the armed merge gate mechanically enforces (§ The
+This assignment convention is what the armed merge gate partly enforces (§ The
 N-reviewer merge gate): the oracle counts clean approvals over **distinct `Requestor:`
-identities other than the author**, so assigning fewer than {{reviewers_required}}
-distinct non-author reviewers leaves the PR unable to reach `approved` — it cannot
-merge. Assign the full slate at kickoff so the process the gate checks and the process
-the team runs are the same one.
+identities**, so assigning fewer than {{reviewers_required}} distinct reviewers leaves
+the PR unable to reach `approved` — it cannot merge. Assign the full slate at kickoff
+so the process the gate checks and the process the team runs are the same one.
+
+> **Documented contract the code does NOT yet meet (#293).** The gate is *intended* to
+> count distinct `Requestor:` identities **other than the author**, matching the
+> author-exclusive assignment above. The current oracle
+> (`pr_review_state.compute_state`) does NOT exclude the author — it counts every
+> distinct `Requestor:`, so an author's own clean self-verdict still counts toward the
+> bar (a **live self-approval bypass**: author self-verdict + one genuine reviewer
+> reaches `approved` at `reviewers_required=2`). #293 brings the code up to this
+> contract by reusing `trust_signals.is_author_self_review`. Until it lands, the
+> author-exclusive bar rests on the assignment convention plus the reviewer-only
+> verdict grammar ([issues.md](issues.md)) — not on the gate. (The trust *scorer* is
+> already author-exclusive, per #288.)
 
 ## CI Gates
 

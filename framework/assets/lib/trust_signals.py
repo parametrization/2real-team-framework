@@ -1106,6 +1106,45 @@ def _canonicalizer(cfg):
     return canon
 
 
+def is_author_self_review(requestor: str | None, author: str | None, canon) -> bool:
+    """True when a verdict's ``Requestor:`` resolves to the PR's own author (#288).
+
+    The charter's ``Requestor:`` field names the REVIEWER, and a reviewer reviews
+    someone else's PR — so a verdict whose Requestor canonicalizes to the PR
+    author is the author wearing reviewer grammar on their own PR (a must-fix
+    reply that slipped into ``Requestor:`` form — the Wave-21 slip), never a
+    genuine third-party review. Author-exclusion drops it before it can accrue
+    any reviewer signal (``must_fix_caught`` / ``verified_reviews`` /
+    ``missed_catches`` / review-load).
+
+    SCOPE (do not overstate): #288 makes only the two SCORING surfaces
+    (``trust_signals`` + ``review_load``) author-exclusive. This repo's ARMED
+    merge-gate oracle (``pr_review_state.compute_state``, consumed by the
+    ``validate_pr_review`` hook) counts approvals over distinct ``Requestor``\\ s
+    with NO author-exclusion, so an author's own clean self-verdict still counts
+    toward the review bar — a live self-approval bypass, tracked separately in
+    #293. This helper does NOT close that; nothing here should be read as the
+    merge gate excluding self-verdicts.
+
+    The helper's SHAPE is modeled on the shared author-resolution helper
+    botfarm's review gate consolidated — but that (botfarm) gate keys its drop
+    off the ``Requestee:`` (addressed-author) field, whereas our charter grammar
+    puts the reviewer in ``Requestor:``, so the exclusion trigger flips to the
+    Requestor. Here author and reviewer identities are already folded through the
+    roster *canon*, so resolution is a single canonical-equality check (no
+    separate branch-name / login anchors to reconcile as the hook has).
+
+    Both identities are folded through *canon* so name variants
+    (``Ibrahim.El-Amin`` / ``Ibrahim El-Amin (Senior)``) compare equal. Fail-open
+    and total: a missing ``requestor`` or ``author`` is never a self-review (so a
+    verdict with no attributable reviewer, or a PR with an unknown author, is
+    left for the caller to handle as before). Pure — no I/O.
+    """
+    if not requestor or not author:
+        return False
+    return canon(requestor) == canon(author)
+
+
 def _account_pr(
     signals: dict[str, Signals],
     canon,
@@ -1174,6 +1213,27 @@ def _account_pr(
         verdicts = parse_verdicts(comment_bodies or [])
         current_bodies = comment_bodies or []
     current_verdicts = parse_verdicts(current_bodies)
+
+    # #288 author-exclusion: the charter's ``Requestor:`` names the REVIEWER, and
+    # a reviewer reviews someone else's PR. A verdict whose Requestor resolves to
+    # THIS PR's own author is the author wearing reviewer grammar on their own PR
+    # (a must-fix reply that slipped into ``Requestor:`` form — the Wave-21 slip),
+    # never a genuine review. Drop those here, before any accounting, so no
+    # reviewer signal (``must_fix_caught`` / ``verified_reviews`` /
+    # ``missed_catches`` / false-positives) is ever attributed to the author for
+    # their own PR, and so the #H5 gate-bypass check counts only true third-party
+    # reviewers. This is a SCORING-side exclusion only; the armed merge-gate
+    # oracle (``pr_review_state.compute_state``) does NOT yet author-exclude — a
+    # live self-approval bypass tracked in #293. The ledger path is filtered at
+    # its own loop below.
+    verdicts = [
+        v for v in verdicts if not is_author_self_review(v.requestor, author, canon)
+    ]
+    current_verdicts = [
+        v
+        for v in current_verdicts
+        if not is_author_self_review(v.requestor, author, canon)
+    ]
     catches = [
         c
         for c in (review_catches or [])
@@ -1187,9 +1247,15 @@ def _account_pr(
     pr_had_changes_requested = False
     if catches:
         for c in catches:
+            requestor = c.get("requestor")
+            # #288: a ledger catch whose Requestor resolves to the PR author is a
+            # self-catch (author == reviewer), not a real changes-requested round
+            # — exclude it exactly as the comment-parsing path above excludes an
+            # author self-verdict.
+            if is_author_self_review(requestor, author, canon):
+                continue
             pr_had_changes_requested = True
             author_sig.must_fix_received += 1
-            requestor = c.get("requestor")
             if requestor:
                 catcher_keys.add(canon(requestor))
                 bucket(requestor).must_fix_caught += 1
