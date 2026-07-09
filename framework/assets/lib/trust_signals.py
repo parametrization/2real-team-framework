@@ -1115,14 +1115,24 @@ def is_author_self_review(requestor: str | None, author: str | None, canon) -> b
     reply that slipped into ``Requestor:`` form — the Wave-21 slip), never a
     genuine third-party review. Author-exclusion drops it before it can accrue
     any reviewer signal (``must_fix_caught`` / ``verified_reviews`` /
-    ``missed_catches`` / review-load), mirroring the merge gate's self-review
-    exclusion. Modeled on the shared author-resolution helper botfarm's review
-    gate consolidated (same purpose) — but that gate keys the drop off the
-    ``Requestee:`` (addressed-author) field, whereas our charter grammar puts the
-    reviewer in ``Requestor:``, so the exclusion trigger flips to the Requestor.
-    Here author and reviewer identities are already folded through the roster
-    *canon*, so resolution is a single canonical-equality check (no separate
-    branch-name / login anchors to reconcile as the hook has).
+    ``missed_catches`` / review-load).
+
+    SCOPE (do not overstate): #288 makes only the two SCORING surfaces
+    (``trust_signals`` + ``review_load``) author-exclusive. This repo's ARMED
+    merge-gate oracle (``pr_review_state.compute_state``, consumed by the
+    ``validate_pr_review`` hook) counts approvals over distinct ``Requestor``\\ s
+    with NO author-exclusion, so an author's own clean self-verdict still counts
+    toward the review bar — a live self-approval bypass, tracked separately in
+    #293. This helper does NOT close that; nothing here should be read as the
+    merge gate excluding self-verdicts.
+
+    The helper's SHAPE is modeled on the shared author-resolution helper
+    botfarm's review gate consolidated — but that (botfarm) gate keys its drop
+    off the ``Requestee:`` (addressed-author) field, whereas our charter grammar
+    puts the reviewer in ``Requestor:``, so the exclusion trigger flips to the
+    Requestor. Here author and reviewer identities are already folded through the
+    roster *canon*, so resolution is a single canonical-equality check (no
+    separate branch-name / login anchors to reconcile as the hook has).
 
     Both identities are folded through *canon* so name variants
     (``Ibrahim.El-Amin`` / ``Ibrahim El-Amin (Senior)``) compare equal. Fail-open
@@ -1212,8 +1222,10 @@ def _account_pr(
     # reviewer signal (``must_fix_caught`` / ``verified_reviews`` /
     # ``missed_catches`` / false-positives) is ever attributed to the author for
     # their own PR, and so the #H5 gate-bypass check counts only true third-party
-    # reviewers — mirroring the merge gate's self-addressed exclusion. The ledger
-    # path is filtered at its own loop below.
+    # reviewers. This is a SCORING-side exclusion only; the armed merge-gate
+    # oracle (``pr_review_state.compute_state``) does NOT yet author-exclude — a
+    # live self-approval bypass tracked in #293. The ledger path is filtered at
+    # its own loop below.
     verdicts = [
         v for v in verdicts if not is_author_self_review(v.requestor, author, canon)
     ]
