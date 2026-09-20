@@ -10,9 +10,34 @@ the correct source for each directory and adds it to the wheel under
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+
+def _sync_readme() -> None:
+    """Mirror the repo-root README into ``python/`` so it can be packaged.
+
+    A single README at the repo root serves PyPI, npm and GitHub, so the Python
+    package has none of its own.  ``readme = "../README.md"`` used to paper over
+    that, but hatchling >=1.32 rejects a readme outside the project directory,
+    and older versions "honoured" it by writing an sdist member that escaped the
+    archive root (``<name>-<version>/../README.md``).  ``pyproject.toml`` now
+    names a local ``README.md`` and we put one there.
+
+    This runs at import time rather than from ``initialize`` below because
+    hatchling reads project metadata -- the readme included -- before it builds
+    any build hook, so the file has to exist before the hook is ever called.
+    """
+    here = Path(__file__).parent
+    source = here.parent / "README.md"
+    # Missing when building from an sdist, which already carries its own copy.
+    if source.is_file():
+        shutil.copyfile(source, here / "README.md")
+
+
+_sync_readme()
 
 
 class BundleSharedDataHook(BuildHookInterface):

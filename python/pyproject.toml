@@ -4,7 +4,7 @@ version = "0.12.0"
 description = "Drop-in AI agent team framework for Claude Code projects"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
-readme = "../README.md"
+readme = "README.md"
 authors = [
     {name = "2real Team", email = "2real-team@users.noreply.github.com"},
 ]
@@ -63,13 +63,6 @@ include = [
     "pyproject.toml",
     "hatch_build.py",
 ]
-
-[tool.hatch.build.targets.sdist.force-include]
-"../README.md" = "README.md"
-"../templates" = "templates"
-"../presets" = "presets"
-"../skills" = "skills"
-"../framework" = "framework"
 
 [tool.ruff]
 line-length = 100
