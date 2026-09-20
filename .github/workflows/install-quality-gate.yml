@@ -40,7 +40,7 @@ jobs:
         working-directory: python
         run: |
           pip install -e ".[dev]" 2>/dev/null || pip install -e .
-          pip install pytest
+          pip install pytest==9.1.1
 
       - name: Harness self-tests (incl. the B13 end-to-end soft-degrade cell)
         env:

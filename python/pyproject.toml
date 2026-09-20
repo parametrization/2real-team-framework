@@ -48,7 +48,7 @@ Repository = "https://github.com/parametrization/2real-team-framework"
 Documentation = "https://github.com/parametrization/2real-team-framework#readme"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.32,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.custom]

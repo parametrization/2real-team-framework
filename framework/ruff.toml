@@ -1,0 +1,26 @@
+# Ruff configuration for framework/.
+#
+# This directory previously had no ruff config of its own -- the only
+# [tool.ruff] in the repo is scoped to python/ -- so `ruff check framework/`
+# ran against whatever ruff's built-in defaults happened to be on the day CI
+# installed it. `pip install ruff` was unpinned, so a ruff release that enabled
+# new rules broke a build with no commit touching this directory: ruff 0.12.2
+# reported no errors, 0.16.8 reported 315 and the then-current release 378,
+# mostly RUF100/E402 pairs that contradicted each other across files.
+#
+# The rule set below is the one this code was actually written against -- it is
+# ruff's default selection (E4, E7, E9, F), stated explicitly so it is a
+# decision rather than a default that can shift underneath us. The ruff version
+# in .github/workflows/ci.yml is pinned as well; the pin stops a new release
+# from changing what an already-selected rule reports, and this file stops one
+# from adding rules we never opted into.
+#
+# Widening this (e.g. to the ["E", "F", "I", "UP"] used by python/pyproject.toml)
+# is a reasonable future change, but it is a real code change -- it currently
+# reports 27 auto-fixable findings -- so it belongs in its own commit.
+
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
